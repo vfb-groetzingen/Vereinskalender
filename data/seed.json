@@ -1,0 +1,83 @@
+{
+  "settings": {
+    "vereins_name": "Vereinskalender",
+    "public_base_url": "https://DEIN-GITHUB-NAME.github.io/vereinskalender"
+  },
+  "resources": [
+    {
+      "slug": "besprechungszimmer",
+      "name": "Besprechungszimmer",
+      "type": "raum",
+      "color": "#8e44ad",
+      "sort_order": 1
+    },
+    {
+      "slug": "jugendraum",
+      "name": "Jugendraum",
+      "type": "raum",
+      "color": "#a3286b",
+      "sort_order": 2
+    },
+    {
+      "slug": "platz-1-hauptplatz",
+      "name": "Platz 1 - Hauptplatz",
+      "type": "platz",
+      "color": "#1f5fa8",
+      "sort_order": 3
+    },
+    {
+      "slug": "trainingsplatz-a",
+      "name": "Trainingsplatz A",
+      "type": "platz",
+      "color": "#6b46c1",
+      "sort_order": 4
+    },
+    {
+      "slug": "trainingsplatz-b",
+      "name": "Trainingsplatz B",
+      "type": "platz",
+      "color": "#6b4a1e",
+      "sort_order": 5
+    },
+    {
+      "slug": "kunstrasenplatz",
+      "name": "Kunstrasenplatz",
+      "type": "platz",
+      "color": "#276749",
+      "sort_order": 6
+    },
+    {
+      "slug": "parkplatz",
+      "name": "Parkplatz",
+      "type": "platz",
+      "color": "#9c5b00",
+      "sort_order": 7
+    }
+  ],
+  "categories": [
+    {
+      "name": "Training",
+      "color": "#2b6cb0"
+    },
+    {
+      "name": "Spiel",
+      "color": "#b83232"
+    },
+    {
+      "name": "Veranstaltung",
+      "color": "#276749"
+    },
+    {
+      "name": "Vermietung",
+      "color": "#8a5300"
+    },
+    {
+      "name": "Sitzung",
+      "color": "#6b46c1"
+    },
+    {
+      "name": "Sonstiges",
+      "color": "#4a5568"
+    }
+  ]
+}
