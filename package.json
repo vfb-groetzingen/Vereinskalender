@@ -1,0 +1,12 @@
+{
+  "name": "vereinskalender",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Raumkalender und Belegungsplan für den Verein (GitHub Pages + Supabase)",
+  "scripts": {
+    "test": "node --test tests/logic.test.mjs tests/layout.test.mjs tests/store.test.mjs",
+    "qr": "python3 scripts/build_qr.py"
+  },
+  "license": "UNLICENSED"
+}

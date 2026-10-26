@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Weiterleitung · Vereinskalender</title>
+  <script>
+    // GitHub Pages liefert für unbekannte Pfade (z. B. /raeume/trainingsplatz-a) diese Seite aus.
+    // Sie leitet auf die Startseite weiter, die den Pfad wieder herstellt.
+    // WICHTIG: base muss mit BASE_PATH in assets/js/config.js übereinstimmen.
+    (function () {
+      var base = '/vereinskalender/';
+      var path = location.pathname;
+      var rel = path.indexOf(base) === 0 ? path.slice(base.length) : path.replace(/^\//, '');
+      location.replace(base + '?p=' + encodeURIComponent('/' + rel + location.search + location.hash));
+    })();
+  </script>
+</head>
+<body>
+  <p>Die Seite wird geöffnet … <a href="/vereinskalender/">Zur Startseite</a></p>
+</body>
+</html>
