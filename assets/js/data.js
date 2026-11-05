@@ -155,7 +155,9 @@ export class SupabaseStore {
   isEditor() { return this.role === 'bearbeiter' || this.role === 'admin'; }
 
   async _req(path, { method = 'GET', body, prefer, token } = {}) {
-    const headers = { apikey: this.key, Authorization: 'Bearer ' + (token || this.session?.access_token || this.key) };
+    const headers = { apikey: this.key };
+	const bearer = token === this.key ? null : (token || this.session?.access_token);
+	if (bearer) headers.Authorization = `Bearer ${bearer}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (prefer) headers.Prefer = prefer;
     const res = await fetch(this.url + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
