@@ -1,8 +1,8 @@
 // Zentrale Konfiguration. Hier stehen NUR öffentliche Werte.
 // Den geheimen Schlüssel (service_role) niemals in dieses Repository eintragen.
 export const CONFIG = {
-  // Pfad der Webseite. Bei GitHub-Pages-Projektseite: '/REPO-NAME/' (z. B. '/vereinskalender/')
-  BASE_PATH: '/vereinskalender/',
+  // Pfad der Webseite. Bei GitHub-Pages-Projektseite: '/REPO-NAME/' (z. B. '/Vereinskalender/')
+  BASE_PATH: '/Vereinskalender/',
   // Supabase-Projekt. Leer lassen = Demo-Modus mit Beispieldaten im Browser.
   SUPABASE_URL: 'https://qikjlfspwovvyjnqlwvs.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_993vTe9fldL3yhesA2Bbog_cLyuBn2n',
