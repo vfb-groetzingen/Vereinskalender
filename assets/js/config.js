@@ -4,8 +4,8 @@ export const CONFIG = {
   // Pfad der Webseite. Bei GitHub-Pages-Projektseite: '/REPO-NAME/' (z. B. '/vereinskalender/')
   BASE_PATH: '/vereinskalender/',
   // Supabase-Projekt. Leer lassen = Demo-Modus mit Beispieldaten im Browser.
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://qikjlfspwovvyjnqlwvs.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_993vTe9fldL3yhesA2Bbog_cLyuBn2n',
   TIMEZONE: 'Europe/Berlin',
   DAY_START: 7,   // erste Stunde im Kalender
   DAY_END: 23     // letzte Stunde im Kalender
