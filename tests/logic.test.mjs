@@ -148,3 +148,30 @@ test('Zeitumstellung am 25.10.2026: Uhrzeit bleibt lokal korrekt', () => {
   assert.equal(d.getHours(), 18);
   assert.equal(d.getMinutes(), 0);
 });
+
+test('Spielimport: liest nur Start Date, Start Time und Subject und setzt 90 Minuten', () => {
+  const table = [
+    ['Start Date', 'Start Time', 'Subject'],
+    ['2026-10-27', '17:30', 'C-Junioren - Musterverein : Beispiel FC']
+  ];
+  const r = L.validateMatchTable(table, { resource: resources[0], category: categories[1] });
+  assert.equal(r.errors.length, 0);
+  assert.equal(r.conflicts.length, 0);
+  assert.equal(r.bookings.length, 1);
+  assert.equal(r.bookings[0].title, table[1][2]);
+  assert.equal(Date.parse(r.bookings[0].ends_at) - Date.parse(r.bookings[0].starts_at), 90 * 60 * 1000);
+});
+
+test('Spielimport: meldet fehlende Spalten und Dubletten/Überschneidungen', () => {
+  const missing = L.validateMatchTable([['Start Date', 'Subject'], ['2026-10-27', 'Spiel']], { resource: resources[0], category: categories[1] });
+  assert.match(missing.errors[0].message, /Start Time/);
+  const table = [
+    ['Start Date', 'Start Time', 'Subject'],
+    ['2026-10-27', '17:30', 'Musterverein : Beispiel FC'],
+    ['2026-10-27', '17:30', 'Musterverein : Beispiel FC']
+  ];
+  const r = L.validateMatchTable(table, { resource: resources[0], category: categories[1] });
+  assert.equal(r.bookings.length, 2);
+  assert.equal(r.conflicts.length, 1);
+  assert.match(r.conflicts[0].message, /Zeile 2/);
+});
