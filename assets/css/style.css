@@ -250,3 +250,14 @@ textarea.input { resize: vertical; }
   .plan-month-grid .mg-cell { min-height: 105px; }
   .plan-month-event { font-size: .68rem; }
 }
+
+/* Vereinslogo und Admin-Sortierung */
+.brand { display: flex; align-items: center; min-width: 0; }
+.brand-logo { display: block; width: min(350px, 38vw); max-width: 100%; height: auto; max-height: 78px; object-fit: contain; }
+.order-field { display: block; }
+.order-input { min-width: 76px !important; width: 82px !important; }
+@media (max-width: 640px) {
+  .brand { justify-content: center; }
+  .brand-logo { width: min(320px, 100%); max-height: 66px; }
+  .order-input { width: 72px !important; min-width: 68px !important; }
+}
