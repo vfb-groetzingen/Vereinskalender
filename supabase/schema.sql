@@ -15,8 +15,11 @@ create table if not exists public.resources (
   name        text not null,
   type        text not null check (type in ('raum', 'platz')),
   color       text not null check (color ~ '^#[0-9a-fA-F]{6}$'),
-  sort_order  int  not null default 0
+  sort_order  int  not null default 0,
+  is_active   boolean not null default true
 );
+
+alter table public.resources add column if not exists is_active boolean not null default true;
 
 create table if not exists public.categories (
   id     uuid primary key default gen_random_uuid(),
@@ -52,6 +55,19 @@ create table if not exists public.memberships (
   role     text not null check (role in ('bearbeiter', 'admin')),
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.booking_audit_log (
+  id           bigint generated always as identity primary key,
+  booking_id   uuid not null,
+  action       text not null check (action in ('created', 'updated', 'deleted')),
+  actor_id     uuid references auth.users(id) on delete set null,
+  actor_email  text,
+  occurred_at  timestamptz not null default now(),
+  before_data  jsonb,
+  after_data   jsonb
+);
+create index if not exists booking_audit_log_time_idx on public.booking_audit_log (occurred_at desc);
+create index if not exists booking_audit_log_booking_idx on public.booking_audit_log (booking_id, occurred_at desc);
 
 -- ---------- Hilfsfunktionen für Rechte ----------
 
@@ -91,6 +107,36 @@ create trigger bookings_audit_trg
   before insert or update on public.bookings
   for each row execute function public.bookings_audit();
 
+create or replace function public.record_booking_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.booking_audit_log (booking_id, action, actor_id, actor_email, after_data)
+    values (new.id, 'created', auth.uid(), auth.jwt() ->> 'email', to_jsonb(new));
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if to_jsonb(new) is distinct from to_jsonb(old) then
+      insert into public.booking_audit_log (booking_id, action, actor_id, actor_email, before_data, after_data)
+      values (new.id, 'updated', auth.uid(), auth.jwt() ->> 'email', to_jsonb(old), to_jsonb(new));
+    end if;
+    return new;
+  else
+    insert into public.booking_audit_log (booking_id, action, actor_id, actor_email, before_data)
+    values (old.id, 'deleted', auth.uid(), auth.jwt() ->> 'email', to_jsonb(old));
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists booking_audit_log_trg on public.bookings;
+create trigger booking_audit_log_trg
+  after insert or update or delete on public.bookings
+  for each row execute function public.record_booking_audit();
+
 -- ---------- Öffentliche Sicht (ohne Notizen und ohne Angaben zur Person) ----------
 
 create or replace view public.public_bookings as
@@ -103,23 +149,33 @@ alter table public.resources   enable row level security;
 alter table public.categories  enable row level security;
 alter table public.bookings    enable row level security;
 alter table public.memberships enable row level security;
+alter table public.booking_audit_log enable row level security;
 
--- Standardrechte von Supabase entziehen, danach nur das Nötige vergeben
-revoke all on public.bookings    from anon;
-revoke all on public.memberships from anon;
-revoke all on public.resources   from anon;
-revoke all on public.categories  from anon;
+-- Rechte auf das notwendige Minimum setzen und anschließend gezielt vergeben.
+revoke all on public.bookings from anon, authenticated;
+revoke all on public.memberships from anon, authenticated;
+revoke all on public.booking_audit_log from anon, authenticated;
+revoke all on public.resources from anon, authenticated;
+revoke all on public.categories from anon, authenticated;
+revoke all on public.public_bookings from anon, authenticated;
 
 grant select on public.resources, public.categories, public.public_bookings to anon, authenticated;
 grant select, insert, update, delete on public.bookings to authenticated;
 grant select on public.memberships to authenticated;
-grant insert, update, delete on public.resources, public.categories to authenticated;
+grant select on public.booking_audit_log to authenticated;
+grant insert, update on public.resources to authenticated;
+grant insert, update, delete on public.categories to authenticated;
+revoke delete on public.resources from authenticated;
 
 -- Stammdaten: alle dürfen lesen, nur Administratoren ändern
 drop policy if exists resources_read on public.resources;
 create policy resources_read on public.resources for select using (true);
 drop policy if exists resources_admin_write on public.resources;
-create policy resources_admin_write on public.resources for all to authenticated
+drop policy if exists resources_admin_insert on public.resources;
+drop policy if exists resources_admin_update on public.resources;
+create policy resources_admin_insert on public.resources for insert to authenticated
+  with check (public.is_admin());
+create policy resources_admin_update on public.resources for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists categories_read on public.categories;
@@ -147,6 +203,10 @@ create policy bookings_editor_delete on public.bookings for delete to authentica
 drop policy if exists memberships_self_read on public.memberships;
 create policy memberships_self_read on public.memberships for select to authenticated
   using (user_id = auth.uid());
+
+drop policy if exists booking_audit_admin_read on public.booking_audit_log;
+create policy booking_audit_admin_read on public.booking_audit_log for select to authenticated
+  using (public.is_admin());
 
 -- Die Ansicht public_bookings läuft mit den Rechten des Eigentümers und umgeht bewusst RLS
 -- auf bookings. Sie liefert deshalb nur die unkritischen Spalten (siehe oben).
