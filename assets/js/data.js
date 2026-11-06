@@ -205,7 +205,13 @@ export class SupabaseStore {
 
   async signIn({ email }) {
     // Versendet einen Anmelde-Link. Benutzer müssen vorher eingeladen oder angelegt sein.
-    await this._req('/auth/v1/otp', { method: 'POST', body: { email, create_user: false }, token: this.key });
+    const redirectTo = new URL(CONFIG.BASE_PATH, location.origin).href;
+	  
+	  await this._req('/auth/v1/otp?redirect_to=${encodeURIComponent(redirectTo)}',
+    {
+      method: 'POST',
+      body: { email, create_user: false },
+      token: this.key});
   }
 
   async signOut() {
