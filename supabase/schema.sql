@@ -29,7 +29,8 @@ create table if not exists public.categories (
 
 create table if not exists public.bookings (
   id           uuid primary key default gen_random_uuid(),
-  resource_id  uuid not null references public.resources(id) on delete restrict,
+  resource_id  uuid not null references public.resources(id) on delete cascade,
+  resource_name text not null,
   category_id  uuid not null references public.categories(id) on delete restrict,
   title        text not null check (char_length(title) between 1 and 120),
   starts_at    timestamptz not null,
@@ -91,6 +92,7 @@ $$;
 create or replace function public.bookings_audit()
 returns trigger language plpgsql set search_path = public as $$
 begin
+  select r.name into new.resource_name from public.resources r where r.id = new.resource_id;
   new.updated_at := now();
   new.updated_by := auth.uid();
   if tg_op = 'INSERT' then
@@ -136,6 +138,48 @@ drop trigger if exists booking_audit_log_trg on public.bookings;
 create trigger booking_audit_log_trg
   after insert or update or delete on public.bookings
   for each row execute function public.record_booking_audit();
+
+-- Endgültiges Löschen: nur Admin, keine laufenden oder zukünftigen Termine.
+-- Vergangene Buchungen werden per FK-Kaskade gelöscht; deren Audit-Einträge bleiben erhalten.
+create or replace function public.admin_delete_resource(p_resource_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Nur Administratoren dürfen Ressourcen endgültig löschen.' using errcode = '42501';
+  end if;
+
+  perform 1
+  from public.resources r
+  where r.id = p_resource_id
+  for update;
+  if not found then
+    raise exception 'Ressource nicht gefunden.' using errcode = 'P0002';
+  end if;
+
+  -- Lock existing bookings and prevent concurrent time edits while checking.
+  perform 1
+  from public.bookings b
+  where b.resource_id = p_resource_id
+  for update;
+
+  if exists (
+    select 1 from public.bookings b
+    where b.resource_id = p_resource_id and b.ends_at > now()
+  ) then
+    raise exception 'Es bestehen noch aktuelle oder zukünftige Termine. Bitte diese zuerst löschen oder die Ressource deaktivieren.'
+      using errcode = 'P0001';
+  end if;
+
+  delete from public.resources where id = p_resource_id;
+end;
+$$;
+
+revoke all on function public.admin_delete_resource(uuid) from public, anon, authenticated;
+grant execute on function public.admin_delete_resource(uuid) to authenticated;
 
 -- ---------- Öffentliche Sicht (ohne Notizen und ohne Angaben zur Person) ----------
 
