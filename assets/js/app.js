@@ -18,6 +18,7 @@ const S = {
   store: null,
   seed: null,
   resources: [],
+  allResources: [],
   categories: [],
   bookings: [],
   futureList: [],
@@ -41,6 +42,7 @@ function parseRoute() {
   const p = relPath();
   if (p === '/') return { name: 'home' };
   if (p === '/belegungsplan') return { name: 'plan' };
+  if (p === '/admin') return { name: 'admin' };
   const m = p.match(/^\/raeume\/([a-z0-9-]+)$/);
   if (m) {
     const res = S.resources.find((r) => r.slug === m[1]);
@@ -101,16 +103,20 @@ function renderHeader() {
   const authBtn = s.isEditor() || (s.mode === 'supabase' && s.session)
     ? '<button type="button" class="btn btn-ghost" id="btn-logout">Abmelden</button>'
     : '<button type="button" class="btn btn-ghost" id="btn-login">Anmelden</button>';
+  const adminLink = s.mode === 'supabase' && s.isAdmin() ? `<a href="${BASE}/admin" data-link="/admin">Administration</a>` : '';
+  const passwordBtn = s.mode === 'supabase' && s.session ? '<button type="button" class="btn btn-ghost" id="btn-password">Passwort</button>' : '';
   $('#header').innerHTML = `
     <div class="wrap topbar">
       <a class="brand" href="${HOME}" data-link="/">${esc(S.seed.settings.vereins_name)}</a>
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
         <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
+        ${adminLink}
       </nav>
-      <div class="auth">${demo}${who}${authBtn}</div>
+      <div class="auth">${demo}${who}${passwordBtn}${authBtn}</div>
     </div>`;
   const li = $('#btn-login'); if (li) li.addEventListener('click', openLogin);
+  const pw = $('#btn-password'); if (pw) pw.addEventListener('click', () => openPasswordDialog({ title: 'Passwort ändern' }));
   const lo = $('#btn-logout'); if (lo) lo.addEventListener('click', async () => { await s.signOut(); setNotice('ok', 'Sie sind abgemeldet.'); render(); });
 }
 
@@ -123,7 +129,7 @@ function renderHome() {
       <span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span>
       <a class="room-name" href="${roomUrl(r.slug)}" data-link="/raeume/${esc(r.slug)}">${esc(r.name)}</a>
       <span class="room-actions">
-        <a class="btn btn-small" href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR-Code</a>
+        ${S.seed.resources.some((seedResource) => seedResource.slug === r.slug) ? `<a class="btn btn-small" href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR-Code</a>` : ''}
         <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
       </span>
     </li>`).join('');
@@ -168,6 +174,11 @@ function roomRange() {
 function planRange() {
   const a = S.planAnchor;
   if (S.planRange === 'day') { const f = new Date(a.getFullYear(), a.getMonth(), a.getDate()); return { from: f, to: L.addDays(f, 1), days: [f] }; }
+  if (S.planRange === 'month') {
+    const first = L.monthStart(a);
+    const from = L.weekStart(first);
+    return { from, to: L.addDays(from, 42), days: [...Array(42)].map((_, i) => L.addDays(from, i)), month: first.getMonth() };
+  }
   const f = L.weekStart(a);
   return { from: f, to: L.addDays(f, 7), days: [...Array(7)].map((_, i) => L.addDays(f, i)) };
 }
@@ -195,7 +206,7 @@ async function renderRoom(res) {
       <div class="page-actions">
         <a class="btn btn-ghost" href="${qrUrl(res.slug)}" download="qr-${esc(res.slug)}.svg">QR-Code laden</a>
         <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
-        ${isEditor() ? `<button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
+        ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button><button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
       </div>
     </header>
     <div class="toolbar" role="toolbar" aria-label="Kalender steuern">
@@ -300,12 +311,50 @@ function bindRoomControls(res) {
   document.querySelectorAll('.event, .chip-ev').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('.table button[data-id]').forEach((b) => b.onclick = () => openDetail(b.dataset.id, true));
   const nb = $('#btn-new'); if (nb) nb.onclick = () => openBookingForm({ resource_id: res.id, date: S.roomAnchor });
+  const ib = $('#btn-import-room'); if (ib) ib.onclick = () => openImport(res);
+}
+
+function planMonthGrid(range, bookings) {
+  const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((name) => `<div class="mg-dow">${name}</div>`).join('');
+  const cells = range.days.map((day) => {
+    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    const end = L.addDays(start, 1);
+    const rows = bookings.filter((b) => !S.hiddenRes.has(b.resource_id) && (!S.catFilter || b.category_id === S.catFilter)
+      && new Date(b.ends_at) > start && new Date(b.starts_at) < end)
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const shown = rows.slice(0, 4).map((b) => {
+      const resource = resById(b.resource_id);
+      return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${esc(b.title)}</button>`;
+    }).join('');
+    const more = rows.length > 4 ? `<span class="plan-month-more">+${rows.length - 4} weitere</span>` : '';
+    const out = day.getMonth() !== range.month;
+    const today = day.toDateString() === new Date().toDateString();
+    return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}">
+      <button type="button" class="mg-date" data-plan-goto="${L.ymd(day)}" aria-label="${esc(dayLong(day))} in Tagesansicht öffnen">${day.getDate()}</button>${shown}${more}</div>`;
+  }).join('');
+  return `<div class="mg plan-month-grid"><div class="mg-head">${weekdays}</div><div class="mg-grid">${cells}</div></div>`;
 }
 
 // ---------- Belegungsplan ----------
 async function renderPlan() {
   const range = planRange();
   S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
+  if (S.planRange === 'month') {
+    const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
+    const rubriken = S.resources.map((r) => `<li><label class="check"><input type="checkbox" data-res-toggle="${esc(r.id)}" ${S.hiddenRes.has(r.id) ? '' : 'checked'}><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></label></li>`).join('');
+    app.innerHTML = `
+      <header class="page-head"><div><h1>Belegungsplan</h1><p class="muted">Monatsübersicht aller Räume und Plätze.</p></div>
+        <div class="page-actions">${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}</div>
+      </header>
+      <div class="plan-layout"><aside class="sidebar" aria-label="Filter">
+        <section class="filter-box"><h2>Räume und Plätze</h2><div class="filter-actions"><button type="button" class="link-btn" id="show-all">Alle einblenden</button><button type="button" class="link-btn" id="hide-all">Alle ausblenden</button></div><ul class="check-list">${rubriken}</ul></section>
+        <section class="filter-box"><h2><label for="cat-filter">Kategorie</label></h2><select id="cat-filter" class="input"><option value="">Alle Kategorien</option>${S.categories.map((c) => `<option value="${esc(c.id)}" ${S.catFilter === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></section>
+      </aside><section class="plan-main">
+        <div class="toolbar" role="toolbar" aria-label="Zeitraum steuern"><div class="btn-group"><button type="button" class="btn" id="p-prev" aria-label="Zurück">‹</button><button type="button" class="btn" id="p-today">Heute</button><button type="button" class="btn" id="p-next" aria-label="Weiter">›</button></div><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="p-date" class="input" value="${L.ymd(S.planAnchor)}"></label><p class="range-label" aria-live="polite">${esc(monthLabel(S.planAnchor))}</p><div class="btn-group" role="group" aria-label="Zeitraum">${['day','week','month'].map((v) => `<button type="button" class="btn ${S.planRange === v ? 'btn-active' : ''}" data-prange="${v}" aria-pressed="${S.planRange === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div>
+        ${planMonthGrid(range, S.bookings)}</section></div>`;
+    bindPlan();
+    return;
+  }
   const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
   const groups = [['Räume', visible.filter((r) => r.type === 'raum')], ['Plätze', visible.filter((r) => r.type === 'platz')]];
   const cats = S.categories;
@@ -351,7 +400,7 @@ async function renderPlan() {
     <header class="page-head">
       <div><h1>Belegungsplan</h1><p class="muted">Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.</p></div>
       <div class="page-actions">
-        ${isEditor() ? '<button type="button" class="btn" id="btn-import">Import (CSV/Excel)</button><button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
+        ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
       </div>
     </header>
     <div class="plan-layout">
@@ -380,7 +429,7 @@ async function renderPlan() {
           <label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="p-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
           <p class="range-label" aria-live="polite">${esc(label)}</p>
           <div class="btn-group" role="group" aria-label="Zeitraum">
-            ${['day', 'week'].map((v) => `<button type="button" class="btn ${S.planRange === v ? 'btn-active' : ''}" data-prange="${v}" aria-pressed="${S.planRange === v}">${v === 'day' ? 'Tag' : 'Woche'}</button>`).join('')}
+            ${['day', 'week', 'month'].map((v) => `<button type="button" class="btn ${S.planRange === v ? 'btn-active' : ''}" data-prange="${v}" aria-pressed="${S.planRange === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}
           </div>
         </div>
         <div class="timeline" tabindex="0" aria-label="Zeitleiste, mit Pfeiltasten scrollbar">
@@ -396,7 +445,11 @@ async function renderPlan() {
 }
 
 function bindPlan() {
-  const shift = (n) => { S.planAnchor = L.addDays(S.planAnchor, (S.planRange === 'day' ? 1 : 7) * n); render(); };
+  const shift = (n) => {
+    if (S.planRange === 'month') S.planAnchor = new Date(S.planAnchor.getFullYear(), S.planAnchor.getMonth() + n, 1);
+    else S.planAnchor = L.addDays(S.planAnchor, (S.planRange === 'day' ? 1 : 7) * n);
+    render();
+  };
   $('#p-prev').onclick = () => shift(-1);
   $('#p-next').onclick = () => shift(1);
   $('#p-today').onclick = () => { S.planAnchor = new Date(); render(); };
@@ -410,9 +463,9 @@ function bindPlan() {
   $('#show-all').onclick = () => { S.hiddenRes.clear(); render(); };
   $('#hide-all').onclick = () => { S.resources.forEach((r) => S.hiddenRes.add(r.id)); render(); };
   $('#cat-filter').onchange = (e) => { S.catFilter = e.target.value; render(); };
-  document.querySelectorAll('.bar').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
+  document.querySelectorAll('.bar, .plan-month-event').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
+  document.querySelectorAll('[data-plan-goto]').forEach((b) => b.onclick = () => { const [y, m, d] = b.dataset.planGoto.split('-').map(Number); S.planAnchor = new Date(y, m - 1, d); S.planRange = 'day'; render(); });
   const nb = $('#btn-new-plan'); if (nb) nb.onclick = () => openBookingForm({ resource_id: S.resources[0]?.id, date: S.planAnchor });
-  const ib = $('#btn-import'); if (ib) ib.onclick = openImport;
 }
 
 // ---------- Dialoge ----------
@@ -564,70 +617,85 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
 }
 
 // ---------- Import ----------
-function openImport() {
-  const d = makeDialog('Import von Belegungen', `
-    <p>Unterstützt werden CSV-Dateien (Trennzeichen „;“ oder „,“) und Excel-Dateien (.xlsx). Die erste Zeile muss die Spaltenüberschriften enthalten.</p>
-    <p><button type="button" class="btn btn-small" id="imp-tpl">Vorlage herunterladen (CSV)</button></p>
-    <p class="hint">Pflichtspalten: Titel, Ressource, Kategorie, Datum, Start, Ende. Optional: Notiz. Datum als TT.MM.JJJJ oder JJJJ-MM-TT, Uhrzeit als HH:MM.</p>
-    <div class="field"><label for="imp-file">Datei auswählen</label>
-      <input id="imp-file" type="file" accept=".csv,.xlsx,.xls,text/csv" class="input"></div>
+function openImport(selectedResource) {
+  if (!selectedResource) { setNotice('error', 'Bitte zuerst den Raum- oder Platzkalender öffnen.'); return; }
+  const defaultCategory = S.categories.find((c) => c.name.toLowerCase() === 'spiel') || S.categories[0];
+  const categoryOptions = S.categories.map((c) => `<option value="${esc(c.id)}" ${defaultCategory?.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const resourceField = `<p class="notice notice-ok">Ziel: <strong>${esc(selectedResource.name)}</strong></p>`;
+  const d = makeDialog('Spielplan importieren', `
+    <p>Importiert werden ausschließlich die Spalten <strong>Start Date</strong>, <strong>Start Time</strong> und <strong>Subject</strong>. Die Dauer wird auf 90 Minuten gesetzt.</p>
+    <p class="hint">Unterstützt: Excel (.xlsx) und CSV. Für CSV bitte Datum als JJJJ-MM-TT und Uhrzeit als HH:MM speichern. Der Import wird vor dem Speichern auf Fehler, Dubletten und Überschneidungen geprüft.</p>
+    <div class="page-actions">
+      <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.xlsx', ROOT).href}" download>Beispiel herunterladen (.xlsx)</a>
+      <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.csv', ROOT).href}" download>Beispiel herunterladen (.csv)</a>
+    </div>
+    ${resourceField}
+    <div class="field"><label for="imp-category">Kategorie</label><select id="imp-category" class="input">${categoryOptions}</select></div>
+    <div class="field"><label for="imp-file">Spielplandatei auswählen</label><input id="imp-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="input"></div>
     <div id="imp-result" aria-live="polite"></div>
-    <div class="dialog-actions"><button type="button" class="btn" data-close>Schließen</button>
-      <button type="button" class="btn btn-primary" id="imp-go" disabled>Importieren</button></div>`, 'dialog-wide');
+    <div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button><button type="button" class="btn btn-primary" id="imp-go" disabled>Importieren</button></div>`, 'dialog-wide');
 
-  $('#imp-tpl', d).onclick = () => {
-    const csv = 'Titel;Ressource;Kategorie;Datum;Start;Ende;Notiz\nA-Junioren Training;Trainingsplatz A;Training;27.10.2026;17:30;19:00;\n';
-    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'vorlage-belegungen.csv'; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
+  let sourceTable = null;
   let prepared = null;
+  const out = $('#imp-result', d);
+  const go = $('#imp-go', d);
+  const getSelection = () => ({
+    resource: selectedResource,
+    category: S.categories.find((c) => c.id === $('#imp-category', d)?.value)
+  });
+  const validate = async () => {
+    go.disabled = true;
+    prepared = null;
+    if (!sourceTable) return;
+    const { resource, category } = getSelection();
+    let result = L.validateMatchTable(sourceTable, { resource, category, existing: [], durationMinutes: 90 });
+    if (!result.errors.length && result.bookings.length) {
+      const dates = result.bookings.map((b) => new Date(b.starts_at).getTime());
+      const ends = result.bookings.map((b) => new Date(b.ends_at).getTime());
+      const existing = await S.store.getBookings({ from: new Date(Math.min(...dates)), to: new Date(Math.max(...ends)) });
+      result = L.validateMatchTable(sourceTable, { resource, category, existing, durationMinutes: 90 });
+    }
+    prepared = result;
+    out.innerHTML = renderImportResult(result);
+    go.disabled = !!(result.errors.length || result.conflicts.length || !result.bookings.length);
+    if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Spiele sind gültig. Pro Eintrag werden 90 Minuten reserviert.</p>`);
+  };
+  $('#imp-category', d).addEventListener('change', validate);
   $('#imp-file', d).onchange = async (e) => {
     const file = e.target.files[0];
-    const out = $('#imp-result', d);
-    const go = $('#imp-go', d);
-    go.disabled = true; prepared = null;
+    sourceTable = null;
+    prepared = null;
+    go.disabled = true;
     if (!file) return;
     try {
-      let table;
       if (/\.csv$/i.test(file.name)) {
-        table = L.parseCSV(await file.text());
-      } else if (/\.xlsx?$/i.test(file.name)) {
+        sourceTable = L.parseCSV(await file.text());
+      } else if (/\.xlsx$/i.test(file.name)) {
         const XLSX = await import('../vendor/xlsx.mjs');
-        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        table = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, blankrows: false, defval: '' });
+        sourceTable = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, blankrows: false, defval: '' });
       } else {
-        out.innerHTML = '<p class="notice notice-error">Dateiformat nicht unterstützt. Bitte CSV oder Excel (.xlsx) verwenden.</p>';
+        out.innerHTML = '<p class="notice notice-error">Bitte eine CSV- oder XLSX-Datei auswählen.</p>';
         return;
       }
-      let result = L.validateTable(table, { resources: S.resources, categories: S.categories, existing: [] });
-      if (result.bookings.length) {
-        const starts = result.bookings.map((b) => b.starts_at).sort();
-        const ends = result.bookings.map((b) => b.ends_at).sort();
-        const existing = await S.store.getBookings({ from: new Date(starts[0]), to: new Date(ends[ends.length - 1]) });
-        result = L.validateTable(table, { resources: S.resources, categories: S.categories, existing });
-      }
-      prepared = result;
-      out.innerHTML = renderImportResult(result);
-      go.disabled = !(result.errors.length === 0 && result.conflicts.length === 0 && result.bookings.length > 0);
-      if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Termine sind gültig und können importiert werden.</p>`);
+      await validate();
     } catch (err) {
       out.innerHTML = `<p class="notice notice-error">Die Datei konnte nicht gelesen werden: ${esc(err.message || err)}</p>`;
     }
   };
-
-  $('#imp-go', d).onclick = async () => {
-    if (!prepared) return;
-    const rows = prepared.bookings.map(({ _line, _resource, ...r }) => r);
+  go.onclick = async () => {
+    if (!prepared || go.disabled) return;
+    const rows = prepared.bookings.map(({ _line, _resource, ...booking }) => booking);
+    go.disabled = true;
     try {
       await S.store.createBookings(rows);
       d.close();
-      setNotice('ok', `${rows.length} Termine wurden importiert.`);
+      setNotice('ok', `${rows.length} Spiele wurden importiert.`);
       render();
     } catch (err) {
-      $('#imp-result', d).innerHTML = `<p class="notice notice-error">${esc(friendlyError(err))} Es wurde nichts importiert.</p>`;
+      out.innerHTML = `<p class="notice notice-error">${esc(friendlyError(err))} Es wurde nichts importiert.</p>`;
+      go.disabled = false;
     }
   };
 }
@@ -652,6 +720,35 @@ function renderImportResult(r) {
 }
 
 // ---------- Anmeldung ----------
+function openPasswordDialog({ title = 'Passwort festlegen' } = {}) {
+  if (!S.store.session) {
+    setNotice('error', 'Der Passwort-Link ist abgelaufen oder die Sitzung fehlt. Bitte einen neuen Link anfordern.');
+    return;
+  }
+  const d = makeDialog(title, `
+    <form id="password-form" class="form" novalidate>
+      <p class="muted">Verwende mindestens 10 Zeichen.</p>
+      <div class="field"><label for="pw-new">Neues Passwort</label><input id="pw-new" class="input" type="password" autocomplete="new-password" minlength="10" required></div>
+      <div class="field"><label for="pw-confirm">Passwort wiederholen</label><input id="pw-confirm" class="input" type="password" autocomplete="new-password" minlength="10" required></div>
+      <p class="msg" id="pw-msg" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button><button type="submit" class="btn btn-primary">Passwort speichern</button></div>
+    </form>`, 'dialog-narrow');
+  $('#password-form', d).onsubmit = async (e) => {
+    e.preventDefault();
+    const password = $('#pw-new', d).value;
+    const confirmPassword = $('#pw-confirm', d).value;
+    if (password.length < 10) return $('#pw-msg', d).textContent = 'Das Passwort muss mindestens 10 Zeichen lang sein.';
+    if (password !== confirmPassword) return $('#pw-msg', d).textContent = 'Die Passwörter stimmen nicht überein.';
+    try {
+      await S.store.updatePassword(password);
+      d.close();
+      setNotice('ok', 'Das Passwort wurde gespeichert.');
+      render();
+    } catch (err) { $('#pw-msg', d).textContent = friendlyError(err); }
+  };
+  $('#pw-new', d).focus();
+}
+
 function openLogin() {
   const s = S.store;
   if (s.mode === 'demo') {
@@ -666,27 +763,176 @@ function openLogin() {
       </form>`, 'dialog-narrow');
     $('#lf', d).onsubmit = async (e) => {
       e.preventDefault();
-      await s.signIn({ role: d.querySelector('input[name=role]:checked').value });
+      await s.signIn({ role: d.querySelector('input[name="role"]:checked').value });
       d.close(); setNotice('ok', 'Demo-Anmeldung erfolgreich.'); render();
     };
     return;
   }
   const d = makeDialog('Anmelden', `
     <form id="lf" class="form">
-      <p>Nur eingeladene Mitglieder können sich anmelden. Sie erhalten einen Anmeldelink per E-Mail (ohne Passwort).</p>
-      <div class="field"><label for="lf-mail">E-Mail-Adresse</label>
-        <input id="lf-mail" type="email" class="input" required autocomplete="email"></div>
+      <p>Nur von einem Administrator eingeladene Konten können sich anmelden.</p>
+      <div class="field"><label for="lf-mail">E-Mail-Adresse</label><input id="lf-mail" type="email" class="input" required autocomplete="email"></div>
+      <fieldset class="field"><legend>Anmeldeart</legend>
+        <label class="check"><input type="radio" name="login-mode" value="password" checked> E-Mail und Passwort</label>
+        <label class="check"><input type="radio" name="login-mode" value="magic"> Magic-Link per E-Mail</label>
+      </fieldset>
+      <div class="field" id="lf-password-wrap"><label for="lf-password">Passwort</label><input id="lf-password" type="password" class="input" autocomplete="current-password"></div>
+      <button type="button" class="link-btn" id="lf-forgot">Passwort vergessen?</button>
       <p class="msg" id="lf-msg" role="alert"></p>
-      <div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button><button type="submit" class="btn btn-primary">Anmeldelink senden</button></div>
+      <div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button><button type="submit" class="btn btn-primary" id="lf-submit">Anmelden</button></div>
     </form>`, 'dialog-narrow');
+  const modeInputs = [...d.querySelectorAll('input[name="login-mode"]')];
+  const syncMode = () => {
+    const mode = d.querySelector('input[name="login-mode"]:checked').value;
+    $('#lf-password-wrap', d).hidden = mode !== 'password';
+    $('#lf-forgot', d).hidden = mode !== 'password';
+    $('#lf-submit', d).textContent = mode === 'password' ? 'Anmelden' : 'Magic-Link senden';
+  };
+  modeInputs.forEach((input) => input.addEventListener('change', syncMode));
+  syncMode();
   $('#lf', d).onsubmit = async (e) => {
     e.preventDefault();
+    const email = $('#lf-mail', d).value.trim();
+    const mode = d.querySelector('input[name="login-mode"]:checked').value;
     try {
-      await s.signIn({ email: $('#lf-mail', d).value.trim() });
-      d.close();
-      setNotice('ok', 'Wenn die Adresse eingeladen ist, wurde ein Anmeldelink gesendet. Bitte E-Mail prüfen.');
-    } catch (err) { $('#lf-msg', d).textContent = friendlyError(err); }
+      if (mode === 'magic') {
+        await s.signIn({ email });
+        d.close();
+        setNotice('ok', 'Falls das Konto eingeladen ist, wurde ein Magic-Link gesendet.');
+      } else {
+        await s.signInWithPassword({ email, password: $('#lf-password', d).value });
+        d.close(); setNotice('ok', 'Sie sind angemeldet.'); render();
+      }
+    } catch { $('#lf-msg', d).textContent = 'Anmeldung nicht möglich. Prüfe E-Mail und Passwort oder fordere einen neuen Link an.'; }
   };
+  $('#lf-forgot', d).onclick = async () => {
+    const email = $('#lf-mail', d).value.trim();
+    if (!email) { $('#lf-msg', d).textContent = 'Bitte zuerst die E-Mail-Adresse eingeben.'; return; }
+    try {
+      await s.requestPasswordReset(email);
+      $('#lf-msg', d).textContent = 'Falls für diese Adresse ein Konto besteht, wurde ein Wiederherstellungslink gesendet.';
+    } catch { $('#lf-msg', d).textContent = 'Der Wiederherstellungslink konnte gerade nicht gesendet werden.'; }
+  };
+}
+
+function openAdmin() {
+  if (S.store.mode !== 'supabase' || !S.store.isAdmin()) {
+    setNotice('error', 'Der Admin-Bereich ist nur für Administratoren verfügbar.');
+    return;
+  }
+  renderAdmin();
+}
+
+async function renderAdmin() {
+  if (S.store.mode !== 'supabase' || !S.store.isAdmin()) {
+    app.innerHTML = '<section class="hero"><h1>Kein Zugriff</h1><p>Der Admin-Bereich ist nur für Administratoren verfügbar.</p></section>';
+    return;
+  }
+  app.innerHTML = '<p class="notice">Admin-Daten werden geladen …</p>';
+  let resources = [], users = [], audit = [], failures = [];
+  const results = await Promise.allSettled([S.store.getAllResources(), S.store.listMembers(), S.store.getAuditLog()]);
+  if (results[0].status === 'fulfilled') resources = results[0].value; else failures.push('Räume/Plätze: ' + friendlyError(results[0].reason));
+  if (results[1].status === 'fulfilled') users = results[1].value.users || []; else failures.push('Benutzerverwaltung: ' + friendlyError(results[1].reason));
+  if (results[2].status === 'fulfilled') audit = results[2].value || []; else failures.push('Änderungsprotokoll: ' + friendlyError(results[2].reason));
+  S.allResources = resources;
+  S.resources = resources.filter((r) => r.is_active !== false);
+  const resourceRows = resources.map((r) => `<tr>
+    <td><input class="input" data-resource-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name von ${esc(r.name)}"></td>
+    <td>${r.type === 'raum' ? 'Raum' : 'Platz'}</td>
+    <td><input type="color" class="input color-input" data-resource-color="${esc(r.id)}" value="${esc(r.color)}" aria-label="Farbe von ${esc(r.name)}"></td>
+    <td>${r.is_active === false ? '<span class="badge">Archiviert</span>' : '<span class="badge badge-role">Aktiv</span>'}</td>
+    <td class="admin-actions"><button type="button" class="btn btn-small" data-resource-save="${esc(r.id)}">Speichern</button>${r.is_active === false ? `<button type="button" class="btn btn-small" data-resource-restore="${esc(r.id)}">Wiederherstellen</button>` : `<button type="button" class="btn btn-small btn-danger" data-resource-archive="${esc(r.id)}">Archivieren</button>`}</td>
+  </tr>`).join('');
+  const userRows = users.map((u) => `<tr>
+    <td>${esc(u.email || '—')}</td><td>${u.email_confirmed_at ? 'Bestätigt' : 'Einladung ausstehend'}</td>
+    <td><select class="input" data-member-role="${esc(u.id)}"><option value="bearbeiter" ${u.role === 'bearbeiter' ? 'selected' : ''}>Bearbeiter</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option></select></td>
+    <td class="admin-actions"><button type="button" class="btn btn-small" data-member-save="${esc(u.id)}">Rolle speichern</button><button type="button" class="btn btn-small btn-danger" data-member-remove="${esc(u.id)}">Zugang entziehen</button></td>
+  </tr>`).join('');
+  const logRows = audit.map((entry) => {
+    const snapshot = entry.after_data || entry.before_data || {};
+    const resource = S.allResources.find((r) => r.id === snapshot.resource_id)?.name || '—';
+    const action = ({ created: 'Eingetragen', updated: 'Geändert', deleted: 'Gelöscht' })[entry.action] || entry.action;
+    const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
+    return `<tr><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'Unbekannter Benutzer')}</td><td>${esc(action)}</td><td>${esc(snapshot.title || '—')}<br><span class="muted">${esc(resource)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
+  }).join('');
+  app.innerHTML = `
+    <header class="page-head"><div><h1>Administration</h1><p class="muted">Ressourcen, Benutzer und Terminänderungen verwalten.</p></div></header>
+    ${failures.length ? `<div class="notice notice-warn"><strong>Einrichtung noch nicht vollständig:</strong><ul>${failures.map((m) => `<li>${esc(m)}</li>`).join('')}</ul><p>Bitte die Datenbankmigration und die Supabase-Funktion gemäß der mitgelieferten Einrichtungsanleitung bereitstellen.</p></div>` : ''}
+    <section class="section admin-section"><h2>Räume und Plätze</h2><form id="resource-form" class="form admin-resource-form">
+      <div class="field"><label for="resource-name">Name</label><input id="resource-name" class="input" required maxlength="80"></div>
+      <div class="field"><label for="resource-type">Typ</label><select id="resource-type" class="input"><option value="raum">Raum</option><option value="platz">Platz</option></select></div>
+      <div class="field"><label for="resource-color">Farbe</label><input id="resource-color" type="color" class="input color-input" value="#1f5fa8"></div>
+      <button type="submit" class="btn btn-primary">Hinzufügen</button><p class="msg" id="resource-msg" role="alert"></p></form>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Typ</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="5">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
+      <p class="hint">Entfernen archiviert eine Ressource, damit zugehörige Termin- und Protokolldaten erhalten bleiben. Für neu angelegte Ressourcen kann der Link kopiert werden; ein QR-Code wird erst nach dem QR-Build im Repository bereitgestellt.</p>
+    </section>
+    <section class="section admin-section"><h2>Benutzer und Einladungen</h2><form id="invite-form" class="form admin-invite-form">
+      <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
+      <div class="field"><label for="invite-role">Rolle</label><select id="invite-role" class="input"><option value="bearbeiter">Bearbeiter</option><option value="admin">Administrator</option></select></div>
+      <button type="submit" class="btn btn-primary">Einladung senden</button><p class="msg" id="invite-msg" role="alert"></p></form>
+      <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div>
+    </section>
+    <section class="section admin-section"><h2>Termin-Änderungsprotokoll</h2><p class="hint">Letzte 200 Einträge. Protokolleinträge sind unveränderlich.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Termin/Ressource</th><th>Änderungen</th></tr></thead><tbody>${logRows || '<tr><td colspan="5">Noch keine Protokolleinträge oder die Migration fehlt.</td></tr>'}</tbody></table></div>
+    </section>`;
+  bindAdmin(resources);
+}
+
+function slugifyResource(value) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+function bindAdmin(resources) {
+  const resourceForm = $('#resource-form');
+  if (resourceForm) resourceForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('#resource-name').value.trim();
+    if (!name) { $('#resource-msg').textContent = 'Bitte einen Namen eingeben.'; return; }
+    const slugBase = slugifyResource(name);
+    const slug = `${slugBase}-${crypto.randomUUID().slice(0, 6)}`;
+    try {
+      await S.store.createResource({ name, slug, type: $('#resource-type').value, color: $('#resource-color').value, sort_order: resources.length + 1, is_active: true });
+      await renderAdmin();
+      setNotice('ok', 'Ressource wurde hinzugefügt.');
+    } catch (err) { $('#resource-msg').textContent = friendlyError(err); }
+  };
+  document.querySelectorAll('[data-resource-save]').forEach((button) => button.onclick = async () => {
+    const id = button.dataset.resourceSave;
+    try {
+      const name = $(`[data-resource-name="${id}"]`).value.trim();
+      if (!name) { setNotice('error', 'Der Ressourcenname darf nicht leer sein.'); return; }
+      await S.store.updateResource(id, { name, color: $(`[data-resource-color="${id}"]`).value });
+      await renderAdmin(); setNotice('ok', 'Ressource wurde gespeichert.');
+    } catch (err) { setNotice('error', friendlyError(err)); }
+  });
+  document.querySelectorAll('[data-resource-archive]').forEach((button) => button.onclick = async () => {
+    if (!confirm('Ressource archivieren? Bestehende Termine und Protokolle bleiben erhalten.')) return;
+    try { await S.store.updateResource(button.dataset.resourceArchive, { is_active: false }); await renderAdmin(); setNotice('ok', 'Ressource wurde archiviert.'); }
+    catch (err) { setNotice('error', friendlyError(err)); }
+  });
+  document.querySelectorAll('[data-resource-restore]').forEach((button) => button.onclick = async () => {
+    try { await S.store.updateResource(button.dataset.resourceRestore, { is_active: true }); await renderAdmin(); setNotice('ok', 'Ressource wurde wiederhergestellt.'); }
+    catch (err) { setNotice('error', friendlyError(err)); }
+  });
+  const inviteForm = $('#invite-form');
+  if (inviteForm) inviteForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const msg = $('#invite-msg'); msg.textContent = '';
+    try {
+      await S.store.inviteMember($('#invite-email').value.trim(), $('#invite-role').value);
+      await renderAdmin(); setNotice('ok', 'Einladung wurde versendet.');
+    } catch (err) { msg.textContent = friendlyError(err); }
+  };
+  document.querySelectorAll('[data-member-save]').forEach((button) => button.onclick = async () => {
+    const role = $(`[data-member-role="${button.dataset.memberSave}"]`).value;
+    try { await S.store.setMemberRole(button.dataset.memberSave, role); await renderAdmin(); setNotice('ok', 'Rolle wurde gespeichert.'); }
+    catch (err) { setNotice('error', friendlyError(err)); }
+  });
+  document.querySelectorAll('[data-member-remove]').forEach((button) => button.onclick = async () => {
+    if (!confirm('Zugang entziehen? Der Benutzer verliert die Kalender-Berechtigung.')) return;
+    try { await S.store.removeMember(button.dataset.memberRemove); await renderAdmin(); setNotice('ok', 'Zugang wurde entzogen.'); }
+    catch (err) { setNotice('error', friendlyError(err)); }
+  });
 }
 
 // ---------- Hauptablauf ----------
@@ -701,12 +947,13 @@ async function render() {
     if (route.name === 'home') renderHome();
     else if (route.name === 'room') await renderRoom(route.res);
     else if (route.name === 'plan') await renderPlan();
+    else if (route.name === 'admin') await renderAdmin();
     else renderNotFound();
   } catch (err) {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {
@@ -716,15 +963,21 @@ async function boot() {
     await S.store.init();
     if (S.store.mode === 'supabase') {
       S.resources = await S.store.getResources();
+      S.allResources = S.resources;
       S.categories = await S.store.getCategories();
     } else {
       S.resources = S.store.resources;
+      S.allResources = S.resources;
       S.categories = S.store.categories;
     }
     // Weiterleitung von 404.html (GitHub Pages) übernehmen
     const p = new URLSearchParams(location.search).get('p');
     if (p) history.replaceState(null, '', BASE + p);
-    render();
+    await render();
+    if (S.store.authError) setNotice('error', S.store.authError);
+    if (S.store.mode === 'supabase' && ['invite', 'recovery', 'signup'].includes(S.store.pendingAuthFlow) && S.store.session) {
+      openPasswordDialog({ title: S.store.pendingAuthFlow === 'recovery' ? 'Neues Passwort festlegen' : 'Eigenes Passwort festlegen' });
+    }
   } catch (err) {
     app.innerHTML = `<p class="notice notice-error">Die Anwendung konnte nicht gestartet werden: ${esc(err.message || err)}</p>`;
   }

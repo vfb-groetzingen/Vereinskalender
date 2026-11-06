@@ -258,6 +258,75 @@ export function validateTable(table, { resources, categories, existing = [] }) {
   return { bookings, errors, conflicts };
 }
 
+export function validateMatchTable(table, { resource, category, existing = [], durationMinutes = 90 } = {}) {
+  const errors = [];
+  const conflicts = [];
+  const bookings = [];
+  if (!resource || !category) {
+    errors.push({ line: 1, message: 'Bitte Raum/Platz und Kategorie für den Import auswählen.' });
+    return { bookings, errors, conflicts };
+  }
+  if (!table || table.length < 2) {
+    errors.push({ line: 1, message: 'Die Datei enthält keine Spiele. Erwartet: Kopfzeile und mindestens eine Datenzeile.' });
+    return { bookings, errors, conflicts };
+  }
+  const headers = table[0].map((h) => String(h ?? '').trim().toLowerCase().replace(/\s+/g, ' '));
+  const aliases = {
+    date: ['start date', 'startdate'],
+    time: ['start time', 'starttime'],
+    subject: ['subject']
+  };
+  const cols = Object.fromEntries(Object.entries(aliases).map(([key, names]) => [key, headers.findIndex((h) => names.includes(h))]));
+  const missing = Object.entries(cols).filter(([, idx]) => idx < 0).map(([key]) => ({ date: 'Start Date', time: 'Start Time', subject: 'Subject' })[key]);
+  if (missing.length) {
+    errors.push({ line: 1, message: `Pflichtspalte(n) fehlen: ${missing.join(', ')}.` });
+    return { bookings, errors, conflicts };
+  }
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 720) {
+    errors.push({ line: 1, message: 'Die Importdauer muss zwischen 1 und 720 Minuten liegen.' });
+    return { bookings, errors, conflicts };
+  }
+  for (let i = 1; i < table.length; i++) {
+    const line = i + 1;
+    const row = table[i] || [];
+    if (row.every((v) => String(v ?? '').trim() === '')) continue;
+    const title = String(row[cols.subject] ?? '').trim();
+    const rowErrors = [];
+    if (!title) rowErrors.push('Subject fehlt.');
+    else if (title.length > 120) rowErrors.push('Subject ist länger als 120 Zeichen.');
+    const date = parseDate(row[cols.date]);
+    const time = parseTime(row[cols.time]);
+    if (date.error) rowErrors.push(`Start Date: ${date.error}`);
+    if (time.error) rowErrors.push(`Start Time: ${time.error}`);
+    if (rowErrors.length) {
+      rowErrors.forEach((message) => errors.push({ line, message: `Zeile ${line}: ${message}` }));
+      continue;
+    }
+    const startsAt = combine(date.value, time.value);
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
+    const candidate = {
+      resource_id: resource.id,
+      category_id: category.id,
+      title,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      notes: null,
+      series_id: null,
+      _line: line,
+      _resource: resource.name
+    };
+    const clash = findConflicts([...existing, ...bookings], candidate);
+    if (clash.length) {
+      const other = clash[0];
+      const src = other._line ? `Zeile ${other._line}` : `„${other.title}“`;
+      conflicts.push({ line, message: `Zeile ${line}: Überschneidung auf „${resource.name}“ mit ${src}.` });
+    }
+    bookings.push(candidate);
+  }
+  if (!bookings.length && !errors.length) errors.push({ line: 1, message: 'Die Datei enthält keine auswertbaren Spiele.' });
+  return { bookings, errors, conflicts };
+}
+
 export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

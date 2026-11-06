@@ -82,6 +82,7 @@ export class DemoStore {
   persist() { localStorage.setItem(DEMO_KEY, JSON.stringify(this.bookings)); }
   get role() { return this.session?.role || null; }
   isEditor() { return this.role === 'bearbeiter' || this.role === 'admin'; }
+  isAdmin() { return this.role === 'admin'; }
   requireEditor() {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung' };
   }
@@ -151,8 +152,12 @@ export class SupabaseStore {
     this.sessionKey = 'vk-supabase-session';
     this.session = JSON.parse(localStorage.getItem(this.sessionKey) || 'null');
     this.role = null;
+    this.pendingAuthFlow = null;
+    this.authError = null;
   }
   isEditor() { return this.role === 'bearbeiter' || this.role === 'admin'; }
+  isAdmin() { return this.role === 'admin'; }
+  redirectUrl() { return new URL(CONFIG.BASE_PATH, location.origin).href; }
 
   async _req(path, { method = 'GET', body, prefer, token } = {}) {
     const headers = { apikey: this.key };
@@ -185,9 +190,11 @@ export class SupabaseStore {
     localStorage.setItem(this.sessionKey, JSON.stringify(this.session));
   }
 
-  // Login-Link aus der URL-Adresse übernehmen (nach Klick auf den E-Mail-Link)
+  // Übernimmt Supabase-Session und erkennt Einladungs-/Wiederherstellungslinks.
   async init() {
     const hash = new URLSearchParams(location.hash.slice(1));
+    this.pendingAuthFlow = hash.get('type');
+    if (hash.get('error_description')) this.authError = hash.get('error_description').replace(/\+/g, ' ');
     if (hash.get('access_token')) {
       this._storeSession({ access_token: hash.get('access_token'), refresh_token: hash.get('refresh_token'), expires_in: Number(hash.get('expires_in') || 3600) });
       history.replaceState(null, '', location.pathname + location.search);
@@ -204,16 +211,48 @@ export class SupabaseStore {
   }
 
   async signIn({ email }) {
-    // Versendet einen Anmelde-Link. Benutzer müssen vorher eingeladen oder angelegt sein.
-   const redirectTo = new URL(CONFIG.BASE_PATH, location.origin).href;
-	  
-	 await this._req(
-    `/auth/v1/otp?redirect_to=${encodeURIComponent(redirectTo)}`,
-    {
-      method: 'POST',
-      body: { email, create_user: false },
-      token: this.key});
+    // Magic Link nur für bestehende/eingeladene Konten; Selbstregistrierung bleibt aus.
+    await this._req(`/auth/v1/otp?redirect_to=${encodeURIComponent(this.redirectUrl())}`, {
+      method: 'POST', body: { email, create_user: false }, token: this.key
+    });
   }
+
+  async signInWithPassword({ email, password }) {
+    const data = await this._req('/auth/v1/token?grant_type=password', {
+      method: 'POST', body: { email, password }, token: this.key
+    });
+    this._storeSession(data);
+    await this.init();
+  }
+
+  async requestPasswordReset(email) {
+    await this._req(`/auth/v1/recover?redirect_to=${encodeURIComponent(this.redirectUrl())}`, {
+      method: 'POST', body: { email }, token: this.key
+    });
+  }
+
+  async updatePassword(password) {
+    await this._req('/auth/v1/user', { method: 'PUT', body: { password } });
+    this.pendingAuthFlow = null;
+  }
+
+  async adminRequest(payload) {
+    if (!this.session?.access_token) throw { status: 401, message: 'Bitte erneut anmelden.' };
+    const res = await fetch(`${this.url}/functions/v1/admin-users`, {
+      method: 'POST',
+      headers: { apikey: this.key, Authorization: `Bearer ${this.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) throw { status: res.status, code: data?.code, message: data?.error || data?.message || res.statusText };
+    return data;
+  }
+
+  async listMembers() { return this.adminRequest({ action: 'list' }); }
+  async inviteMember(email, role) { return this.adminRequest({ action: 'invite', email, role }); }
+  async setMemberRole(userId, role) { return this.adminRequest({ action: 'set_role', userId, role }); }
+  async removeMember(userId) { return this.adminRequest({ action: 'remove', userId }); }
 
   async signOut() {
     this.session = null;
@@ -221,8 +260,12 @@ export class SupabaseStore {
     localStorage.removeItem(this.sessionKey);
   }
 
-  async getResources() { return this._req('/rest/v1/resources?select=*&order=sort_order'); }
+  async getResources() { return this._req('/rest/v1/resources?select=*&is_active=eq.true&order=sort_order'); }
+  async getAllResources() { return this._req('/rest/v1/resources?select=*&order=sort_order'); }
   async getCategories() { return this._req('/rest/v1/categories?select=*&order=name'); }
+  async createResource(resource) { return this._req('/rest/v1/resources', { method: 'POST', body: resource, prefer: 'return=representation' }); }
+  async updateResource(id, patch) { return this._req(`/rest/v1/resources?id=eq.${id}`, { method: 'PATCH', body: patch, prefer: 'return=representation' }); }
+  async getAuditLog() { return this._req('/rest/v1/booking_audit_log?select=*&order=occurred_at.desc&limit=200'); }
 
   async getBookings({ from, to }) {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';
