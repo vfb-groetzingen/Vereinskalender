@@ -1,0 +1,8 @@
+# Geheimnisse und lokale Dateien niemals committen
+.env
+.env.*
+*.key
+backup.sql
+*.sql.gpg
+node_modules/
+.DS_Store

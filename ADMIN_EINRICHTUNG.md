@@ -6,10 +6,11 @@ Die Website ist statisch auf GitHub Pages. Für Einladungen und Rollenverwaltung
 
 Im richtigen Supabase-Projekt den Inhalt von `supabase/migration-admin-audit.sql` im SQL Editor ausführen. Die Migration ergänzt:
 
-- `resources.is_active` für Archivierung statt Datenverlust
-- ein append-only Termin-Audit-Log mit Benutzer, Zeitpunkt, Aktion sowie Vorher-/Nachher-Daten
-- Admin-only-Leserechte für das Protokoll
-- Ressourcen können nicht mehr physisch gelöscht, sondern nur archiviert werden
+- `resources.is_active` für Deaktivieren statt Datenverlust
+- `resources.sort_order` für eine globale, dauerhaft gespeicherte Reihenfolge (Bestandsdaten erhalten eine stabile Anfangsreihenfolge)
+- Admin-only-Leserechte für das append-only Termin-Audit-Log mit Akteur, Zeitpunkt, Aktion sowie Vorher-/Nachher-Daten
+- eine sichere Admin-RPC zum endgültigen Löschen: nur wenn keine aktuellen oder zukünftigen Termine bestehen; vergangene Buchungen werden mitgelöscht, Audit-Einträge bleiben erhalten
+- `resource_name`-Snapshots, damit Audit-Einträge auch nach Ressourcenlöschung lesbar bleiben
 
 Das bestehende `supabase/schema.sql` enthält dieselben Änderungen für eine Neuinstallation.
 
@@ -48,7 +49,8 @@ Für Einladungs- und Passwort-Wiederherstellungs-E-Mails muss die Supabase-Best�
 ## 5. Tests nach dem Deployment
 
 - Als Admin anmelden: Administration erscheint; Bearbeiter und Besucher erhalten keinen Zugriff auf `/admin`.
-- Raum/Platz anlegen, umbenennen, Farbe ändern, archivieren und wiederherstellen.
+- Raum/Platz anlegen, umbenennen, Farbe/Reihenfolge ändern, deaktivieren und aktivieren.
+- Endgültiges Löschen ohne Zukunftstermine testen: vergangene Buchungen werden gelöscht, Audit-Protokoll bleibt. Mit einem Zukunftstermin muss das Löschen blockiert werden.
 - Benutzer einladen, Bestätigungslink öffnen, Passwort festlegen; Passwort- und Magic-Link-Login testen.
 - Passwort vergessen, Recovery-Link öffnen und neues Passwort setzen.
 - Als Bearbeiter und als Admin Termine anlegen, ändern und löschen; im Admin-Protokoll müssen Akteur, Zeit, Aktion und Vorher-/Nachher-Daten stehen.
