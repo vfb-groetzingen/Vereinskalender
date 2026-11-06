@@ -141,6 +141,11 @@ export class DemoStore {
     this.bookings = this.bookings.filter((b) => !ids.includes(b.id));
     this.persist();
   }
+  async deleteSeries(seriesId) {
+    this.requireEditor();
+    this.bookings = this.bookings.filter((b) => b.series_id !== seriesId);
+    this.persist();
+  }
 }
 
 // ---------- Supabase-Speicher ----------
@@ -260,11 +265,12 @@ export class SupabaseStore {
     localStorage.removeItem(this.sessionKey);
   }
 
-  async getResources() { return this._req('/rest/v1/resources?select=*&is_active=eq.true&order=sort_order'); }
-  async getAllResources() { return this._req('/rest/v1/resources?select=*&order=sort_order'); }
+  async getResources() { return this._req('/rest/v1/resources?select=*&is_active=eq.true&order=sort_order.asc,name.asc'); }
+  async getAllResources() { return this._req('/rest/v1/resources?select=*&order=sort_order.asc,name.asc'); }
   async getCategories() { return this._req('/rest/v1/categories?select=*&order=name'); }
   async createResource(resource) { return this._req('/rest/v1/resources', { method: 'POST', body: resource, prefer: 'return=representation' }); }
   async updateResource(id, patch) { return this._req(`/rest/v1/resources?id=eq.${id}`, { method: 'PATCH', body: patch, prefer: 'return=representation' }); }
+  async deleteResource(id) { return this._req('/rest/v1/rpc/admin_delete_resource', { method: 'POST', body: { p_resource_id: id }, prefer: 'return=minimal' }); }
   async getAuditLog() { return this._req('/rest/v1/booking_audit_log?select=*&order=occurred_at.desc&limit=200'); }
 
   async getBookings({ from, to }) {
@@ -288,6 +294,9 @@ export class SupabaseStore {
   }
   async deleteBookings(ids) {
     return this._req(`/rest/v1/bookings?id=in.(${ids.join(',')})`, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+  async deleteSeries(seriesId) {
+    return this._req(`/rest/v1/bookings?series_id=eq.${encodeURIComponent(seriesId)}`, { method: 'DELETE', prefer: 'return=minimal' });
   }
 }
 

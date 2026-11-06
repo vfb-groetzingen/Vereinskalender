@@ -121,11 +121,23 @@ export function layoutLanes(items) {
   return result;
 }
 
-// Erzeugt Wochenserien: Startdatum plus n weitere Wochen (Gesamtzahl inkl. Start).
-export function seriesDates(dateStr, count) {
-  const dates = [];
+// Erzeugt wiederkehrende Termine; count enthält den ersten Termin.
+// Monats- und Jahresserien bleiben am ursprünglichen Kalendertag verankert.
+export function seriesDates(dateStr, count, frequency = 'weekly') {
   const base = parseISODate(dateStr);
-  for (let i = 0; i < count; i++) dates.push(ymd(addDays(base, i * 7)));
+  if (!Number.isInteger(count) || count < 1 || count > 52) throw new RangeError('Die Anzahl muss zwischen 1 und 52 liegen.');
+  if (!['weekly', 'biweekly', 'monthly', 'yearly'].includes(frequency)) throw new RangeError('Unbekanntes Wiederholungsintervall.');
+  const dates = [];
+  for (let i = 0; i < count; i++) {
+    if (frequency === 'weekly') dates.push(ymd(addDays(base, i * 7)));
+    else if (frequency === 'biweekly') dates.push(ymd(addDays(base, i * 14)));
+    else {
+      const year = base.getFullYear() + (frequency === 'yearly' ? i : Math.floor((base.getMonth() + i) / 12));
+      const month = frequency === 'yearly' ? base.getMonth() : (base.getMonth() + i) % 12;
+      const day = Math.min(base.getDate(), new Date(year, month + 1, 0).getDate());
+      dates.push(ymd(new Date(year, month, day)));
+    }
+  }
   return dates;
 }
 

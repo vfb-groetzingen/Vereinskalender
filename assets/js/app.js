@@ -10,9 +10,14 @@ const DS = CONFIG.DAY_START;
 const DE = CONFIG.DAY_END;
 const BASE = CONFIG.BASE_PATH.replace(/\/$/, '');
 const HOME = BASE + '/';
+const LOGO_URL = new URL('assets/images/vfb-groetzingen-logo.jpg', ROOT).href;
 const $ = (s, r = document) => r.querySelector(s);
 const esc = L.escapeHtml;
 const app = $('#app');
+const newUuid = () => globalThis.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  const r = Math.random() * 16 | 0;
+  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+});
 
 const S = {
   store: null,
@@ -107,7 +112,7 @@ function renderHeader() {
   const passwordBtn = s.mode === 'supabase' && s.session ? '<button type="button" class="btn btn-ghost" id="btn-password">Passwort</button>' : '';
   $('#header').innerHTML = `
     <div class="wrap topbar">
-      <a class="brand" href="${HOME}" data-link="/">${esc(S.seed.settings.vereins_name)}</a>
+      <a class="brand" href="${HOME}" data-link="/" aria-label="Zur Startseite"><img class="brand-logo" src="${esc(LOGO_URL)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim"></a>
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
         <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
@@ -130,6 +135,7 @@ function renderHome() {
       <a class="room-name" href="${roomUrl(r.slug)}" data-link="/raeume/${esc(r.slug)}">${esc(r.name)}</a>
       <span class="room-actions">
         ${S.seed.resources.some((seedResource) => seedResource.slug === r.slug) ? `<a class="btn btn-small" href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR-Code</a>` : ''}
+        <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
         <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
       </span>
     </li>`).join('');
@@ -151,6 +157,7 @@ function renderHome() {
       <ul class="room-list">${list(plaetze)}</ul>
     </section>`;
   bindCopy();
+  bindPosterButtons();
 }
 
 function bindCopy() {
@@ -159,6 +166,99 @@ function bindCopy() {
     try { await navigator.clipboard.writeText(url); setNotice('ok', 'Link wurde kopiert.'); }
     catch { setNotice('error', 'Der Link konnte nicht kopiert werden: ' + url); }
   }));
+}
+
+function bindPosterButtons() {
+  document.querySelectorAll('[data-poster-slug]').forEach((button) => {
+    button.addEventListener('click', () => openQrPoster(button.dataset.posterSlug));
+  });
+}
+
+function openQrPoster(slug) {
+  const resource = S.resources.find((r) => r.slug === slug);
+  if (!resource) return;
+  const poster = window.open('', '_blank');
+  if (!poster) { setNotice('error', 'Das Plakatfenster wurde blockiert. Bitte Pop-ups für diese Website erlauben.'); return; }
+  const logo = LOGO_URL;
+  // Reuse the existing resource QR SVG directly; do not redraw or modify its data.
+  const qr = new URL(`qr/${encodeURIComponent(resource.slug)}.svg`, ROOT).href;
+  const target = new URL(`raeume/${encodeURIComponent(resource.slug)}`, ROOT).href;
+  poster.document.open();
+  poster.document.write(`<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>QR-Plakat – ${esc(resource.name)}</title>
+<style>
+@page{size:A4 portrait;margin:0}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Inter,"Open Sans",Arial,sans-serif;color:#20242a}
+body{background:#f3f3f3}
+.screen-actions{display:flex;justify-content:center;gap:10px;padding:14px}
+.screen-actions button{font:600 16px Inter,"Open Sans",Arial,sans-serif;padding:10px 20px;border:0;border-radius:4px;background:#c8102e;color:#fff;cursor:pointer}
+.screen-actions button:hover{background:#a90d27}
+.screen-actions button:focus-visible{outline:3px solid #20242a;outline-offset:3px}
+.screen-actions button.secondary{background:#fff;color:#a90d27;border:1px solid #c8102e}
+.poster{position:relative;width:210mm;height:297mm;margin:0 auto;overflow:hidden;background:#fff;box-shadow:0 8px 32px #0002}
+.poster:before{content:"";position:absolute;inset:7mm;border:.6mm solid #c8102e;pointer-events:none}
+.poster-content{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:11mm 14mm 10mm}
+.club-logo{display:block;width:auto;height:auto;max-width:169mm;max-height:37.5mm;object-fit:contain;margin:0 auto 5mm}
+.poster-rule{width:36mm;height:1.5mm;background:#c8102e;margin:6mm auto 0}
+.qr-zone{display:grid;place-items:center;width:136mm;height:136mm;padding:10mm;background:#fff;border:.45mm solid #ead5d9}
+.qr-image{display:block;width:100%;height:100%;object-fit:contain;filter:none;transform:none;image-rendering:auto}
+.qr-error{display:none;margin:3mm auto 0;color:#a90d27;font-weight:700;font-size:11pt}
+.motto{max-width:174mm;margin:8mm 0 3mm;color:#b10f2d;font-weight:800;font-size:25pt;line-height:1.12;letter-spacing:.005em}
+.resource-label{margin:0 0 1.5mm;color:#656b73;font-size:9.5pt;font-weight:700;letter-spacing:.15em;text-transform:uppercase}
+.resource-name{margin:0;color:#20242a;font-size:19pt;font-weight:800;line-height:1.15}
+.scan-copy{margin:3mm 0 0;color:#41464d;font-size:12pt;font-weight:600}
+.poster-link{margin:3mm 0 0;color:#6b7077;font-size:9pt;overflow-wrap:anywhere}
+.poster-footer{margin-top:auto;padding-top:5mm;color:#a90d27;font-size:10pt;font-weight:700;letter-spacing:.08em}
+.poster-footer:before{content:"";display:block;width:28mm;height:1mm;margin:0 auto 3mm;background:#c8102e}
+@media screen{
+  .poster{width:min(210mm,calc(100vw - 24px));height:auto;aspect-ratio:210/297}
+  .poster-content{min-height:100%;padding:5.3% 6.7% 4.5%}
+  .club-logo{max-width:84%;max-height:13%;margin-bottom:2.2%}
+  .poster-rule{width:18%;height:3px;margin-top:2.2%}
+  .qr-zone{width:min(136mm,66vw);height:auto;aspect-ratio:1;padding:4.8%;border-width:1px}
+  .motto{font-size:clamp(20px,3.8vw,34px);margin:3.8% 0 1.5%}
+  .resource-label{font-size:clamp(8px,1.3vw,12px)}
+  .resource-name{font-size:clamp(18px,2.6vw,26px)}
+  .scan-copy{font-size:clamp(11px,1.7vw,16px);margin-top:1.6%}
+  .poster-link{font-size:clamp(8px,1.15vw,11px);margin-top:1.5%}
+  .poster-footer{font-size:clamp(9px,1.35vw,12px);padding-top:2.5%}
+  .poster-footer:before{height:2px;margin-bottom:1.5%}
+}
+@media print{
+  html,body{width:210mm;height:297mm;background:#fff}
+  .screen-actions{display:none!important}
+  .poster{width:210mm;height:297mm;margin:0;box-shadow:none}
+  .poster-content{padding:11mm 14mm 10mm}
+  .club-logo{max-width:169mm;max-height:37.5mm;margin-bottom:5mm}
+  .poster-rule{width:36mm;height:1.5mm;margin-top:6mm}
+  .qr-zone{width:136mm;height:136mm;padding:10mm}
+  .motto{font-size:25pt;margin:8mm 0 3mm}
+  .resource-label{font-size:9.5pt}
+  .resource-name{font-size:19pt}
+  .scan-copy{font-size:12pt;margin-top:3mm}
+  .poster-link{font-size:9pt;margin-top:3mm}
+  .poster-footer{font-size:10pt;padding-top:5mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style></head><body>
+<div class="screen-actions"><button id="print-poster" type="button">Drucken</button><button class="secondary" type="button" onclick="window.close()">Schließen</button></div>
+<main class="poster"><div class="poster-content">
+<img class="club-logo" src="${esc(logo)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim">
+<div class="qr-zone"><img id="poster-qr" class="qr-image" src="${esc(qr)}" alt="Original-QR-Code für ${esc(resource.name)}"></div>
+<p id="qr-error" class="qr-error">Für diese Ressource ist noch kein QR-Code vorhanden.</p>
+<div class="poster-rule" aria-hidden="true"></div>
+<h1 class="motto">Schaue dir die aktuelle Belegung an</h1>
+<p class="resource-label">Belegungskalender</p><h2 class="resource-name">${esc(resource.name)}</h2>
+<p class="scan-copy">Mit der Smartphone-Kamera scannen</p><p class="poster-link">${esc(target)}</p>
+<p class="poster-footer">VfB 04 Grötzingen e. V.</p></div></main></body></html>`);
+  poster.document.close();
+  poster.document.getElementById('print-poster').addEventListener('click', () => poster.print());
+  poster.document.getElementById('poster-qr').addEventListener('error', () => {
+    poster.document.getElementById('qr-error').style.display = 'block';
+    poster.document.getElementById('print-poster').disabled = true;
+    poster.document.getElementById('print-poster').textContent = 'QR-Code fehlt';
+  }, { once: true });
 }
 
 // ---------- Zeitfenster ----------
@@ -204,6 +304,7 @@ async function renderRoom(res) {
         <p class="muted">${res.type === 'raum' ? 'Raum' : 'Platz'} · Direktlink: <a href="${roomUrl(res.slug)}" data-link="/raeume/${esc(res.slug)}">${esc(roomUrl(res.slug))}</a></p>
       </div>
       <div class="page-actions">
+        <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
         <a class="btn btn-ghost" href="${qrUrl(res.slug)}" download="qr-${esc(res.slug)}.svg">QR-Code laden</a>
         <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
         ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button><button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
@@ -228,6 +329,7 @@ async function renderRoom(res) {
       ${futureTable(S.futureList)}
     </section>`;
   bindCopy();
+  bindPosterButtons();
   bindRoomControls(res);
 }
 
@@ -516,9 +618,8 @@ function openDetail(id, editFirst = false) {
   };
   const ds = $('#d-del-series', d);
   if (ds) ds.onclick = async () => {
-    const ids = S.bookings.filter((x) => x.series_id === b.series_id).map((x) => x.id);
-    if (!confirm(`Alle ${ids.length} geladenen Termine dieser Serie löschen?`)) return;
-    try { await S.store.deleteBookings(ids); d.close(); setNotice('ok', 'Serie wurde gelöscht.'); render(); }
+    if (!confirm('Alle Termine der gesamten Wiederholungsserie endgültig löschen?')) return;
+    try { await S.store.deleteSeries(b.series_id); d.close(); setNotice('ok', 'Die gesamte Terminserie wurde gelöscht.'); render(); }
     catch (e) { msg(friendlyError(e)); }
   };
 }
@@ -554,10 +655,11 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <div class="field"><label for="bf-end">Endzeit <span class="req">*</span></label>
           <input id="bf-end" type="time" class="input" value="${end ? hhmm(end) : '18:00'}" required></div>
       </div>
-      ${isEdit ? '' : `<div class="field-row">
-        <div class="field"><label class="check"><input type="checkbox" id="bf-series"> Wöchentliche Serie anlegen</label></div>
-        <div class="field"><label for="bf-count">Anzahl Termine</label>
-          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled></div></div>`}
+      ${isEdit ? '' : `<div class="field-row recurrence-row">
+        <div class="field"><label for="bf-repeat">Wiederholung</label>
+          <select id="bf-repeat" class="input"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="biweekly">Alle 2 Wochen</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div>
+        <div class="field"><label for="bf-count">Anzahl Termine insgesamt</label>
+          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div></div>`}
       <div class="field"><label for="bf-note">Notiz (nur für Mitglieder sichtbar)</label>
         <textarea id="bf-note" class="input" rows="3" maxlength="1000">${esc(booking?.notes || '')}</textarea></div>
       <p class="msg" id="bf-msg" role="alert"></p>
@@ -569,8 +671,8 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
 
   const form = $('#bf', d);
   const msg = (t) => { $('#bf-msg', d).textContent = t; };
-  const series = $('#bf-series', d);
-  if (series) series.onchange = () => { $('#bf-count', d).disabled = !series.checked; };
+  const repeat = $('#bf-repeat', d);
+  if (repeat) repeat.onchange = () => { $('#bf-count', d).disabled = repeat.value === 'none'; };
 
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -586,8 +688,12 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     if (!dateStr || !s || !en) return msg('Bitte Datum, Start- und Endzeit eingeben.');
     const parsedS = L.combine(dateStr, s), parsedE = L.combine(dateStr, en);
     if (parsedE <= parsedS) return msg('Die Endzeit muss nach der Startzeit liegen.');
-    const count = series && series.checked ? Math.min(52, Math.max(2, Number($('#bf-count', d).value) || 2)) : 1;
-    const dates = count > 1 ? L.seriesDates(dateStr, count) : [dateStr];
+    const frequency = repeat?.value || 'none';
+    const countInput = Number($('#bf-count', d)?.value);
+    if (frequency !== 'none' && (!Number.isInteger(countInput) || countInput < 2 || countInput > 52)) return msg('Für eine Wiederholung bitte 2 bis 52 Termine angeben.');
+    const count = frequency === 'none' ? 1 : countInput;
+    const dates = count > 1 ? L.seriesDates(dateStr, count, frequency) : [dateStr];
+    const seriesId = count > 1 ? newUuid() : null;
     const rows = dates.map((ds) => ({
       resource_id: resId,
       category_id: catId,
@@ -595,7 +701,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       starts_at: L.combine(ds, s).toISOString(),
       ends_at: L.combine(ds, en).toISOString(),
       notes,
-      series_id: count > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null
+      series_id: seriesId
     }));
     // Vorprüfung gegen geladene Termine (die Datenbank prüft immer vollständig)
     for (const r of rows) {
@@ -606,7 +712,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       if (isEdit) {
         await S.store.updateBooking(booking.id, { title, resource_id: resId, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
       } else {
-        await S.store.createBookings(rows.map(({ series_id, ...r }) => (count > 1 ? { ...r, series_id } : r)));
+        await S.store.createBookings(rows);
       }
       d.close();
       setNotice('ok', isEdit ? 'Termin wurde gespeichert.' : (count > 1 ? `${count} Termine wurden angelegt.` : 'Termin wurde angelegt.'));
@@ -839,9 +945,10 @@ async function renderAdmin() {
   const resourceRows = resources.map((r) => `<tr>
     <td><input class="input" data-resource-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name von ${esc(r.name)}"></td>
     <td>${r.type === 'raum' ? 'Raum' : 'Platz'}</td>
+    <td><label class="order-field"><span class="sr-only">Reihenfolge für ${esc(r.name)}</span><input type="number" min="1" step="1" class="input order-input" data-resource-order="${esc(r.id)}" value="${Number(r.sort_order) || 1}"></label></td>
     <td><input type="color" class="input color-input" data-resource-color="${esc(r.id)}" value="${esc(r.color)}" aria-label="Farbe von ${esc(r.name)}"></td>
-    <td>${r.is_active === false ? '<span class="badge">Archiviert</span>' : '<span class="badge badge-role">Aktiv</span>'}</td>
-    <td class="admin-actions"><button type="button" class="btn btn-small" data-resource-save="${esc(r.id)}">Speichern</button>${r.is_active === false ? `<button type="button" class="btn btn-small" data-resource-restore="${esc(r.id)}">Wiederherstellen</button>` : `<button type="button" class="btn btn-small btn-danger" data-resource-archive="${esc(r.id)}">Archivieren</button>`}</td>
+    <td>${r.is_active === false ? '<span class="badge">Inaktiv</span>' : '<span class="badge badge-role">Aktiv</span>'}</td>
+    <td class="admin-actions"><button type="button" class="btn btn-small" data-resource-save="${esc(r.id)}">Speichern</button>${r.is_active === false ? `<button type="button" class="btn btn-small" data-resource-restore="${esc(r.id)}">Aktivieren</button>` : `<button type="button" class="btn btn-small btn-danger" data-resource-archive="${esc(r.id)}">Deaktivieren</button>`}<button type="button" class="btn btn-small btn-danger" data-resource-delete="${esc(r.id)}" data-resource-name-label="${esc(r.name)}">Endgültig löschen</button></td>
   </tr>`).join('');
   const userRows = users.map((u) => `<tr>
     <td>${esc(u.email || '—')}</td><td>${u.email_confirmed_at ? 'Bestätigt' : 'Einladung ausstehend'}</td>
@@ -850,7 +957,7 @@ async function renderAdmin() {
   </tr>`).join('');
   const logRows = audit.map((entry) => {
     const snapshot = entry.after_data || entry.before_data || {};
-    const resource = S.allResources.find((r) => r.id === snapshot.resource_id)?.name || '—';
+    const resource = S.allResources.find((r) => r.id === snapshot.resource_id)?.name || snapshot.resource_name || snapshot.resource_id || '—';
     const action = ({ created: 'Eingetragen', updated: 'Geändert', deleted: 'Gelöscht' })[entry.action] || entry.action;
     const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
     return `<tr><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'Unbekannter Benutzer')}</td><td>${esc(action)}</td><td>${esc(snapshot.title || '—')}<br><span class="muted">${esc(resource)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
@@ -863,8 +970,9 @@ async function renderAdmin() {
       <div class="field"><label for="resource-type">Typ</label><select id="resource-type" class="input"><option value="raum">Raum</option><option value="platz">Platz</option></select></div>
       <div class="field"><label for="resource-color">Farbe</label><input id="resource-color" type="color" class="input color-input" value="#1f5fa8"></div>
       <button type="submit" class="btn btn-primary">Hinzufügen</button><p class="msg" id="resource-msg" role="alert"></p></form>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Typ</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="5">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
-      <p class="hint">Entfernen archiviert eine Ressource, damit zugehörige Termin- und Protokolldaten erhalten bleiben. Für neu angelegte Ressourcen kann der Link kopiert werden; ein QR-Code wird erst nach dem QR-Build im Repository bereitgestellt.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="6">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
+      <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
+      <p class="hint">Für neu angelegte Ressourcen kann der Link kopiert werden. Ein QR-Code samt Plakat wird nach dem QR-Build im Repository bereitgestellt.</p>
     </section>
     <section class="section admin-section"><h2>Benutzer und Einladungen</h2><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
@@ -889,9 +997,10 @@ function bindAdmin(resources) {
     const name = $('#resource-name').value.trim();
     if (!name) { $('#resource-msg').textContent = 'Bitte einen Namen eingeben.'; return; }
     const slugBase = slugifyResource(name);
-    const slug = `${slugBase}-${crypto.randomUUID().slice(0, 6)}`;
+    const slug = `${slugBase}-${newUuid().slice(0, 6)}`;
     try {
-      await S.store.createResource({ name, slug, type: $('#resource-type').value, color: $('#resource-color').value, sort_order: resources.length + 1, is_active: true });
+      const nextOrder = Math.max(0, ...resources.map((r) => Number(r.sort_order) || 0)) + 1;
+      await S.store.createResource({ name, slug, type: $('#resource-type').value, color: $('#resource-color').value, sort_order: nextOrder, is_active: true });
       await renderAdmin();
       setNotice('ok', 'Ressource wurde hinzugefügt.');
     } catch (err) { $('#resource-msg').textContent = friendlyError(err); }
@@ -900,18 +1009,27 @@ function bindAdmin(resources) {
     const id = button.dataset.resourceSave;
     try {
       const name = $(`[data-resource-name="${id}"]`).value.trim();
+      const sort_order = Number($(`[data-resource-order="${id}"]`).value);
       if (!name) { setNotice('error', 'Der Ressourcenname darf nicht leer sein.'); return; }
-      await S.store.updateResource(id, { name, color: $(`[data-resource-color="${id}"]`).value });
+      if (!Number.isInteger(sort_order) || sort_order < 1) { setNotice('error', 'Die Reihenfolge muss eine positive ganze Zahl sein.'); return; }
+      await S.store.updateResource(id, { name, color: $(`[data-resource-color="${id}"]`).value, sort_order });
       await renderAdmin(); setNotice('ok', 'Ressource wurde gespeichert.');
     } catch (err) { setNotice('error', friendlyError(err)); }
   });
   document.querySelectorAll('[data-resource-archive]').forEach((button) => button.onclick = async () => {
-    if (!confirm('Ressource archivieren? Bestehende Termine und Protokolle bleiben erhalten.')) return;
-    try { await S.store.updateResource(button.dataset.resourceArchive, { is_active: false }); await renderAdmin(); setNotice('ok', 'Ressource wurde archiviert.'); }
+    if (!confirm('Ressource deaktivieren? Bestehende Termine und Protokolle bleiben erhalten.')) return;
+    try { await S.store.updateResource(button.dataset.resourceArchive, { is_active: false }); await renderAdmin(); setNotice('ok', 'Ressource wurde deaktiviert.'); }
     catch (err) { setNotice('error', friendlyError(err)); }
   });
   document.querySelectorAll('[data-resource-restore]').forEach((button) => button.onclick = async () => {
-    try { await S.store.updateResource(button.dataset.resourceRestore, { is_active: true }); await renderAdmin(); setNotice('ok', 'Ressource wurde wiederhergestellt.'); }
+    try { await S.store.updateResource(button.dataset.resourceRestore, { is_active: true }); await renderAdmin(); setNotice('ok', 'Ressource wurde aktiviert.'); }
+    catch (err) { setNotice('error', friendlyError(err)); }
+  });
+  document.querySelectorAll('[data-resource-delete]').forEach((button) => button.onclick = async () => {
+    const name = button.dataset.resourceNameLabel || 'Diese Ressource';
+    const warning = `${name} endgültig löschen? Das ist nur möglich, wenn keine aktuellen oder zukünftigen Termine mehr bestehen. Alle vergangenen Buchungen werden gelöscht; die Audit-Protokolle bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden.`;
+    if (!confirm(warning)) return;
+    try { await S.store.deleteResource(button.dataset.resourceDelete); await renderAdmin(); setNotice('ok', 'Ressource und vergangene Buchungen wurden endgültig gelöscht.'); }
     catch (err) { setNotice('error', friendlyError(err)); }
   });
   const inviteForm = $('#invite-form');
