@@ -79,6 +79,20 @@ test('Löschen erfordert Berechtigung', async () => {
   await assert.rejects(() => s.deleteBookings([a.id]), (e) => e.code === '42501');
 });
 
+test('Gesamte Wiederholungsserie wird unabhängig vom aktuell geladenen Kalender gelöscht', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const seriesId = 'serie-test';
+  await s.createBookings([
+    booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { series_id: seriesId }),
+    booking(res, '2030-01-21T17:00:00Z', '2030-01-21T18:00:00Z', { series_id: seriesId }),
+    booking(res, '2030-01-08T17:00:00Z', '2030-01-08T18:00:00Z', { series_id: 'andere-serie' })
+  ]);
+  await s.deleteSeries(seriesId);
+  assert.equal(s.bookings.some((b) => b.series_id === seriesId), false);
+  assert.equal(s.bookings.some((b) => b.series_id === 'andere-serie'), true);
+});
+
 test('Demo-Startdaten enthalten keine Doppelbelegungen', () => {
   const s = fresh();
   const byRes = new Map();

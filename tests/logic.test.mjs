@@ -140,7 +140,23 @@ test('Lanes: überlappende Termine erhalten getrennte Spuren', () => {
 });
 
 test('Serien: wöchentliche Termine', () => {
-  assert.deepEqual(L.seriesDates('2026-10-26', 3), ['2026-10-26', '2026-11-02', '2026-11-09']);
+  assert.deepEqual(L.seriesDates('2026-10-26', 3, 'weekly'), ['2026-10-26', '2026-11-02', '2026-11-09']);
+});
+
+test('Serien: alle zwei Wochen', () => {
+  assert.deepEqual(L.seriesDates('2026-10-26', 3, 'biweekly'), ['2026-10-26', '2026-11-09', '2026-11-23']);
+});
+
+test('Serien: monatlich bleibt der ursprüngliche Kalendertag erhalten und wird am Monatsende begrenzt', () => {
+  assert.deepEqual(L.seriesDates('2025-01-31', 4, 'monthly'), ['2025-01-31', '2025-02-28', '2025-03-31', '2025-04-30']);
+});
+
+test('Serien: jährlich behandelt Schalttage ohne Datumsdrift', () => {
+  assert.deepEqual(L.seriesDates('2024-02-29', 5, 'yearly'), ['2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28', '2028-02-29']);
+});
+
+test('Serien: unbekanntes Wiederholungsintervall wird abgelehnt', () => {
+  assert.throws(() => L.seriesDates('2026-10-26', 3, 'daily'), /Wiederholungsintervall/);
 });
 
 test('Zeitumstellung am 25.10.2026: Uhrzeit bleibt lokal korrekt', () => {
