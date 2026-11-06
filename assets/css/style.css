@@ -231,3 +231,22 @@ textarea.input { resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* Admin-Bereich und Monatsübersicht im Belegungsplan */
+.admin-section { margin-bottom: 1rem; }
+.admin-resource-form, .admin-invite-form { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(90px, .6fr) auto; align-items: end; gap: .75rem; margin: 1rem 0; }
+.admin-resource-form .msg, .admin-invite-form .msg { grid-column: 1 / -1; }
+.color-input { width: 64px; min-width: 64px; padding: .25rem; }
+.admin-actions { white-space: nowrap; }
+.admin-actions .btn { margin: .15rem; }
+.audit-json { max-width: 40rem; max-height: 18rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; background: #f8fafc; border: 1px solid var(--border); padding: .6rem; border-radius: 6px; }
+.plan-month-grid .mg-cell { min-height: 145px; }
+.plan-month-event { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; border: 0; border-left: 3px solid var(--resource-color, #4a5568); background: #f7f9fc; color: var(--text); padding: .15rem .3rem; border-radius: 3px; cursor: pointer; font: inherit; font-size: .72rem; }
+.plan-month-event:hover { background: var(--primary-soft); }
+.plan-month-more { color: var(--muted); font-size: .75rem; }
+@media (max-width: 760px) {
+  .admin-resource-form, .admin-invite-form { grid-template-columns: 1fr; }
+  .admin-actions { white-space: normal; }
+  .plan-month-grid .mg-cell { min-height: 105px; }
+  .plan-month-event { font-size: .68rem; }
+}
