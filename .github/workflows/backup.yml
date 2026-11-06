@@ -1,0 +1,38 @@
+# Wöchentliche Sicherung der Datenbank (Free-Tarif hat keine automatischen Backups).
+# Die Sicherung wird vor dem Speichern verschlüsselt (GPG, AES256). Das Repository ist öffentlich,
+# daher darf die Datei unverschlüsselt niemals als Artefakt liegen.
+# Benötigte Secrets: SUPABASE_DB_URL (Session-Pooler-Verbindung, Port 5432) und BACKUP_PASSPHRASE.
+name: Datenbank-Sicherung
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Export erstellen und verschlüsseln
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # pg_dump in passender Version (17) über Container, damit die Serverversion passt
+          docker run --rm -e SUPABASE_DB_URL="$SUPABASE_DB_URL" postgres:17 \
+            sh -c 'pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges --format=plain' > backup.sql
+          test -s backup.sql
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 -o backup.sql.gpg backup.sql
+          rm -f backup.sql
+          ls -l backup.sql.gpg
+      - name: Verschlüsselte Sicherung speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: vereinskalender-backup-${{ github.run_id }}
+          path: backup.sql.gpg
+          retention-days: 60

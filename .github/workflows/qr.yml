@@ -1,0 +1,32 @@
+name: QR-Codes aktualisieren
+
+on:
+  push:
+    paths:
+      - "data/seed.json"
+      - "scripts/build_qr.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  qr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: QR-Bibliothek bereitstellen
+        run: sudo apt-get update && sudo apt-get install -y python3-qrcode
+      - name: QR-Codes erzeugen
+        run: python3 scripts/build_qr.py
+      - name: Änderungen speichern
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qr/
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen."
+          else
+            git commit -m "QR-Codes aktualisiert"
+            git push
+          fi
