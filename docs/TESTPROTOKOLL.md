@@ -12,11 +12,11 @@ Befehl: `npm test` bzw. `node --test tests/logic.test.mjs tests/layout.test.mjs 
 
 | Testdatei | Umfang | Ergebnis |
 |---|---|---|
-| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Doppelbelegung, CSV-Import, Spielplanimport (nur Start Date/Start Time/Subject, 90 Minuten), Zeilenfehler, Dubletten und Überschneidungen, Spurenlayout, Serien, Zeitumstellung | 21 von 21 bestanden |
+| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Doppelbelegung, CSV- und Spielplanimport, Wiederholungen wöchentlich/14-tägig/monatlich/jährlich inkl. Monatsende und Schaltjahr, Zeilenfehler, Dubletten, Spurenlayout, Zeitumstellung | 25 von 25 bestanden |
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
-| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, Doppelbelegung (auch innerhalb einer Serie), Notizen für Besucher ausgeblendet, Bearbeiten ohne Selbstkonflikt, Löschen nur mit Berechtigung | 8 von 8 bestanden |
+| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, Doppelbelegung, Notizen, Bearbeiten, Löschen und Löschen einer ganzen Serie | 9 von 9 bestanden |
 
-**Ergebnis: 35 von 35 automatisierten Tests bestanden.**
+**Ergebnis: 40 von 40 automatisierten Tests bestanden.**
 
 Zusätzlich geprüft:
 - Alle JavaScript-Dateien sind syntaktisch gültig (`node --check`).
@@ -110,16 +110,21 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Passwortlogin, Magic-Link und Passwort-Wiederherstellung funktionieren
 - [ ] Anmeldelink wird per E-Mail zugestellt und öffnet die Seite angemeldet
 - [ ] Termin anlegen, bearbeiten, löschen funktioniert
-- [ ] Serie mit 4 Terminen wird angelegt
+- [ ] Wiederholungen wöchentlich, alle zwei Wochen, monatlich und jährlich werden mit korrekten Daten angelegt
+- [ ] Monatsende (z. B. 31.) und Schalttag 29. Februar werden korrekt behandelt
+- [ ] Gesamte Wiederholungsserie wird mit einem Schritt gelöscht
 - [ ] Doppelbelegung wird mit verständlicher Meldung abgelehnt
 - [ ] Spielimport nur aus dem geöffneten Raum-/Platzkalender starten; Zielressource prüfen
 - [ ] CSV- und XLSX-Beispiel herunterladen; Import liest ausschließlich `Start Date`, `Start Time`, `Subject` und setzt 90 Minuten
 - [ ] Import mit ungültigem Datum oder Überschneidung blockiert den gesamten Import und zeigt Zeilennummern
 - [ ] XLSX-Formelbeispiel öffnet sich ohne Formelfehler; `Subject` wird korrekt gebildet
-- [ ] Admin kann Ressourcen hinzufügen, umbenennen, Farbe ändern und archivieren/wiederherstellen (Buchungen bleiben erhalten)
+- [ ] VfB-Logo erscheint unverzerrt im Kopfbereich der Startseite
+- [ ] Admin kann Ressourcen hinzufügen, umbenennen, Farbe/Reihenfolge ändern und deaktivieren/aktivieren (Reihenfolge gilt für alle)
+- [ ] Endgültiges Löschen wird bei Zukunftsterminen blockiert; ohne Zukunftstermine werden vergangene Buchungen gelöscht und Audit-Einträge behalten
 - [ ] Admin kann Rollen ändern und den Zugang entziehen; der letzte Admin bleibt geschützt
 - [ ] Admin-Protokoll zeigt Akteur, Zeitpunkt, Aktion sowie Vorher-/Nachher-Daten
 - [ ] QR-Code wird als SVG geladen und führt auf die richtige Adresse (mit Telefon-Kamera prüfen)
+- [ ] A4-QR-Plakat zeigt das Original-Logo ohne Verzerrung und das Motto „Schaue dir die aktuelle Belegung an“; die Schaltfläche **Drucken** druckt nur das Plakat, nicht die Schaltfläche
 - [ ] „Link kopieren“ funktioniert
 - [ ] Zeitumstellung 25.10.2026: Ein Termin am 25.10. um 18:00 Uhr erscheint um 18:00 Uhr
 - [ ] Texte sind gut lesbar, Tastatur-Navigation mit Tab funktioniert
@@ -138,6 +143,6 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 ## Abweichungen und Bekannte Grenzen
 
 - **Demo-Modus:** Solange `SUPABASE_URL` leer ist, zeigt die Seite Beispieldaten und simuliert die Anmeldung. Das ist keine Sicherheit. Der echte Schutz gilt erst mit angebundener Datenbank.
-- **Ressourcen werden aus Supabase geladen:** Archivierte Ressourcen bleiben mit bestehenden Buchungen erhalten; für neu angelegte Ressourcen müssen QR-Codes separat erzeugt werden.
+- **Ressourcen werden aus Supabase geladen:** Deaktivierte Ressourcen werden aus den aktiven Kalenderlisten ausgeblendet; bestehende Buchungen bleiben erhalten. Für neu angelegte Ressourcen den Slug in `data/seed.json` aufnehmen; der QR-Workflow erzeugt den QR-Code.
 - **Admin-Funktionen benötigen Deployment:** Einladungen und Rollenverwaltung funktionieren erst nach Bereitstellung der Edge Function und korrekter Supabase-Mail-/Redirect-Konfiguration.
-- **Serienterminbearbeitung:** Ein einzelner Termin einer Serie wird bearbeitet, nicht die ganze Serie auf einmal.
+- **Serienterminbearbeitung:** Ein einzelner Termin einer Serie wird bearbeitet; die ganze Serie kann gelöscht werden.
