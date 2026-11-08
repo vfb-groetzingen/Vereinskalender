@@ -2,6 +2,7 @@ import { CONFIG } from './config.js';
 import * as L from './logic.js';
 import * as LY from './layout.js';
 import { ROOT, loadSeed, createStore, friendlyError } from './data.js';
+import { createQrMatrix, qrMatrixToSvgDataUrl, qrMatrixToPngDataUrl } from './qr-generator.js';
 
 const HOUR_PX = 48;          // Kalender: Pixel je Stunde
 const TL_HOUR_PX = 40;       // Belegungsplan: Pixel je Stunde
@@ -96,8 +97,7 @@ const monthLabel = (d) => d.toLocaleDateString('de-DE', { month: 'long', year: '
 const hhmm = (d) => L.fmtTime(d);
 
 function roomUrl(slug) { return BASE + '/raeume/' + slug; }
-function qrUrl(slug) { return new URL('qr/' + slug + '.svg', ROOT).pathname; }
-function qrPngUrl(slug) { return new URL('qr/' + slug + '.png', ROOT).pathname; }
+function roomAbsoluteUrl(slug) { return new URL(`raeume/${encodeURIComponent(slug)}`, ROOT).href; }
 
 // ---------- Kopfbereich ----------
 function renderHeader() {
@@ -135,8 +135,8 @@ function renderHome() {
       <span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span>
       <a class="room-name" href="${roomUrl(r.slug)}" data-link="/raeume/${esc(r.slug)}">${esc(r.name)}</a>
       <span class="room-actions">
-        <span class="qr-downloads" data-qr-downloads="${esc(r.slug)}"><a class="btn btn-small" data-qr-svg href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR SVG</a><a class="btn btn-small" data-qr-png href="${qrPngUrl(r.slug)}" download="qr-${esc(r.slug)}.png">QR PNG</a><span class="hint" data-qr-pending hidden>QR-Dateien werden bereitgestellt</span></span>
-        <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
+        <span class="qr-downloads" data-qr-downloads="${esc(r.slug)}"><a class="btn btn-small" data-qr-svg href="#" download="qr-${esc(r.slug)}.svg">QR SVG</a><a class="btn btn-small" data-qr-png href="#" download="qr-${esc(r.slug)}.png">QR PNG</a><span class="hint" data-qr-error role="status" hidden></span></span>
+        <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" disabled aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
         <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
       </span>
     </li>`).join('');
@@ -171,23 +171,37 @@ function bindCopy() {
 }
 
 function bindQrDownloads() {
-  document.querySelectorAll('[data-qr-downloads]').forEach(async (container) => {
+  document.querySelectorAll('[data-qr-downloads]').forEach((container) => {
     const slug = container.dataset.qrDownloads;
-    const checks = [
-      ['[data-qr-svg]', qrUrl(slug)],
-      ['[data-qr-png]', qrPngUrl(slug)]
-    ];
-    let found = false;
-    for (const [selector, url] of checks) {
-      const link = container.querySelector(selector);
-      try {
-        const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-        link.hidden = !response.ok;
-        found = found || response.ok;
-      } catch { link.hidden = true; }
+    const svgLink = container.querySelector('[data-qr-svg]');
+    const pngLink = container.querySelector('[data-qr-png]');
+    const error = container.querySelector('[data-qr-error]');
+    try {
+      const matrix = createQrMatrix(roomAbsoluteUrl(slug));
+      svgLink.href = qrMatrixToSvgDataUrl(matrix);
+      pngLink.addEventListener('click', (event) => {
+        if (pngLink.dataset.generated === 'true') return;
+        event.preventDefault();
+        try {
+          pngLink.href = qrMatrixToPngDataUrl(matrix);
+          pngLink.dataset.generated = 'true';
+          pngLink.click();
+        } catch (err) {
+          pngLink.hidden = true;
+          if (error) { error.hidden = false; error.textContent = `PNG konnte nicht erstellt werden: ${err.message}`; }
+        }
+      });
+      document.querySelectorAll('[data-poster-slug]').forEach((button) => {
+        if (button.dataset.posterSlug === slug) button.disabled = false;
+      });
+    } catch (err) {
+      svgLink.hidden = true;
+      pngLink.hidden = true;
+      if (error) { error.hidden = false; error.textContent = `QR-Code konnte nicht erzeugt werden: ${err.message}`; }
+      document.querySelectorAll('[data-poster-slug]').forEach((button) => {
+        if (button.dataset.posterSlug === slug) button.disabled = true;
+      });
     }
-    const pending = container.querySelector('[data-qr-pending]');
-    if (pending) pending.hidden = found;
   });
 }
 
@@ -200,13 +214,17 @@ function bindPosterButtons() {
 function openQrPoster(slug) {
   const resource = S.resources.find((r) => r.slug === slug);
   if (!resource) return;
+  const target = roomAbsoluteUrl(resource.slug);
+  let qr;
+  try {
+    qr = qrMatrixToSvgDataUrl(createQrMatrix(target));
+  } catch (err) {
+    setNotice('error', `QR-Code konnte nicht erstellt werden. Das Plakat wird nicht gedruckt. ${err.message}`);
+    return;
+  }
   const poster = window.open('', '_blank');
   if (!poster) { setNotice('error', 'Das Plakatfenster wurde blockiert. Bitte Pop-ups für diese Website erlauben.'); return; }
   const logo = LOGO_URL;
-  // Reuse the existing resource QR SVG directly; do not redraw or modify its data.
-  const qr = new URL(`qr/${encodeURIComponent(resource.slug)}.svg`, ROOT).href;
-  const qrPng = new URL(`qr/${encodeURIComponent(resource.slug)}.png`, ROOT).href;
-  const target = new URL(`raeume/${encodeURIComponent(resource.slug)}`, ROOT).href;
   poster.document.open();
   poster.document.write(`<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>QR-Plakat – ${esc(resource.name)}</title>
@@ -270,11 +288,11 @@ body{background:#f3f3f3}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style></head><body>
-<div class="screen-actions"><button id="print-poster" type="button" disabled>QR-Code wird geladen …</button><button class="secondary" type="button" onclick="window.close()">Schließen</button></div>
+<div class="screen-actions"><button id="print-poster" type="button" disabled>QR-Code wird geprüft …</button><button class="secondary" type="button" onclick="window.close()">Schließen</button></div>
 <main class="poster"><div class="poster-content">
 <img class="club-logo" src="${esc(logo)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim">
 <div class="qr-zone"><img id="poster-qr" class="qr-image" src="${esc(qr)}" alt="Original-QR-Code für ${esc(resource.name)}"></div>
-<p id="qr-status" class="qr-status" role="status" aria-live="polite">QR-Code wird geladen …</p>
+<p id="qr-status" class="qr-status" role="status" aria-live="polite">QR-Code wird geprüft …</p>
 <div class="poster-rule" aria-hidden="true"></div>
 <h1 class="motto">Schaue dir die aktuelle Belegung an</h1>
 <p class="resource-label">Belegungskalender</p><h2 class="resource-name">${esc(resource.name)}</h2>
@@ -284,7 +302,6 @@ body{background:#f3f3f3}
   const printButton = poster.document.getElementById('print-poster');
   const qrImage = poster.document.getElementById('poster-qr');
   const qrStatus = poster.document.getElementById('qr-status');
-  let triedPng = false;
   const markQrReady = () => {
     if (!qrImage.naturalWidth || !qrImage.naturalHeight) return markQrFailed();
     poster.document.body.classList.add('qr-ready');
@@ -293,13 +310,7 @@ body{background:#f3f3f3}
     printButton.textContent = 'Drucken';
   };
   const markQrFailed = () => {
-    if (!triedPng) {
-      triedPng = true;
-      qrStatus.textContent = 'SVG nicht verfügbar – PNG wird geladen …';
-      qrImage.src = qrPng;
-      return;
-    }
-    qrStatus.textContent = 'QR-Code konnte nicht geladen werden. Drucken ist gesperrt.';
+    qrStatus.textContent = 'QR-Code konnte nicht angezeigt werden. Drucken ist gesperrt.';
     qrStatus.style.display = 'block';
     printButton.disabled = true;
     printButton.textContent = 'QR-Code fehlt';
@@ -358,8 +369,8 @@ async function renderRoom(res) {
         <p class="muted">${res.type === 'raum' ? 'Raum' : 'Platz'} · Direktlink: <a href="${roomUrl(res.slug)}" data-link="/raeume/${esc(res.slug)}">${esc(roomUrl(res.slug))}</a></p>
       </div>
       <div class="page-actions">
-        <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
-        <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="${qrUrl(res.slug)}" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="${qrPngUrl(res.slug)}" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-pending hidden>QR-Dateien werden bereitgestellt</span></span>
+        <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" disabled aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
+        <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="#" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="#" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-error role="status" hidden></span></span>
         <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
         ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button><button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
       </div>
@@ -999,7 +1010,7 @@ async function renderAdmin() {
   S.resources = resources.filter((r) => r.is_active !== false);
   const resourceRows = resources.map((r) => `<tr>
     <td><input class="input" data-resource-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name von ${esc(r.name)}"></td>
-    <td><code>${esc(r.slug)}</code></td>
+    <td><input class="input slug-input" data-resource-slug="${esc(r.id)}" value="${esc(r.slug)}" maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-label="Dauerhafter Slug von ${esc(r.name)}" title="Nur Kleinbuchstaben, Ziffern und Bindestriche; ohne Bindestrich am Anfang oder Ende."></td>
     <td>${r.type === 'raum' ? 'Raum' : 'Platz'}</td>
     <td><label class="order-field"><span class="sr-only">Reihenfolge für ${esc(r.name)}</span><input type="number" min="1" step="1" class="input order-input" data-resource-order="${esc(r.id)}" value="${Number(r.sort_order) || 1}"></label></td>
     <td><input type="color" class="input color-input" data-resource-color="${esc(r.id)}" value="${esc(r.color)}" aria-label="Farbe von ${esc(r.name)}"></td>
@@ -1026,9 +1037,9 @@ async function renderAdmin() {
       <div class="field"><label for="resource-type">Typ</label><select id="resource-type" class="input"><option value="raum">Raum</option><option value="platz">Platz</option></select></div>
       <div class="field"><label for="resource-color">Farbe</label><input id="resource-color" type="color" class="input color-input" value="#1f5fa8"></div>
       <button type="submit" class="btn btn-primary">Hinzufügen</button><p class="msg" id="resource-msg" role="alert"></p></form>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Dauerhafter Slug</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="7">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Dauerhafter Slug (Link)</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="7">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
       <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
-      <p class="hint">Der Slug ist der unveränderliche Bestandteil des Kalenderlinks. Eine Umbenennung ändert den Link und QR-Code nicht. Bei neuen Ressourcen den QR-Workflow starten; er liest den Slug aus Supabase. Erst wenn SVG/PNG erzeugt wurden, ist ein vollständiger Plakatdruck möglich.</p>
+      <p class="hint">Der Name kann ohne Änderung des Links angepasst werden. Administratoren können auch den Slug bearbeiten. Vor dem Speichern erscheint eine Warnung: Eine Slug-Änderung ändert den Kalenderlink; bereits verteilte Links, Lesezeichen und gedruckte QR-Codes führen dann nicht mehr zum Raum. Ein neuer QR-Code wird automatisch aus dem aktuellen Link erzeugt.</p>
     </section>
     <section class="section admin-section"><h2>Benutzer und Einladungen</h2><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
@@ -1052,25 +1063,39 @@ function bindAdmin(resources) {
     e.preventDefault();
     const name = $('#resource-name').value.trim();
     if (!name) { $('#resource-msg').textContent = 'Bitte einen Namen eingeben.'; return; }
-    const slugBase = slugifyResource(name);
+    const slugBase = slugifyResource(name) || 'ressource';
     const slug = `${slugBase}-${newUuid().slice(0, 6)}`;
     try {
       const nextOrder = Math.max(0, ...resources.map((r) => Number(r.sort_order) || 0)) + 1;
       await S.store.createResource({ name, slug, type: $('#resource-type').value, color: $('#resource-color').value, sort_order: nextOrder, is_active: true });
       await renderAdmin();
-      setNotice('ok', `Ressource hinzugefügt. Dauerhafter Slug: ${slug}. Den QR-Workflow starten; er liest die unveränderlichen Slugs aus Supabase und erzeugt beide Dateien.`);
+      setNotice('ok', `Ressource hinzugefügt. QR-Code und Plakat sind sofort verfügbar. Dauerhafter Slug: ${slug}.`);
     } catch (err) { $('#resource-msg').textContent = friendlyError(err); }
   };
   document.querySelectorAll('[data-resource-save]').forEach((button) => button.onclick = async () => {
     const id = button.dataset.resourceSave;
     try {
       const name = $(`[data-resource-name="${id}"]`).value.trim();
+      const slug = $(`[data-resource-slug="${id}"]`).value.trim();
       const sort_order = Number($(`[data-resource-order="${id}"]`).value);
+      const original = S.allResources.find((resource) => resource.id === id);
       if (!name) { setNotice('error', 'Der Ressourcenname darf nicht leer sein.'); return; }
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 80) {
+        setNotice('error', 'Der Slug darf nur Kleinbuchstaben, Ziffern und einzelne Bindestriche enthalten; er darf nicht mit einem Bindestrich beginnen oder enden.');
+        return;
+      }
       if (!Number.isInteger(sort_order) || sort_order < 1) { setNotice('error', 'Die Reihenfolge muss eine positive ganze Zahl sein.'); return; }
-      await S.store.updateResource(id, { name, color: $(`[data-resource-color="${id}"]`).value, sort_order });
-      await renderAdmin(); setNotice('ok', 'Ressource wurde gespeichert.');
-    } catch (err) { setNotice('error', friendlyError(err)); }
+      if (original && slug !== original.slug) {
+        const oldLink = roomAbsoluteUrl(original.slug);
+        const newLink = roomAbsoluteUrl(slug);
+        const confirmed = window.confirm(`Slug wirklich ändern?\n\nBisheriger Link:\n${oldLink}\n\nNeuer Link:\n${newLink}\n\nBereits verteilte Links, Lesezeichen und gedruckte QR-Codes mit dem bisherigen Slug führen danach nicht mehr zu dieser Ressource. Ein neuer QR-Code wird automatisch erstellt. Fortfahren?`);
+        if (!confirmed) return;
+      }
+      await S.store.updateResource(id, { name, slug, color: $(`[data-resource-color="${id}"]`).value, sort_order });
+      await renderAdmin(); setNotice('ok', slug !== original?.slug ? 'Slug geändert. Verwende ab jetzt den neuen Link und erstelle neue QR-Plakate.' : 'Ressource wurde gespeichert.');
+    } catch (err) {
+      setNotice('error', err?.code === '23505' ? 'Dieser Slug ist bereits vergeben. Bitte einen anderen Slug wählen.' : friendlyError(err));
+    }
   });
   document.querySelectorAll('[data-resource-archive]').forEach((button) => button.onclick = async () => {
     if (!confirm('Ressource deaktivieren? Bestehende Termine und Protokolle bleiben erhalten.')) return;
