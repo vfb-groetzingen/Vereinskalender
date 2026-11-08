@@ -1,3 +1,5 @@
+# Manuell nach einer Neuanlage starten; liest alle dauerhaften Slugs aus Supabase.
+# Benötigte Actions-Secrets: SUPABASE_URL und SUPABASE_ANON_KEY.
 name: QR-Codes aktualisieren
 
 on:
@@ -16,8 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: QR-Bibliothek bereitstellen
-        run: sudo apt-get update && sudo apt-get install -y python3-qrcode
+        run: sudo apt-get update && sudo apt-get install -y python3-qrcode python3-pil
       - name: QR-Codes erzeugen
+        env:
+          QR_SOURCE: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python3 scripts/build_qr.py
       - name: Änderungen speichern
         run: |

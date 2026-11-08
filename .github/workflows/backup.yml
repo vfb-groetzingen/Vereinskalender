@@ -22,6 +22,18 @@ jobs:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
           set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::GitHub Actions Secret SUPABASE_DB_URL fehlt."
+            exit 1
+          fi
+          if [[ -z "${BACKUP_PASSPHRASE:-}" ]]; then
+            echo "::error::GitHub Actions Secret BACKUP_PASSPHRASE fehlt."
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            postgres://*|postgresql://*) ;;
+            *) echo "::error::SUPABASE_DB_URL muss eine PostgreSQL-Verbindungs-URI sein."; exit 1 ;;
+          esac
           # pg_dump in passender Version (17) über Container, damit die Serverversion passt
           docker run --rm -e SUPABASE_DB_URL="$SUPABASE_DB_URL" postgres:17 \
             sh -c 'pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges --format=plain' > backup.sql

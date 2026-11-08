@@ -21,10 +21,39 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          set -euo pipefail
-          code=$(curl -s -o /tmp/out.json -w "%{http_code}" \
-            "$SUPABASE_URL/rest/v1/resources?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY")
-          echo "Antwort HTTP $code"
-          cat /tmp/out.json; echo
-          test "$code" = "200"
+          python3 - <<'PY'
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+          key = os.environ.get("SUPABASE_ANON_KEY", "")
+          if not url:
+              print("::error::GitHub Actions Secret SUPABASE_URL fehlt.")
+              sys.exit(1)
+          if not key:
+              print("::error::GitHub Actions Secret SUPABASE_ANON_KEY fehlt.")
+              sys.exit(1)
+
+          request = urllib.request.Request(
+              url + "/rest/v1/resources?select=id&limit=1",
+              headers={"apikey": key, "Authorization": "Bearer " + key},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=25) as response:
+                  status = response.status
+                  body = response.read(1000).decode("utf-8", errors="replace")
+          except urllib.error.HTTPError as error:
+              status = error.code
+              body = error.read(1000).decode("utf-8", errors="replace")
+          except Exception as error:
+              print("::error::Supabase-Anfrage fehlgeschlagen: " + str(error))
+              sys.exit(1)
+
+          print("Antwort HTTP " + str(status))
+          print(body)
+          if status != 200:
+              print("::error::Supabase Keepalive erwartet HTTP 200; URL, anon key, RLS und Projektstatus prüfen.")
+              sys.exit(1)
+          PY
