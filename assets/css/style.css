@@ -83,6 +83,8 @@ p { margin: 0 0 .75rem; }
 .room-item:last-child { border-bottom: 0; }
 .room-name { font-weight: 600; flex: 1; min-width: 180px; }
 .room-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.qr-downloads { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.qr-downloads .hint { margin: 0; font-size: .85rem; }
 
 /* Seitenkopf und Werkzeugleiste */
 .crumbs { font-size: .9rem; color: var(--muted); margin-bottom: .5rem; }
