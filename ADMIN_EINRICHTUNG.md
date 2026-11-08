@@ -8,6 +8,7 @@ Im richtigen Supabase-Projekt den Inhalt von `supabase/migration-admin-audit.sql
 
 - `resources.is_active` für Deaktivieren statt Datenverlust
 - `resources.sort_order` für eine globale, dauerhaft gespeicherte Reihenfolge (Bestandsdaten erhalten eine stabile Anfangsreihenfolge)
+- unveränderliche Ressourcen-Slugs, damit Umbenennungen Kalenderlinks und QR-Codes nicht ändern
 - Admin-only-Leserechte für das append-only Termin-Audit-Log mit Akteur, Zeitpunkt, Aktion sowie Vorher-/Nachher-Daten
 - eine sichere Admin-RPC zum endgültigen Löschen: nur wenn keine aktuellen oder zukünftigen Termine bestehen; vergangene Buchungen werden mitgelöscht, Audit-Einträge bleiben erhalten
 - `resource_name`-Snapshots, damit Audit-Einträge auch nach Ressourcenlöschung lesbar bleiben
@@ -50,6 +51,8 @@ Für Einladungs- und Passwort-Wiederherstellungs-E-Mails muss die Supabase-Best�
 
 - Als Admin anmelden: Administration erscheint; Bearbeiter und Besucher erhalten keinen Zugriff auf `/admin`.
 - Raum/Platz anlegen, umbenennen, Farbe/Reihenfolge ändern, deaktivieren und aktivieren.
+- Nach Umbenennen prüfen: Slug, Kalenderadresse und QR-Ziel bleiben unverändert.
+- Nach Neuanlage den QR-Workflow starten; er liest Ressourcen aus Supabase und erstellt SVG/PNG. Bis dahin bleibt der Plakatdruck gesperrt.
 - Endgültiges Löschen ohne Zukunftstermine testen: vergangene Buchungen werden gelöscht, Audit-Protokoll bleibt. Mit einem Zukunftstermin muss das Löschen blockiert werden.
 - Benutzer einladen, Bestätigungslink öffnen, Passwort festlegen; Passwort- und Magic-Link-Login testen.
 - Passwort vergessen, Recovery-Link öffnen und neues Passwort setzen.
