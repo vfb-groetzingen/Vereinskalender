@@ -91,7 +91,7 @@ Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlü
 
 Unter **Actions** die drei Workflows prüfen:
 
-1. **QR-Codes aktualisieren**: Läuft automatisch nach Änderungen an `data/seed.json`. Manuell mit **Run workflow** starten. Ergebnis: Im Ordner `qr/` liegen die SVG-Dateien mit der richtigen Adresse.
+1. **QR-Codes aktualisieren**: Läuft nach Änderungen an `data/seed.json` oder am QR-Skript. Der Workflow liest alle Ressourcen-Slugs aus Supabase und erzeugt SVG- und PNG-Dateien. Nach dem Anlegen einer Ressource manuell mit **Run workflow** starten. Dafür müssen die Actions-Secrets `SUPABASE_URL` und `SUPABASE_ANON_KEY` gesetzt sein.
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
 

@@ -76,8 +76,9 @@ Mit **Kategorie** lassen sich Termine einer Art filtern. Mit den Pfeilen und dem
 
 ## QR-Code und Link
 
-- Auf der Startseite oder im Raum-/Platzkalender **Plakat drucken** wählen. Das A4-Plakat enthält das unverzerrte VfB-Logo, das Motto und den QR-Code; über **Drucken** den Druckdialog öffnen.
-- Mit **QR-Code laden** kann die SVG-Datei separat gespeichert werden; **Link kopieren** legt die Kalenderadresse in die Zwischenablage.
+- Auf der Startseite oder im Raum-/Platzkalender **Plakat drucken** wählen. Das A4-Plakat enthält das unverzerrte VfB-Logo, das Motto und den QR-Code; die Schaltfläche **Drucken** wird erst nach erfolgreichem Laden des QR-Codes aktiviert. Ist die SVG-Datei nicht verfügbar, wird die PNG-Datei versucht; ohne geladenen QR wird der Druck gesperrt.
+- **QR SVG** bzw. **QR PNG** laden die jeweilige Datei separat; **Link kopieren** legt die Kalenderadresse in die Zwischenablage.
+- Der dauerhafte Link basiert auf dem Ressourcen-Slug. Umbenennen ändert nur den sichtbaren Namen; Link und QR-Code bleiben gleich.
 
 Der QR-Code führt direkt zum Kalender des Raums. Die Adresse bleibt dauerhaft gleich.
 
@@ -105,7 +106,7 @@ Bitte prüfen, ob der Computer auf die deutsche Zeitzone eingestellt ist. Die Um
 - **Räume/Plätze sortieren:** In der Administration die gewünschte Reihenfolgenzahl eintragen und **Speichern** wählen. Eine kleinere Zahl erscheint weiter oben; die Einstellung gilt für alle.
 - **Deaktivieren:** In der Administration **Deaktivieren** wählen. Die Ressource verschwindet aus den Kalendern, Buchungen bleiben erhalten; über **Aktivieren** kann sie zurückgeholt werden.
 - **Endgültig löschen:** Nur möglich, wenn keine aktuellen oder zukünftigen Termine mehr bestehen. Vergangene Buchungen werden endgültig gelöscht; Audit-Einträge bleiben. Vorher erscheint eine deutliche Bestätigung.
-- **Neuen Raum/Platz anlegen:** Im Admin-Bereich hinzufügen. Für einen QR-Code zusätzlich den exakten Slug in `data/seed.json` eintragen und pushen; der QR-Workflow erstellt dann die SVG-Datei.
+- **Neuen Raum/Platz anlegen:** Im Admin-Bereich hinzufügen. Den QR-Workflow starten; er liest die Ressourcen-Slugs aus Supabase und erstellt SVG und PNG. Bis beide Dateien bereitstehen, bleibt der Plakatdruck ohne QR gesperrt.
 - **Mitglied einladen/Rolle ändern/Zugang entziehen:** Im Admin-Bereich der Website. Für den allerersten Admin ist die Einrichtung aus `ADMIN_EINRICHTUNG.md` erforderlich.
 - **Sicherung:** Läuft wöchentlich automatisch. Einrichtung und Wiederherstellung siehe `docs/EINRICHTUNG.md`.
 - **Datenbank pausiert?** Wenn die Seite Fehler zeigt, im Supabase-Dashboard das Projekt mit **Restore** wieder aktivieren und prüfen, ob der Keepalive läuft.

@@ -21,7 +21,7 @@ Befehl: `npm test` bzw. `node --test tests/logic.test.mjs tests/layout.test.mjs 
 Zusätzlich geprüft:
 - Alle JavaScript-Dateien sind syntaktisch gültig (`node --check`).
 - Die GitHub-Workflows sind gültiges YAML.
-- Die QR-Codes wurden für alle sieben Ressourcen als SVG erzeugt.
+- Für alle sieben Ressourcen wurden QR-Codes als SVG und PNG erzeugt; die Links wurden dekodiert und geprüft.
 
 ## 2. Nicht ausgeführt (noch offen)
 
@@ -123,7 +123,10 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Endgültiges Löschen wird bei Zukunftsterminen blockiert; ohne Zukunftstermine werden vergangene Buchungen gelöscht und Audit-Einträge behalten
 - [ ] Admin kann Rollen ändern und den Zugang entziehen; der letzte Admin bleibt geschützt
 - [ ] Admin-Protokoll zeigt Akteur, Zeitpunkt, Aktion sowie Vorher-/Nachher-Daten
-- [ ] QR-Code wird als SVG geladen und führt auf die richtige Adresse (mit Telefon-Kamera prüfen)
+- [ ] QR SVG und PNG laden und führen auf dieselbe richtige Adresse (mit Telefon-Kamera prüfen)
+- [ ] Ressource umbenennen: Slug, Kalenderadresse und QR-Ziel bleiben unverändert
+- [ ] Neue Ressource: QR-Workflow erzeugt SVG und PNG aus Supabase; beide Downloadlinks erscheinen danach
+- [ ] Plakat-Druckschaltfläche wird erst nach geladenem QR-Code aktiv; bei fehlendem SVG greift PNG-Fallback, bei fehlendem beidem wird der Druck blockiert
 - [ ] A4-QR-Plakat zeigt das Original-Logo ohne Verzerrung und das Motto „Schaue dir die aktuelle Belegung an“; die Schaltfläche **Drucken** druckt nur das Plakat, nicht die Schaltfläche
 - [ ] „Link kopieren“ funktioniert
 - [ ] Zeitumstellung 25.10.2026: Ein Termin am 25.10. um 18:00 Uhr erscheint um 18:00 Uhr
@@ -143,6 +146,6 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 ## Abweichungen und Bekannte Grenzen
 
 - **Demo-Modus:** Solange `SUPABASE_URL` leer ist, zeigt die Seite Beispieldaten und simuliert die Anmeldung. Das ist keine Sicherheit. Der echte Schutz gilt erst mit angebundener Datenbank.
-- **Ressourcen werden aus Supabase geladen:** Deaktivierte Ressourcen werden aus den aktiven Kalenderlisten ausgeblendet; bestehende Buchungen bleiben erhalten. Für neu angelegte Ressourcen den Slug in `data/seed.json` aufnehmen; der QR-Workflow erzeugt den QR-Code.
+- **Ressourcen werden aus Supabase geladen:** Deaktivierte Ressourcen werden aus den aktiven Kalenderlisten ausgeblendet; bestehende Buchungen bleiben erhalten. Für neu angelegte Ressourcen den QR-Workflow starten; er liest die Slugs aus Supabase und erzeugt SVG und PNG.
 - **Admin-Funktionen benötigen Deployment:** Einladungen und Rollenverwaltung funktionieren erst nach Bereitstellung der Edge Function und korrekter Supabase-Mail-/Redirect-Konfiguration.
 - **Serienterminbearbeitung:** Ein einzelner Termin einer Serie wird bearbeitet; die ganze Serie kann gelöscht werden.
