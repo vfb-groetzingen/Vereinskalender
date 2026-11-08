@@ -97,6 +97,7 @@ const hhmm = (d) => L.fmtTime(d);
 
 function roomUrl(slug) { return BASE + '/raeume/' + slug; }
 function qrUrl(slug) { return new URL('qr/' + slug + '.svg', ROOT).pathname; }
+function qrPngUrl(slug) { return new URL('qr/' + slug + '.png', ROOT).pathname; }
 
 // ---------- Kopfbereich ----------
 function renderHeader() {
@@ -134,7 +135,7 @@ function renderHome() {
       <span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span>
       <a class="room-name" href="${roomUrl(r.slug)}" data-link="/raeume/${esc(r.slug)}">${esc(r.name)}</a>
       <span class="room-actions">
-        ${S.seed.resources.some((seedResource) => seedResource.slug === r.slug) ? `<a class="btn btn-small" href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR-Code</a>` : ''}
+        <span class="qr-downloads" data-qr-downloads="${esc(r.slug)}"><a class="btn btn-small" data-qr-svg href="${qrUrl(r.slug)}" download="qr-${esc(r.slug)}.svg">QR SVG</a><a class="btn btn-small" data-qr-png href="${qrPngUrl(r.slug)}" download="qr-${esc(r.slug)}.png">QR PNG</a><span class="hint" data-qr-pending hidden>QR-Dateien werden bereitgestellt</span></span>
         <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
         <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
       </span>
@@ -157,6 +158,7 @@ function renderHome() {
       <ul class="room-list">${list(plaetze)}</ul>
     </section>`;
   bindCopy();
+  bindQrDownloads();
   bindPosterButtons();
 }
 
@@ -166,6 +168,27 @@ function bindCopy() {
     try { await navigator.clipboard.writeText(url); setNotice('ok', 'Link wurde kopiert.'); }
     catch { setNotice('error', 'Der Link konnte nicht kopiert werden: ' + url); }
   }));
+}
+
+function bindQrDownloads() {
+  document.querySelectorAll('[data-qr-downloads]').forEach(async (container) => {
+    const slug = container.dataset.qrDownloads;
+    const checks = [
+      ['[data-qr-svg]', qrUrl(slug)],
+      ['[data-qr-png]', qrPngUrl(slug)]
+    ];
+    let found = false;
+    for (const [selector, url] of checks) {
+      const link = container.querySelector(selector);
+      try {
+        const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+        link.hidden = !response.ok;
+        found = found || response.ok;
+      } catch { link.hidden = true; }
+    }
+    const pending = container.querySelector('[data-qr-pending]');
+    if (pending) pending.hidden = found;
+  });
 }
 
 function bindPosterButtons() {
@@ -182,6 +205,7 @@ function openQrPoster(slug) {
   const logo = LOGO_URL;
   // Reuse the existing resource QR SVG directly; do not redraw or modify its data.
   const qr = new URL(`qr/${encodeURIComponent(resource.slug)}.svg`, ROOT).href;
+  const qrPng = new URL(`qr/${encodeURIComponent(resource.slug)}.png`, ROOT).href;
   const target = new URL(`raeume/${encodeURIComponent(resource.slug)}`, ROOT).href;
   poster.document.open();
   poster.document.write(`<!doctype html>
@@ -195,6 +219,7 @@ body{background:#f3f3f3}
 .screen-actions button{font:600 16px Inter,"Open Sans",Arial,sans-serif;padding:10px 20px;border:0;border-radius:4px;background:#c8102e;color:#fff;cursor:pointer}
 .screen-actions button:hover{background:#a90d27}
 .screen-actions button:focus-visible{outline:3px solid #20242a;outline-offset:3px}
+.screen-actions button:disabled{opacity:.58;cursor:wait}
 .screen-actions button.secondary{background:#fff;color:#a90d27;border:1px solid #c8102e}
 .poster{position:relative;width:210mm;height:297mm;margin:0 auto;overflow:hidden;background:#fff;box-shadow:0 8px 32px #0002}
 .poster:before{content:"";position:absolute;inset:7mm;border:.6mm solid #c8102e;pointer-events:none}
@@ -203,6 +228,7 @@ body{background:#f3f3f3}
 .poster-rule{width:36mm;height:1.5mm;background:#c8102e;margin:6mm auto 0}
 .qr-zone{display:grid;place-items:center;width:136mm;height:136mm;padding:10mm;background:#fff;border:.45mm solid #ead5d9}
 .qr-image{display:block;width:100%;height:100%;object-fit:contain;filter:none;transform:none;image-rendering:auto}
+.qr-status{margin:2mm auto;color:#a90d27;font-weight:700;font-size:10pt}
 .qr-error{display:none;margin:3mm auto 0;color:#a90d27;font-weight:700;font-size:11pt}
 .motto{max-width:174mm;margin:8mm 0 3mm;color:#b10f2d;font-weight:800;font-size:25pt;line-height:1.12;letter-spacing:.005em}
 .resource-label{margin:0 0 1.5mm;color:#656b73;font-size:9.5pt;font-weight:700;letter-spacing:.15em;text-transform:uppercase}
@@ -228,6 +254,8 @@ body{background:#f3f3f3}
 @media print{
   html,body{width:210mm;height:297mm;background:#fff}
   .screen-actions{display:none!important}
+  body:not(.qr-ready) .poster{display:none!important}
+  body:not(.qr-ready):after{content:"QR-Code nicht geladen – Druck abgebrochen.";display:block;margin:35mm auto;text-align:center;color:#a90d27;font-size:18pt;font-weight:700}
   .poster{width:210mm;height:297mm;margin:0;box-shadow:none}
   .poster-content{padding:11mm 14mm 10mm}
   .club-logo{max-width:169mm;max-height:37.5mm;margin-bottom:5mm}
@@ -242,23 +270,49 @@ body{background:#f3f3f3}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style></head><body>
-<div class="screen-actions"><button id="print-poster" type="button">Drucken</button><button class="secondary" type="button" onclick="window.close()">Schließen</button></div>
+<div class="screen-actions"><button id="print-poster" type="button" disabled>QR-Code wird geladen …</button><button class="secondary" type="button" onclick="window.close()">Schließen</button></div>
 <main class="poster"><div class="poster-content">
 <img class="club-logo" src="${esc(logo)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim">
 <div class="qr-zone"><img id="poster-qr" class="qr-image" src="${esc(qr)}" alt="Original-QR-Code für ${esc(resource.name)}"></div>
-<p id="qr-error" class="qr-error">Für diese Ressource ist noch kein QR-Code vorhanden.</p>
+<p id="qr-status" class="qr-status" role="status" aria-live="polite">QR-Code wird geladen …</p>
 <div class="poster-rule" aria-hidden="true"></div>
 <h1 class="motto">Schaue dir die aktuelle Belegung an</h1>
 <p class="resource-label">Belegungskalender</p><h2 class="resource-name">${esc(resource.name)}</h2>
 <p class="scan-copy">Mit der Smartphone-Kamera scannen</p><p class="poster-link">${esc(target)}</p>
 <p class="poster-footer">VfB 04 Grötzingen e. V.</p></div></main></body></html>`);
   poster.document.close();
-  poster.document.getElementById('print-poster').addEventListener('click', () => poster.print());
-  poster.document.getElementById('poster-qr').addEventListener('error', () => {
-    poster.document.getElementById('qr-error').style.display = 'block';
-    poster.document.getElementById('print-poster').disabled = true;
-    poster.document.getElementById('print-poster').textContent = 'QR-Code fehlt';
-  }, { once: true });
+  const printButton = poster.document.getElementById('print-poster');
+  const qrImage = poster.document.getElementById('poster-qr');
+  const qrStatus = poster.document.getElementById('qr-status');
+  let triedPng = false;
+  const markQrReady = () => {
+    if (!qrImage.naturalWidth || !qrImage.naturalHeight) return markQrFailed();
+    poster.document.body.classList.add('qr-ready');
+    qrStatus.style.display = 'none';
+    printButton.disabled = false;
+    printButton.textContent = 'Drucken';
+  };
+  const markQrFailed = () => {
+    if (!triedPng) {
+      triedPng = true;
+      qrStatus.textContent = 'SVG nicht verfügbar – PNG wird geladen …';
+      qrImage.src = qrPng;
+      return;
+    }
+    qrStatus.textContent = 'QR-Code konnte nicht geladen werden. Drucken ist gesperrt.';
+    qrStatus.style.display = 'block';
+    printButton.disabled = true;
+    printButton.textContent = 'QR-Code fehlt';
+  };
+  qrImage.addEventListener('load', markQrReady);
+  qrImage.addEventListener('error', markQrFailed);
+  if (qrImage.complete) {
+    if (qrImage.naturalWidth && qrImage.naturalHeight) markQrReady();
+    else markQrFailed();
+  }
+  printButton.addEventListener('click', () => {
+    if (poster.document.body.classList.contains('qr-ready')) poster.print();
+  });
 }
 
 // ---------- Zeitfenster ----------
@@ -305,7 +359,7 @@ async function renderRoom(res) {
       </div>
       <div class="page-actions">
         <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
-        <a class="btn btn-ghost" href="${qrUrl(res.slug)}" download="qr-${esc(res.slug)}.svg">QR-Code laden</a>
+        <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="${qrUrl(res.slug)}" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="${qrPngUrl(res.slug)}" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-pending hidden>QR-Dateien werden bereitgestellt</span></span>
         <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
         ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button><button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
       </div>
@@ -329,6 +383,7 @@ async function renderRoom(res) {
       ${futureTable(S.futureList)}
     </section>`;
   bindCopy();
+  bindQrDownloads();
   bindPosterButtons();
   bindRoomControls(res);
 }
@@ -944,6 +999,7 @@ async function renderAdmin() {
   S.resources = resources.filter((r) => r.is_active !== false);
   const resourceRows = resources.map((r) => `<tr>
     <td><input class="input" data-resource-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name von ${esc(r.name)}"></td>
+    <td><code>${esc(r.slug)}</code></td>
     <td>${r.type === 'raum' ? 'Raum' : 'Platz'}</td>
     <td><label class="order-field"><span class="sr-only">Reihenfolge für ${esc(r.name)}</span><input type="number" min="1" step="1" class="input order-input" data-resource-order="${esc(r.id)}" value="${Number(r.sort_order) || 1}"></label></td>
     <td><input type="color" class="input color-input" data-resource-color="${esc(r.id)}" value="${esc(r.color)}" aria-label="Farbe von ${esc(r.name)}"></td>
@@ -970,9 +1026,9 @@ async function renderAdmin() {
       <div class="field"><label for="resource-type">Typ</label><select id="resource-type" class="input"><option value="raum">Raum</option><option value="platz">Platz</option></select></div>
       <div class="field"><label for="resource-color">Farbe</label><input id="resource-color" type="color" class="input color-input" value="#1f5fa8"></div>
       <button type="submit" class="btn btn-primary">Hinzufügen</button><p class="msg" id="resource-msg" role="alert"></p></form>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="6">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Dauerhafter Slug</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="7">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
       <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
-      <p class="hint">Für neu angelegte Ressourcen kann der Link kopiert werden. Ein QR-Code samt Plakat wird nach dem QR-Build im Repository bereitgestellt.</p>
+      <p class="hint">Der Slug ist der unveränderliche Bestandteil des Kalenderlinks. Eine Umbenennung ändert den Link und QR-Code nicht. Bei neuen Ressourcen den QR-Workflow starten; er liest den Slug aus Supabase. Erst wenn SVG/PNG erzeugt wurden, ist ein vollständiger Plakatdruck möglich.</p>
     </section>
     <section class="section admin-section"><h2>Benutzer und Einladungen</h2><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
@@ -1002,7 +1058,7 @@ function bindAdmin(resources) {
       const nextOrder = Math.max(0, ...resources.map((r) => Number(r.sort_order) || 0)) + 1;
       await S.store.createResource({ name, slug, type: $('#resource-type').value, color: $('#resource-color').value, sort_order: nextOrder, is_active: true });
       await renderAdmin();
-      setNotice('ok', 'Ressource wurde hinzugefügt.');
+      setNotice('ok', `Ressource hinzugefügt. Dauerhafter Slug: ${slug}. Den QR-Workflow starten; er liest die unveränderlichen Slugs aus Supabase und erzeugt beide Dateien.`);
     } catch (err) { $('#resource-msg').textContent = friendlyError(err); }
   };
   document.querySelectorAll('[data-resource-save]').forEach((button) => button.onclick = async () => {
