@@ -18,6 +18,27 @@ set sort_order = ranked_resources.initial_order
 from ranked_resources
 where r.id = ranked_resources.id and r.sort_order = 0;
 
+-- Ressourcen-Slugs bilden dauerhafte Kalenderlinks und sind nach dem Anlegen unveränderlich.
+create or replace function public.prevent_resource_slug_change()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.slug is distinct from old.slug then
+    raise exception 'Der dauerhafte Kalenderlink kann nicht geändert werden. Bitte nur den Anzeigenamen ändern.'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists resources_slug_immutable_trg on public.resources;
+create trigger resources_slug_immutable_trg
+  before update of slug on public.resources
+  for each row execute function public.prevent_resource_slug_change();
+
+
 create table if not exists public.booking_audit_log (
   id           bigint generated always as identity primary key,
   booking_id   uuid not null,

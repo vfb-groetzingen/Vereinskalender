@@ -21,6 +21,27 @@ create table if not exists public.resources (
 
 alter table public.resources add column if not exists is_active boolean not null default true;
 
+-- Ressourcen-Slugs bilden dauerhafte Kalenderlinks und sind nach dem Anlegen unveränderlich.
+create or replace function public.prevent_resource_slug_change()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.slug is distinct from old.slug then
+    raise exception 'Der dauerhafte Kalenderlink kann nicht geändert werden. Bitte nur den Anzeigenamen ändern.'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists resources_slug_immutable_trg on public.resources;
+create trigger resources_slug_immutable_trg
+  before update of slug on public.resources
+  for each row execute function public.prevent_resource_slug_change();
+
+
 create table if not exists public.categories (
   id     uuid primary key default gen_random_uuid(),
   name   text unique not null,
