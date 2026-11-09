@@ -157,6 +157,25 @@ select.input { min-width: 180px; }
 .legend li { display: flex; align-items: center; padding: .15rem 0; }
 .plan-main { min-width: 0; }
 .timeline { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: auto; max-height: 75vh; }
+.week-board { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: auto; max-height: 75vh; }
+.week-grid-header, .week-resource-row { display: grid; grid-template-columns: minmax(155px, 1.35fr) repeat(7, minmax(0, 1fr)); }
+.week-grid-header { position: sticky; top: 0; z-index: 4; background: #fbfcfd; border-bottom: 1px solid var(--border); }
+.week-resource-head, .week-resource-label { position: sticky; left: 0; background: #fbfcfd; border-right: 1px solid var(--border); }
+.week-resource-head { z-index: 5; padding: .55rem .7rem; font-weight: 700; }
+.week-day-head { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .1rem; min-width: 0; padding: .4rem .15rem; border-left: 1px solid var(--border); font-size: .86rem; font-weight: 700; }
+.week-day-head time { color: var(--muted); font-size: .78rem; font-weight: 500; }
+.week-group-title { grid-column: 1 / -1; padding: .35rem .7rem; background: #f5f7fa; border-bottom: 1px solid var(--border); color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.week-resource-row { min-height: 72px; border-bottom: 1px solid #edf1f6; }
+.week-resource-label { z-index: 2; display: flex; align-items: flex-start; gap: .45rem; min-width: 0; padding: .6rem .65rem; background: var(--surface); font-size: .88rem; font-weight: 600; }
+.week-resource-label > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.week-day-cell { min-width: 0; padding: .28rem; border-left: 1px solid #edf1f6; }
+.week-booking { display: block; width: 100%; min-width: 0; margin: .14rem 0; padding: .3rem .35rem; border: 0; border-left: 4px solid; border-radius: 4px; background: #f5f7fa; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.week-booking:hover { background: #eaf0f8; }
+.week-booking:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.week-booking-time, .week-booking-title { display: block; overflow-wrap: anywhere; }
+.week-booking-time { color: var(--muted); font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.week-booking-title { margin-top: .08rem; font-size: .78rem; line-height: 1.25; }
+.week-free { display: block; padding: .4rem .15rem; color: #7a8698; font-size: .76rem; }
 .tl-head { display: flex; position: sticky; top: 0; z-index: 3; background: #fbfcfd; border-bottom: 1px solid var(--border); }
 .tl-corner { position: sticky; left: 0; z-index: 4; width: 200px; min-width: 200px; padding: .5rem .75rem; font-weight: 700; font-size: .9rem; background: #fbfcfd; border-right: 1px solid var(--border); }
 .tl-days { display: flex; }
@@ -211,6 +230,10 @@ textarea.input { resize: vertical; }
   .plan-layout { grid-template-columns: 1fr; }
   .sidebar { display: grid; grid-template-columns: 1fr 1fr; }
   .timeline { max-height: none; }
+}
+@media (max-width: 760px) {
+  .week-grid-header, .week-resource-row { min-width: 820px; grid-template-columns: 150px repeat(7, minmax(95px, 1fr)); }
+  .week-board { max-height: none; }
 }
 @media (max-width: 640px) {
   h1 { font-size: 1.4rem; }
