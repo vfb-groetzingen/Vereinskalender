@@ -27,7 +27,7 @@ Vorhandene Konten: GitHub, Supabase, Brevo.
 1. **Authentication > Sign In / Providers > Email**: E-Mail-Anmeldung aktiviert lassen. Die Option **Allow new users to sign up** deaktivieren. Damit können sich nur eingeladene Personen anmelden.
 2. **Authentication > URL Configuration**:
    - **Site URL**: `https://DEIN-GITHUB-NAME.github.io/vereinskalender/`
-   - **Redirect URLs**: dieselbe Adresse und zusätzlich `https://DEIN-GITHUB-NAME.github.io/vereinskalender/**` eintragen.
+   - **Redirect URLs**: dieselbe Adresse eintragen.
 3. **Authentication > Emails > SMTP Settings** (Tab „SMTP Settings“, Schalter **Enable Custom SMTP** einschalten; Versand über Brevo, da der Standardversand stark begrenzt ist). Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen. Ältere Anleitungen nennen noch „Project Settings > Auth“.
    - Host: `smtp-relay.brevo.com`, Port: `587`
    - Benutzername und Passwort: die SMTP-Zugangsdaten aus dem Brevo-Konto (SMTP & API)
@@ -39,13 +39,9 @@ Vorhandene Konten: GitHub, Supabase, Brevo.
 
 1. **Authentication > Users > Invite user**: E-Mail-Adresse der Person eintragen. Die Person erhält eine Einladung.
 2. Im SQL Editor den Inhalt von `supabase/admin-setup.sql` öffnen. Die Zeile mit `HIER-E-MAIL-EINTRAGEN` durch die E-Mail-Adresse ersetzen und ausführen.
-3. Danach die geschützte Admin-Funktion wie in `ADMIN_EINRICHTUNG.md` bereitstellen. Anschließend kann der erste Administrator weitere Mitglieder direkt im Kalender einladen und Rollen verwalten.
+3. Weitere Bearbeiter auf dieselbe Weise anlegen (Einladung, dann SQL mit Rolle `bearbeiter`).
 
-## Schritt 5: Admin-Funktion bereitstellen
-
-Die Admin-Oberfläche benötigt die Supabase Edge Function `admin-users`. Folge dafür `ADMIN_EINRICHTUNG.md` (Function deployen sowie `SITE_URL` und `ALLOWED_ORIGIN` als Function-Secrets setzen). Der `service_role`-Schlüssel bleibt ausschließlich in der Supabase-Laufzeitumgebung.
-
-## Schritt 6: Zugangsdaten in die Webseite eintragen
+## Schritt 5: Zugangsdaten in die Webseite eintragen
 
 Die Werte stehen unter **Project Settings > API**.
 
@@ -59,9 +55,9 @@ Datei `assets/js/config.js` anpassen:
 
 Solange `SUPABASE_URL` leer ist, läuft die Seite im **Demo-Modus** mit Beispieldaten. Der Demo-Modus ist für Tests gedacht und bietet keinen echten Schutz.
 
-Datei `data/seed.json` anpassen: Bei `settings.public_base_url` die eigene Adresse eintragen, z. B. `https://xyzxyz.github.io/vereinskalender`. Die QR-Codes werden danach automatisch neu erzeugt (Schritt 7).
+Datei `data/seed.json` anpassen: Bei `settings.public_base_url` die eigene Adresse eintragen, z. B. `https://xyzxyz.github.io/vereinskalender`. Die QR-Codes werden danach automatisch neu erzeugt (Schritt 6).
 
-## Schritt 7: GitHub-Repository und Veröffentlichung
+## Schritt 6: GitHub-Repository und Veröffentlichung
 
 1. Auf GitHub ein **öffentliches** Repository mit dem Namen `vereinskalender` anlegen.
    - Warum öffentlich: Der kostenlose Tarif von GitHub Pages erfordert ein öffentliches Repository. Es enthält keine Geheimnisse. Die Sicherheit liegt in der Datenbank.
@@ -72,13 +68,13 @@ Datei `data/seed.json` anpassen: Bei `settings.public_base_url` die eigene Adres
 
 Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die Startseite um. Der Basispfad in `404.html` muss mit `BASE_PATH` übereinstimmen.
 
-## Schritt 8: Geheimnisse für Automatisierung hinterlegen
+## Schritt 7: Geheimnisse für Automatisierung hinterlegen
 
 **Settings > Secrets and variables > Actions > New repository secret**:
 
 | Name | Inhalt |
 |---|---|
-| `SUPABASE_URL` | Project URL (wie in Schritt 6) |
+| `SUPABASE_URL` | Project URL (wie in Schritt 5) |
 | `SUPABASE_ANON_KEY` | Schlüssel anon public |
 | `SUPABASE_DB_URL` | Verbindungs-URI für Datenbankzugriff (siehe unten) |
 | `BACKUP_PASSPHRASE` | Langes Zufallspasswort für verschlüsselte Sicherungen (mindestens 24 Zeichen) |
@@ -87,11 +83,11 @@ Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die
 
 Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlüsseln. **Ohne dieses Passwort sind die Sicherungen unbrauchbar.** Es muss an mindestens zwei Stellen gespeichert werden (z. B. im Vereins-Passwortmanager).
 
-## Schritt 9: Automatisierung prüfen
+## Schritt 8: Automatisierung prüfen
 
 Unter **Actions** die drei Workflows prüfen:
 
-1. **QR-Codes aktualisieren**: Läuft nach Änderungen an `data/seed.json` oder am QR-Skript. Der Workflow liest alle Ressourcen-Slugs aus Supabase und erzeugt SVG- und PNG-Dateien. Nach dem Anlegen einer Ressource manuell mit **Run workflow** starten. Dafür müssen die Actions-Secrets `SUPABASE_URL` und `SUPABASE_ANON_KEY` gesetzt sein.
+1. **QR-Codes aktualisieren**: Läuft automatisch nach Änderungen an `data/seed.json`. Manuell mit **Run workflow** starten. Ergebnis: Im Ordner `qr/` liegen die SVG-Dateien mit der richtigen Adresse.
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
 
@@ -99,7 +95,7 @@ Unter **Actions** die drei Workflows prüfen:
 
 **Hinweis GitHub:** Geplante Workflows werden in öffentlichen Repositories nach 60 Tagen ohne Aktivität automatisch deaktiviert. Ein Commit oder ein manueller Start reaktiviert sie.
 
-## Schritt 10: Sicherung wiederherstellen (Probe durchführen)
+## Schritt 9: Sicherung wiederherstellen (Probe durchführen)
 
 Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor sie im Ernstfall nötig ist.
 
@@ -107,13 +103,13 @@ Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor s
 2. Entschlüsseln: `gpg --batch --passphrase "PASSPHRASE" -o backup.sql -d backup.sql.gpg`
 3. Einspielen in ein Testprojekt mit `psql` (Verbindungs-URI wie oben) oder über den SQL Editor.
 
-## Schritt 11: Rechtliche Seiten vervollständigen
+## Schritt 10: Rechtliche Seiten vervollständigen
 
 Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Brevo müssen Auftragsverarbeitungsverträge abgeschlossen werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
 
-## Schritt 12: Eigene Domain (optional)
+## Schritt 11: Eigene Domain (optional)
 
-Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain** eingetragen. Danach die Site URL in Supabase (Schritt 3) und `public_base_url` in `data/seed.json` (Schritt 6) anpassen. Die QR-Codes werden danach automatisch neu erzeugt.
+Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain** eingetragen. Danach die Site URL in Supabase (Schritt 3) und `public_base_url` in `data/seed.json` (Schritt 5) anpassen. Die QR-Codes werden danach automatisch neu erzeugt.
 
 ---
 

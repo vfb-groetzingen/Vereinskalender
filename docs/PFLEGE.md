@@ -11,7 +11,7 @@ Jeder kann ohne Anmeldung:
 - die **Startseite** mit allen Räumen und Plätzen,
 - den **Kalender jedes Raums** (Tag, Woche, Monat),
 - den **Belegungsplan** mit allen Plätzen im Zeitstrahl,
-- für jeden Raum einen **QR-Code**, ein **druckbares DIN-A4-Plakat** und einen **Link**, z. B. zum Aushang am Raum.
+- für jeden Raum einen **QR-Code** und einen **Link**, z. B. zum Aushang am Raum.
 
 Notizen zu Terminen sind nur für angemeldete Mitglieder sichtbar.
 
@@ -36,18 +36,19 @@ Nicht eingeladene Adressen erhalten keinen Link. Dies ist Absicht.
    - **Notiz** (optional, nur für Mitglieder sichtbar).
 4. Auf **Termin anlegen** klicken.
 
-**Wiederholungen:** Bei **Wiederholung** wöchentlich, alle zwei Wochen, monatlich oder jährlich wählen und die Gesamtzahl der Termine eintragen (max. 52 einschließlich des ersten Termins). Monatliche Serien bleiben am Kalendertag verankert; fehlt dieser Tag im Monat, wird der letzte Monatstag verwendet. Jährliche Termine am 29. Februar fallen in Nicht-Schaltjahren auf den 28. Februar. Die Termine werden einzeln gespeichert und einzeln auf Doppelbelegung geprüft.
+**Serien:** Für regelmäßige Termine das Feld **Wöchentliche Serie anlegen** aktivieren und die Anzahl eintragen (max. 52). Jeder Termin wird einzeln gespeichert.
 
-## Doppelbelegung
+## Überschneidende Termine
 
-Ein Platz kann zu einer Zeit nur einmal belegt werden. Wenn sich ein neuer Termin überschneidet, erscheint eine Meldung mit dem Namen des bestehenden Termins. Bitte dann eine andere Zeit wählen oder den Vorstand fragen.
+Überschneidungen sind erlaubt – auch auf demselben Platz oder im selben Raum. Die Kalenderansichten zeigen gleichzeitig stattfindende Termine nebeneinander bzw. in getrennten Spuren. Bitte vor dem Speichern selbst prüfen, ob die Belegung organisatorisch möglich ist.
 
-Ein Termin, der genau um 18:00 Uhr endet, darf direkt ein Termin um 18:00 Uhr beginnen lassen.
+Ein Termin, der genau um 18:00 Uhr endet, kann direkt von einem Termin ab 18:00 Uhr gefolgt werden.
 
 ## Termin bearbeiten oder löschen
 
 1. Auf den Termin klicken (im Kalender oder im Belegungsplan).
 2. **Bearbeiten** oder **Löschen** wählen.
+3. Beim Bearbeiten kann **Kalender / Platz / Raum** geändert werden; danach speichern.
 
 Bei Serien gibt es zusätzlich **Ganze Serie löschen**. Bitte vorsichtig verwenden, es werden alle Termine der Serie entfernt.
 
@@ -55,18 +56,26 @@ Bei Serien gibt es zusätzlich **Ganze Serie löschen**. Bitte vorsichtig verwen
 
 Nützlich für Trainingspläne, die bereits in einer Tabelle stehen.
 
-1. Den gewünschten Raum- oder Platzkalender öffnen und auf **Spiele importieren** klicken.
-2. Die CSV- oder XLSX-Beispieldatei im Dialog herunterladen.
-3. Die Datei so ausfüllen, dass sie die Spalten `Start Date`, `Start Time` und `Subject` enthält. Ziel ist immer der geöffnete Kalender; jeder Eintrag reserviert 90 Minuten.
-4. Die Datei auswählen und die **Vorschau** prüfen. Bei Fehlern wird die betroffene Zeile angezeigt, z. B.:
-   - „Zeile 7: Das Datum „31.02.2026“ existiert nicht.“
-   - „Zeile 12: Die Endzeit (10:00) liegt nicht nach der Startzeit (18:00).“
-   - „Zeile 15: Die Ressource „Platz 3“ ist unbekannt.“
-5. Erst wenn keine Fehler mehr angezeigt werden, auf **Importieren** klicken.
+1. Im **Belegungsplan** auf **Import (CSV/Excel)** klicken.
+2. Eine der Beispielvorlagen im Dialog herunterladen und ausfüllen.
+3. Die Datei auswählen und in der Vorschau die Hinweise prüfen.
+4. Erst wenn keine Fehler angezeigt werden, auf **Importieren** klicken.
 
-**Wichtig:** Der Import ist vollständig oder gar nicht. Bei einem Fehler wird nichts übernommen.
+**Format:**
+- Pflichtspalten: `Start Date`, `Start Time`, `Subject`
+- Optional: `End Date`, `End Time`, `Calendar Name`
+- Wenn End Date oder End Time fehlt, werden 90 Minuten ab Start angenommen. Fehlt nur eine der beiden Endangaben, erscheint ein Hinweis und ebenfalls die 90-Minuten-Dauer.
+- `Calendar Name` akzeptiert Kalendername oder Slug. Fehlt der Wert oder gibt es keinen Treffer, wird der aktuell geöffnete Kalender verwendet.
+- Datum: `2027-03-01` oder `01.03.2027`; Uhrzeit: `17:30`
+- CSV wird mit Semikolon oder Komma unterstützt.
+- Überschneidungen sind zulässig. Bei Eingabefehlern wird nichts importiert; eine Zeilennummer hilft beim Korrigieren.
 
-**Importformat:** CSV oder XLSX, Pflichtspalten `Start Date`, `Start Time`, `Subject`. Andere Spalten werden ignoriert. Datum z. B. `2026-10-25`, Uhrzeit `17:30`. Importiert wird nur, wenn alle Zeilen gültig und ohne Überschneidungen sind.
+
+## Kalender exportieren
+
+- Auf einer Platz-/Raumseite über **Exportieren** den einzelnen Kalender exportieren.
+- Im Belegungsplan über **Kalender exportieren** entweder alle aktiven Kalender oder einen einzelnen Kalender auswählen.
+- Als **CSV** oder **Excel (.xlsx)** herunterladen. Der Export umfasst alle Termine, nicht nur den aktuell sichtbaren Zeitraum. Notizen werden nicht exportiert.
 
 ## Ansicht anpassen
 
@@ -76,9 +85,8 @@ Mit **Kategorie** lassen sich Termine einer Art filtern. Mit den Pfeilen und dem
 
 ## QR-Code und Link
 
-- Auf der Startseite oder im Raum-/Platzkalender **Plakat drucken** wählen. Das A4-Plakat enthält das unverzerrte VfB-Logo, das Motto und den QR-Code; die Schaltfläche **Drucken** wird erst nach erfolgreichem Laden des QR-Codes aktiviert. Ist die SVG-Datei nicht verfügbar, wird die PNG-Datei versucht; ohne geladenen QR wird der Druck gesperrt.
-- **QR SVG** bzw. **QR PNG** laden die jeweilige Datei separat; **Link kopieren** legt die Kalenderadresse in die Zwischenablage.
-- Der dauerhafte Link basiert auf dem Ressourcen-Slug. Umbenennen ändert nur den sichtbaren Namen; Link und QR-Code bleiben gleich.
+- Auf der Startseite oder beim Raum auf **QR-Code** klicken, um die SVG-Datei zu laden. Die Datei kann gedruckt werden.
+- Mit **Link kopieren** die Adresse des Kalenders in die Zwischenablage legen.
 
 Der QR-Code führt direkt zum Kalender des Raums. Die Adresse bleibt dauerhaft gleich.
 
@@ -103,10 +111,10 @@ Bitte prüfen, ob der Computer auf die deutsche Zeitzone eingestellt ist. Die Um
 
 ## Für Administratoren
 
-- **Räume/Plätze sortieren:** In der Administration die gewünschte Reihenfolgenzahl eintragen und **Speichern** wählen. Eine kleinere Zahl erscheint weiter oben; die Einstellung gilt für alle.
-- **Deaktivieren:** In der Administration **Deaktivieren** wählen. Die Ressource verschwindet aus den Kalendern, Buchungen bleiben erhalten; über **Aktivieren** kann sie zurückgeholt werden.
-- **Endgültig löschen:** Nur möglich, wenn keine aktuellen oder zukünftigen Termine mehr bestehen. Vergangene Buchungen werden endgültig gelöscht; Audit-Einträge bleiben. Vorher erscheint eine deutliche Bestätigung.
-- **Neuen Raum/Platz anlegen:** Im Admin-Bereich hinzufügen. Den QR-Workflow starten; er liest die Ressourcen-Slugs aus Supabase und erstellt SVG und PNG. Bis beide Dateien bereitstehen, bleibt der Plakatdruck ohne QR gesperrt.
-- **Mitglied einladen/Rolle ändern/Zugang entziehen:** Im Admin-Bereich der Website. Für den allerersten Admin ist die Einrichtung aus `ADMIN_EINRICHTUNG.md` erforderlich.
+- **Neues Mitglied einladen:** Im Supabase-Dashboard unter *Authentication > Users > Invite user*. Danach die Rolle im SQL Editor vergeben (siehe `supabase/admin-setup.sql`).
+- **Zugang entziehen:** Im SQL Editor die Zeile aus `memberships` löschen (Beispiel in `supabase/admin-setup.sql`). Das Konto kann danach keine Termine mehr ändern.
+- **Neuer Raum oder Platz:** Eintrag in `data/seed.json` (und in der Datenbank unter *Table Editor > resources*) anlegen, danach den QR-Code neu erzeugen lassen.
 - **Sicherung:** Läuft wöchentlich automatisch. Einrichtung und Wiederherstellung siehe `docs/EINRICHTUNG.md`.
+- **Mehrfach löschen:** Im Belegungsplan **Mehrere löschen** öffnen, einzelne Termine oder alle markieren und die Löschung bestätigen. Die Liste umfasst Termine aus allen Kalendern und Zeiträumen.
+- **Überschneidungen aktivieren:** Bei bestehenden Supabase-Projekten einmal `supabase/migration-allow-booking-overlaps.sql` im SQL Editor ausführen. Neue Installationen erhalten das aktualisierte Schema.
 - **Datenbank pausiert?** Wenn die Seite Fehler zeigt, im Supabase-Dashboard das Projekt mit **Restore** wieder aktivieren und prüfen, ob der Keepalive läuft.
