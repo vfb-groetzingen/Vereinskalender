@@ -173,6 +173,9 @@ const HEADER_ALIASES = {
   datum: ['datum', 'date', 'tag'],
   start: ['start', 'startzeit', 'beginn', 'von'],
   ende: ['ende', 'endzeit', 'bis', 'end'],
+  enddate: ['end date', 'enddate'],
+  endtime: ['end time', 'endtime'],
+  kalender: ['calendar name', 'calendarname', 'calendar', 'kalender', 'kalendername'],
   notiz: ['notiz', 'notizen', 'bemerkung', 'info', 'zusatzinfo']
 };
 const REQUIRED = ['titel', 'ressource', 'kategorie', 'datum', 'start', 'ende'];
@@ -189,7 +192,7 @@ export function validateTable(table, { resources, categories, existing = [] }) {
     errors.push({ line: 1, message: 'Die Datei enthält keine Termine. Erwartet: Kopfzeile plus mindestens eine Datenzeile.' });
     return { bookings, errors, conflicts };
   }
-  const headers = table[0].map((h) => String(h ?? '').trim().toLowerCase());
+  const headers = table[0].map((h) => String(h ?? '').trim().toLowerCase().replace(/\s+/g, ' '));
   const col = {};
   for (const [field, aliases] of Object.entries(HEADER_ALIASES)) {
     const idx = headers.findIndex((h) => aliases.includes(h));
@@ -256,12 +259,6 @@ export function validateTable(table, { resources, categories, existing = [] }) {
       _resource: res.name
     };
 
-    const clash = findConflicts([...existing, ...bookings], candidate);
-    if (clash.length) {
-      const other = clash[0];
-      const src = other._line ? `Zeile ${other._line}` : `„${other.title}“`;
-      conflicts.push({ line, message: `Zeile ${line}: Überschneidung auf „${res.name}“ mit ${src}.` });
-    }
     bookings.push(candidate);
   }
   if (!bookings.length && !errors.length) {
@@ -270,34 +267,45 @@ export function validateTable(table, { resources, categories, existing = [] }) {
   return { bookings, errors, conflicts };
 }
 
-export function validateMatchTable(table, { resource, category, existing = [], durationMinutes = 90 } = {}) {
+export function validateMatchTable(table, { resource, resources = null, category, existing = [], durationMinutes = 90 } = {}) {
   const errors = [];
+  const warnings = [];
   const conflicts = [];
   const bookings = [];
+  const availableResources = resources?.length ? resources : (resource ? [resource] : []);
   if (!resource || !category) {
-    errors.push({ line: 1, message: 'Bitte Raum/Platz und Kategorie für den Import auswählen.' });
-    return { bookings, errors, conflicts };
+    errors.push({ line: 1, message: 'Bitte den aktuellen Kalender und eine Kategorie auswählen.' });
+    return { bookings, errors, warnings, conflicts };
   }
   if (!table || table.length < 2) {
-    errors.push({ line: 1, message: 'Die Datei enthält keine Spiele. Erwartet: Kopfzeile und mindestens eine Datenzeile.' });
-    return { bookings, errors, conflicts };
+    errors.push({ line: 1, message: 'Die Datei enthält keine Termine. Erwartet: Kopfzeile und mindestens eine Datenzeile.' });
+    return { bookings, errors, warnings, conflicts };
   }
   const headers = table[0].map((h) => String(h ?? '').trim().toLowerCase().replace(/\s+/g, ' '));
   const aliases = {
     date: ['start date', 'startdate'],
     time: ['start time', 'starttime'],
-    subject: ['subject']
+    endDate: ['end date', 'enddate'],
+    endTime: ['end time', 'endtime'],
+    subject: ['subject'],
+    calendar: ['calendar name', 'calendarname', 'calendar', 'kalender', 'kalendername']
   };
   const cols = Object.fromEntries(Object.entries(aliases).map(([key, names]) => [key, headers.findIndex((h) => names.includes(h))]));
-  const missing = Object.entries(cols).filter(([, idx]) => idx < 0).map(([key]) => ({ date: 'Start Date', time: 'Start Time', subject: 'Subject' })[key]);
+  const missing = ['date', 'time', 'subject'].filter((key) => cols[key] < 0)
+    .map((key) => ({ date: 'Start Date', time: 'Start Time', subject: 'Subject' })[key]);
   if (missing.length) {
     errors.push({ line: 1, message: `Pflichtspalte(n) fehlen: ${missing.join(', ')}.` });
-    return { bookings, errors, conflicts };
+    return { bookings, errors, warnings, conflicts };
   }
   if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 720) {
     errors.push({ line: 1, message: 'Die Importdauer muss zwischen 1 und 720 Minuten liegen.' });
-    return { bookings, errors, conflicts };
+    return { bookings, errors, warnings, conflicts };
   }
+  const resourceByKey = new Map();
+  availableResources.forEach((r) => {
+    resourceByKey.set(String(r.name).trim().toLowerCase(), r);
+    resourceByKey.set(String(r.slug).trim().toLowerCase(), r);
+  });
   for (let i = 1; i < table.length; i++) {
     const line = i + 1;
     const row = table[i] || [];
@@ -306,18 +314,48 @@ export function validateMatchTable(table, { resource, category, existing = [], d
     const rowErrors = [];
     if (!title) rowErrors.push('Subject fehlt.');
     else if (title.length > 120) rowErrors.push('Subject ist länger als 120 Zeichen.');
-    const date = parseDate(row[cols.date]);
-    const time = parseTime(row[cols.time]);
-    if (date.error) rowErrors.push(`Start Date: ${date.error}`);
-    if (time.error) rowErrors.push(`Start Time: ${time.error}`);
+    const startDate = parseDate(row[cols.date]);
+    const startTime = parseTime(row[cols.time]);
+    if (startDate.error) rowErrors.push(`Start Date: ${startDate.error}`);
+    if (startTime.error) rowErrors.push(`Start Time: ${startTime.error}`);
+
+    let targetResource = resource;
+    const calendarName = cols.calendar >= 0 ? String(row[cols.calendar] ?? '').trim() : '';
+    if (calendarName) {
+      const match = resourceByKey.get(calendarName.toLowerCase());
+      if (match) targetResource = match;
+      else warnings.push({ line, message: `Zeile ${line}: Kalender „${calendarName}“ nicht gefunden; der aktuelle Kalender „${resource.name}“ wird verwendet.` });
+    }
+
+    const endDateText = cols.endDate >= 0 ? String(row[cols.endDate] ?? '').trim() : '';
+    const endTimeText = cols.endTime >= 0 ? String(row[cols.endTime] ?? '').trim() : '';
+    const hasEndDate = endDateText !== '';
+    const hasEndTime = endTimeText !== '';
+    let parsedEndDate = null;
+    let parsedEndTime = null;
+    if (hasEndDate && hasEndTime) {
+      parsedEndDate = parseDate(row[cols.endDate]);
+      parsedEndTime = parseTime(row[cols.endTime]);
+      if (parsedEndDate.error) rowErrors.push(`End Date: ${parsedEndDate.error}`);
+      if (parsedEndTime.error) rowErrors.push(`End Time: ${parsedEndTime.error}`);
+    } else if (hasEndDate !== hasEndTime) {
+      warnings.push({ line, message: `Zeile ${line}: End Date und End Time sind unvollständig; es werden 90 Minuten ab Startzeit angenommen.` });
+    }
+
     if (rowErrors.length) {
       rowErrors.forEach((message) => errors.push({ line, message: `Zeile ${line}: ${message}` }));
       continue;
     }
-    const startsAt = combine(date.value, time.value);
-    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
-    const candidate = {
-      resource_id: resource.id,
+    const startsAt = combine(startDate.value, startTime.value);
+    const endsAt = hasEndDate && hasEndTime
+      ? combine(parsedEndDate.value, parsedEndTime.value)
+      : new Date(startsAt.getTime() + durationMinutes * 60000);
+    if (endsAt <= startsAt) {
+      errors.push({ line, message: `Zeile ${line}: End Date/End Time müssen nach Start Date/Start Time liegen.` });
+      continue;
+    }
+    bookings.push({
+      resource_id: targetResource.id,
       category_id: category.id,
       title,
       starts_at: startsAt.toISOString(),
@@ -325,18 +363,11 @@ export function validateMatchTable(table, { resource, category, existing = [], d
       notes: null,
       series_id: null,
       _line: line,
-      _resource: resource.name
-    };
-    const clash = findConflicts([...existing, ...bookings], candidate);
-    if (clash.length) {
-      const other = clash[0];
-      const src = other._line ? `Zeile ${other._line}` : `„${other.title}“`;
-      conflicts.push({ line, message: `Zeile ${line}: Überschneidung auf „${resource.name}“ mit ${src}.` });
-    }
-    bookings.push(candidate);
+      _resource: targetResource.name
+    });
   }
-  if (!bookings.length && !errors.length) errors.push({ line: 1, message: 'Die Datei enthält keine auswertbaren Spiele.' });
-  return { bookings, errors, conflicts };
+  if (!bookings.length && !errors.length) errors.push({ line: 1, message: 'Die Datei enthält keine auswertbaren Termine.' });
+  return { bookings, errors, warnings, conflicts };
 }
 
 export function escapeHtml(s) {

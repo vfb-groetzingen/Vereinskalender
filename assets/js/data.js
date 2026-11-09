@@ -2,7 +2,7 @@
 // - DemoStore: Beispieldaten im Browser (localStorage). Keine echte Sicherheit!
 // - SupabaseStore: spricht die Supabase-REST-API an. Die Rechte prüft ausschließlich die Datenbank (RLS).
 import { CONFIG } from './config.js';
-import { findConflicts, addDays, weekStart } from './logic.js';
+import { addDays, weekStart } from './logic.js';
 
 export const ROOT = new URL(CONFIG.BASE_PATH, location.origin);
 
@@ -15,7 +15,7 @@ export async function loadSeed() {
 // Fehler in einheitlicher Form: { code, message }
 export function friendlyError(err) {
   const code = err?.code;
-  if (code === '23P01') return 'Doppelbelegung: Der Platz ist in diesem Zeitraum bereits belegt.';
+  if (code === '23P01') return 'Die alte Überschneidungssperre ist noch aktiv. Bitte supabase/migration-allow-booking-overlaps.sql im Supabase SQL Editor ausführen.';
   if (code === '42501' || err?.status === 401 || err?.status === 403) return 'Keine Berechtigung für diese Aktion. Bitte mit einem berechtigten Konto anmelden.';
   if (code === '23514') return 'Die Eingabe ist ungültig (z. B. Endzeit liegt vor der Startzeit).';
   return err?.message || 'Unbekannter Fehler.';
@@ -105,6 +105,13 @@ export class DemoStore {
       })
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }
+  async getAllBookings(resourceId = null) {
+    return this.bookings
+      .filter((b) => !resourceId || b.resource_id === resourceId)
+      .slice()
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .map((b) => { const c = { ...b }; if (!this.isEditor()) delete c.notes; return c; });
+  }
   async getAllFuture(fromDate, limit = 300, resourceId = null) {
     return this.bookings
       .filter((b) => new Date(b.ends_at) >= fromDate && (!resourceId || b.resource_id === resourceId))
@@ -114,15 +121,7 @@ export class DemoStore {
   }
   async createBookings(rows) {
     this.requireEditor();
-    for (const r of rows) {
-      const clash = findConflicts(this.bookings, r);
-      if (clash.length) throw { code: '23P01', message: 'Doppelbelegung' };
-    }
     const inserted = rows.map((r) => ({ id: uid(), series_id: null, ...r }));
-    // Auch innerhalb der neuen Zeilen prüfen
-    for (let i = 0; i < inserted.length; i++) {
-      if (findConflicts(inserted.slice(0, i), inserted[i]).length) throw { code: '23P01', message: 'Doppelbelegung' };
-    }
     this.bookings.push(...inserted);
     this.persist();
     return inserted;
@@ -131,8 +130,6 @@ export class DemoStore {
     this.requireEditor();
     const b = this.bookings.find((x) => x.id === id);
     if (!b) throw { code: 'P0002', message: 'Termin nicht gefunden.' };
-    const next = { ...b, ...patch };
-    if (findConflicts(this.bookings, next, id).length) throw { code: '23P01', message: 'Doppelbelegung' };
     Object.assign(b, patch);
     this.persist();
   }
@@ -277,6 +274,22 @@ export class SupabaseStore {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';
     const sel = this.isEditor() ? '*' : 'id,resource_id,category_id,title,starts_at,ends_at,series_id';
     return this._req(`/rest/v1/${table}?select=${sel}&starts_at=lt.${encodeURIComponent(to.toISOString())}&ends_at=gt.${encodeURIComponent(from.toISOString())}&order=starts_at`);
+  }
+
+  async getAllBookings(resourceId = null) {
+    const table = this.isEditor() ? 'bookings' : 'public_bookings';
+    const sel = this.isEditor() ? '*' : 'id,resource_id,category_id,title,starts_at,ends_at,series_id';
+    const filter = resourceId ? `&resource_id=eq.${encodeURIComponent(resourceId)}` : '';
+    const all = [];
+    const pageSize = 500;
+    let offset = 0;
+    while (true) {
+      const page = await this._req(`/rest/v1/${table}?select=${sel}${filter}&order=starts_at.asc,id.asc&limit=${pageSize}&offset=${offset}`);
+      all.push(...page);
+      if (page.length < pageSize) break;
+      offset += page.length;
+    }
+    return all;
   }
 
   async getAllFuture(fromDate, limit = 300, resourceId = null) {

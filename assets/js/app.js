@@ -70,6 +70,12 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   go(a.getAttribute('data-link'));
 });
+document.addEventListener('click', (e) => {
+  const exportButton = e.target.closest('[data-export-target]');
+  if (exportButton) { e.preventDefault(); openExportDialog(exportButton.dataset.exportTarget || 'all'); return; }
+  const bulkDeleteButton = e.target.closest('[data-bulk-delete]');
+  if (bulkDeleteButton) { e.preventDefault(); openBulkDeleteDialog(); }
+});
 window.addEventListener('popstate', () => render());
 
 // ---------- Hilfen ----------
@@ -369,6 +375,7 @@ async function renderRoom(res) {
         <p class="muted">${res.type === 'raum' ? 'Raum' : 'Platz'} · Direktlink: <a href="${roomUrl(res.slug)}" data-link="/raeume/${esc(res.slug)}">${esc(roomUrl(res.slug))}</a></p>
       </div>
       <div class="page-actions">
+        <button type="button" class="btn btn-ghost" data-export-target="${esc(res.id)}">Exportieren</button>
         <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" disabled aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
         <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="#" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="#" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-error role="status" hidden></span></span>
         <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
@@ -557,7 +564,11 @@ async function renderPlan() {
     const rubriken = S.resources.map((r) => `<li><label class="check"><input type="checkbox" data-res-toggle="${esc(r.id)}" ${S.hiddenRes.has(r.id) ? '' : 'checked'}><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></label></li>`).join('');
     app.innerHTML = `
       <header class="page-head"><div><h1>Belegungsplan</h1><p class="muted">Monatsübersicht aller Räume und Plätze.</p></div>
-        <div class="page-actions">${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}</div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
+          ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
+        </div>
       </header>
       <div class="plan-layout"><aside class="sidebar" aria-label="Filter">
         <section class="filter-box"><h2>Räume und Plätze</h2><div class="filter-actions"><button type="button" class="link-btn" id="show-all">Alle einblenden</button><button type="button" class="link-btn" id="hide-all">Alle ausblenden</button></div><ul class="check-list">${rubriken}</ul></section>
@@ -580,7 +591,11 @@ async function renderPlan() {
     app.innerHTML = `
       <header class="page-head">
         <div><h1>Belegungsplan</h1><p class="muted">Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.</p></div>
-        <div class="page-actions">${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}</div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
+          ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
+        </div>
       </header>
       <div class="plan-layout">
         <aside class="sidebar" aria-label="Filter">
@@ -654,6 +669,8 @@ async function renderPlan() {
     <header class="page-head">
       <div><h1>Belegungsplan</h1><p class="muted">Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.</p></div>
       <div class="page-actions">
+        <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+        ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
       </div>
     </header>
@@ -794,7 +811,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <input id="bf-title" class="input" required maxlength="120" value="${esc(booking?.title || '')}" autocomplete="off">
         <p class="hint">Öffentlich sichtbar. Bitte allgemein formulieren.</p></div>
       <div class="field-row">
-        <div class="field"><label for="bf-res">Ressource <span class="req">*</span></label>
+        <div class="field"><label for="bf-res">Kalender / Platz / Raum <span class="req">*</span></label>
           <select id="bf-res" class="input">${resOptions(booking?.resource_id || resource_id)}</select></div>
         <div class="field"><label for="bf-cat">Kategorie <span class="req">*</span></label>
           <select id="bf-cat" class="input">${catOptions(booking?.category_id)}</select></div>
@@ -855,11 +872,6 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       notes,
       series_id: seriesId
     }));
-    // Vorprüfung gegen geladene Termine (die Datenbank prüft immer vollständig)
-    for (const r of rows) {
-      const clash = L.findConflicts(S.bookings, r, booking?.id || null);
-      if (clash.length) return msg(`Überschneidung am ${L.fmtDateDE(new Date(r.starts_at))}: „${clash[0].title}“ belegt den Platz bereits.`);
-    }
     try {
       if (isEdit) {
         await S.store.updateBooking(booking.id, { title, resource_id: resId, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
@@ -879,10 +891,10 @@ function openImport(selectedResource) {
   if (!selectedResource) { setNotice('error', 'Bitte zuerst den Raum- oder Platzkalender öffnen.'); return; }
   const defaultCategory = S.categories.find((c) => c.name.toLowerCase() === 'spiel') || S.categories[0];
   const categoryOptions = S.categories.map((c) => `<option value="${esc(c.id)}" ${defaultCategory?.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  const resourceField = `<p class="notice notice-ok">Ziel: <strong>${esc(selectedResource.name)}</strong></p>`;
+  const resourceField = `<p class="notice notice-ok">Standardkalender: <strong>${esc(selectedResource.name)}</strong>. Eine gefüllte Spalte „Calendar Name“ kann den Zielkalender pro Zeile ändern.</p>`;
   const d = makeDialog('Spielplan importieren', `
-    <p>Importiert werden ausschließlich die Spalten <strong>Start Date</strong>, <strong>Start Time</strong> und <strong>Subject</strong>. Die Dauer wird auf 90 Minuten gesetzt.</p>
-    <p class="hint">Unterstützt: Excel (.xlsx) und CSV. Für CSV bitte Datum als JJJJ-MM-TT und Uhrzeit als HH:MM speichern. Der Import wird vor dem Speichern auf Fehler, Dubletten und Überschneidungen geprüft.</p>
+    <p>Pflichtspalten: <strong>Start Date</strong>, <strong>Start Time</strong> und <strong>Subject</strong>. Optional: <strong>End Date</strong>, <strong>End Time</strong> und <strong>Calendar Name</strong>.</p>
+    <p class="hint">Wenn End Date oder End Time fehlt, werden 90 Minuten ab Startzeit angenommen. Calendar Name kann ein Kalendername oder Slug sein; bei fehlendem oder unbekanntem Wert gilt der aktuelle Kalender. Überschneidungen sind erlaubt. Unterstützt: Excel (.xlsx) und CSV.</p>
     <div class="page-actions">
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.xlsx', ROOT).href}" download>Beispiel herunterladen (.xlsx)</a>
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.csv', ROOT).href}" download>Beispiel herunterladen (.csv)</a>
@@ -899,24 +911,19 @@ function openImport(selectedResource) {
   const go = $('#imp-go', d);
   const getSelection = () => ({
     resource: selectedResource,
+    resources: S.resources,
     category: S.categories.find((c) => c.id === $('#imp-category', d)?.value)
   });
   const validate = async () => {
     go.disabled = true;
     prepared = null;
     if (!sourceTable) return;
-    const { resource, category } = getSelection();
-    let result = L.validateMatchTable(sourceTable, { resource, category, existing: [], durationMinutes: 90 });
-    if (!result.errors.length && result.bookings.length) {
-      const dates = result.bookings.map((b) => new Date(b.starts_at).getTime());
-      const ends = result.bookings.map((b) => new Date(b.ends_at).getTime());
-      const existing = await S.store.getBookings({ from: new Date(Math.min(...dates)), to: new Date(Math.max(...ends)) });
-      result = L.validateMatchTable(sourceTable, { resource, category, existing, durationMinutes: 90 });
-    }
+    const { resource, resources, category } = getSelection();
+    const result = L.validateMatchTable(sourceTable, { resource, resources, category, durationMinutes: 90 });
     prepared = result;
     out.innerHTML = renderImportResult(result);
-    go.disabled = !!(result.errors.length || result.conflicts.length || !result.bookings.length);
-    if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Spiele sind gültig. Pro Eintrag werden 90 Minuten reserviert.</p>`);
+    go.disabled = !!(result.errors.length || !result.bookings.length);
+    if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Termine sind gültig. Fehlende Endangaben erhalten 90 Minuten Dauer; Überschneidungen sind erlaubt.</p>`);
   };
   $('#imp-category', d).addEventListener('change', validate);
   $('#imp-file', d).onchange = async (e) => {
@@ -949,7 +956,7 @@ function openImport(selectedResource) {
     try {
       await S.store.createBookings(rows);
       d.close();
-      setNotice('ok', `${rows.length} Spiele wurden importiert.`);
+      setNotice('ok', `${rows.length} Termine wurden importiert.`);
       render();
     } catch (err) {
       out.innerHTML = `<p class="notice notice-error">${esc(friendlyError(err))} Es wurde nichts importiert.</p>`;
@@ -960,6 +967,9 @@ function openImport(selectedResource) {
 
 function renderImportResult(r) {
   let html = '';
+  if (r.warnings?.length) {
+    html += `<div class="notice notice-warn"><p><strong>Hinweise zur Kalenderzuordnung/Dauer:</strong></p><ul>${r.warnings.map((w) => `<li>${esc(w.message)}</li>`).join('')}</ul></div>`;
+  }
   if (r.errors.length) {
     html += `<div class="notice notice-error"><p><strong>${r.errors.length} Fehler gefunden.</strong> Es wird nichts importiert, bis alle Fehler behoben sind.</p><ul>${r.errors.map((e) => `<li>${esc(e.message)}</li>`).join('')}</ul></div>`;
   }
@@ -975,6 +985,146 @@ function renderImportResult(r) {
       <div class="table-wrap"><table class="table"><thead><tr><th scope="col">Datum</th><th scope="col">Zeit</th><th scope="col">Ressource</th><th scope="col">Titel</th></tr></thead><tbody>${preview}</tbody></table></div>`;
   }
   return html;
+}
+
+function downloadBlob(content, mimeType, fileName) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function openExportDialog(defaultResourceId = 'all') {
+  const resources = S.resources;
+  const resourceMap = new Map(resources.map((r) => [r.id, r]));
+  const selected = resourceMap.has(defaultResourceId) ? defaultResourceId : 'all';
+  const options = `<option value="all" ${selected === 'all' ? 'selected' : ''}>Alle Plätze und Räume</option>` +
+    resources.map((r) => `<option value="${esc(r.id)}" ${selected === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+  const d = makeDialog('Kalender exportieren', `
+    <p>Exportiert alle Termine des ausgewählten Kalenders – unabhängig vom aktuell sichtbaren Zeitraum. Notizen werden nicht exportiert.</p>
+    <div class="field"><label for="export-calendar">Kalender auswählen</label><select id="export-calendar" class="input">${options}</select></div>
+    <div class="dialog-actions export-actions"><button type="button" class="btn" id="export-csv">CSV herunterladen</button><button type="button" class="btn btn-primary" id="export-xlsx">Excel herunterladen</button></div>
+    <p id="export-status" class="msg" role="status" aria-live="polite"></p>`, 'dialog-narrow');
+  const status = $('#export-status', d);
+  const csvButton = $('#export-csv', d);
+  const xlsxButton = $('#export-xlsx', d);
+  const makeExport = async (format) => {
+    csvButton.disabled = xlsxButton.disabled = true;
+    status.className = 'msg muted';
+    status.textContent = 'Termine werden geladen …';
+    try {
+      const targetId = $('#export-calendar', d).value;
+      const targetResource = resourceMap.get(targetId);
+      const bookings = await S.store.getAllBookings(targetId === 'all' ? null : targetId);
+      const activeIds = new Set(resources.map((r) => r.id));
+      const selectedBookings = bookings.filter((b) => activeIds.has(b.resource_id));
+      if (!selectedBookings.length) {
+        status.className = 'msg';
+        status.textContent = 'Für diese Auswahl gibt es keine Termine zum Exportieren.';
+        return;
+      }
+      const allResources = new Map([...(S.allResources || []), ...resources].map((r) => [r.id, r]));
+      const rows = [
+        ['Start Date', 'Start Time', 'End Date', 'End Time', 'Subject', 'Calendar Name'],
+        ...selectedBookings.map((b) => {
+          const start = new Date(b.starts_at), end = new Date(b.ends_at);
+          const resource = allResources.get(b.resource_id);
+          return [L.ymd(start), hhmm(start), L.ymd(end), hhmm(end), b.title, resource?.name || 'Unbekannter Kalender'];
+        })
+      ];
+      const prefix = targetId === 'all' ? 'alle-kalender' : (targetResource?.slug || 'kalender');
+      const baseName = `vfb-kalender-${prefix}-${L.ymd(new Date())}`;
+      if (format === 'csv') {
+        const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+        downloadBlob(`\uFEFF${csv}`, 'text/csv;charset=utf-8', `${baseName}.csv`);
+      } else {
+        const XLSX = await import('../vendor/xlsx.mjs');
+        const workbook = XLSX.utils.book_new();
+        const sheet = XLSX.utils.aoa_to_sheet(rows);
+        sheet['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 36 }, { wch: 28 }];
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Termine');
+        await XLSX.writeFile(workbook, `${baseName}.xlsx`);
+      }
+      status.className = 'msg';
+      status.textContent = `${selectedBookings.length} Termine exportiert.`;
+    } catch (err) {
+      status.className = 'msg';
+      status.textContent = `Export fehlgeschlagen: ${friendlyError(err)}`;
+    } finally {
+      csvButton.disabled = xlsxButton.disabled = false;
+    }
+  };
+  csvButton.onclick = () => makeExport('csv');
+  xlsxButton.onclick = () => makeExport('xlsx');
+}
+
+async function openBulkDeleteDialog() {
+  if (!S.store.isAdmin()) { setNotice('error', 'Mehrfachlöschen ist Administratoren vorbehalten.'); return; }
+  const d = makeDialog('Termine mehrfach löschen', `
+    <p>Wähle Termine aus allen Kalendern aus. Die Liste umfasst alle geladenen Termine, nicht nur den sichtbaren Zeitraum.</p>
+    <p id="bulk-status" class="muted" role="status" aria-live="polite">Alle Termine werden geladen …</p>
+    <div id="bulk-list"></div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close>Schließen</button><button type="button" class="btn btn-danger" id="bulk-delete-confirm" disabled>Ausgewählte löschen</button></div>`, 'dialog-wide');
+  const status = $('#bulk-status', d);
+  const list = $('#bulk-list', d);
+  const deleteButton = $('#bulk-delete-confirm', d);
+  try {
+    const bookings = await S.store.getAllBookings();
+    const resourceMap = new Map([...(S.allResources || []), ...S.resources].map((r) => [r.id, r]));
+    const ordered = bookings.slice().sort((a, b) => b.starts_at.localeCompare(a.starts_at));
+    if (!ordered.length) { status.textContent = 'Es sind keine Termine vorhanden.'; return; }
+    status.textContent = `${ordered.length} Termine geladen.`;
+    list.innerHTML = `
+      <div class="bulk-select-all"><label class="check"><input type="checkbox" id="bulk-select-all"><span>Alle auswählen</span></label><span id="bulk-selected-count" class="muted">0 ausgewählt</span></div>
+      <div class="table-wrap bulk-table-wrap"><table class="table"><thead><tr><th scope="col">Markieren</th><th scope="col">Datum</th><th scope="col">Zeit</th><th scope="col">Kalender</th><th scope="col">Titel</th></tr></thead><tbody>
+      ${ordered.map((b) => {
+        const start = new Date(b.starts_at), end = new Date(b.ends_at);
+        const resource = resourceMap.get(b.resource_id)?.name || 'Archivierter/Unbekannter Kalender';
+        return `<tr><td><input class="bulk-booking-check" type="checkbox" value="${esc(b.id)}" aria-label="Termin ${esc(b.title)} markieren"></td><td>${esc(L.fmtDateDE(start))}</td><td>${hhmm(start)}–${hhmm(end)}</td><td>${esc(resource)}</td><td>${esc(b.title)}</td></tr>`;
+      }).join('')}
+      </tbody></table></div>`;
+    const checks = [...d.querySelectorAll('.bulk-booking-check')];
+    const all = $('#bulk-select-all', d);
+    const count = $('#bulk-selected-count', d);
+    const updateCount = () => {
+      const selectedCount = checks.filter((c) => c.checked).length;
+      count.textContent = `${selectedCount} ausgewählt`;
+      deleteButton.disabled = selectedCount === 0;
+      all.checked = selectedCount > 0 && selectedCount === checks.length;
+      all.indeterminate = selectedCount > 0 && selectedCount < checks.length;
+    };
+    checks.forEach((c) => c.addEventListener('change', updateCount));
+    all.addEventListener('change', () => { checks.forEach((c) => { c.checked = all.checked; }); updateCount(); });
+    deleteButton.onclick = async () => {
+      const ids = checks.filter((c) => c.checked).map((c) => c.value);
+      if (!ids.length || !S.store.isAdmin()) return;
+      if (!window.confirm(`${ids.length} ausgewählte Termine unwiderruflich löschen?`)) return;
+      deleteButton.disabled = true;
+      status.textContent = 'Ausgewählte Termine werden gelöscht …';
+      let deleted = 0;
+      try {
+        for (let i = 0; i < ids.length; i += 100) {
+          await S.store.deleteBookings(ids.slice(i, i + 100));
+          deleted += Math.min(100, ids.length - i);
+        }
+        d.close();
+        setNotice('ok', `${deleted} Termine wurden gelöscht.`);
+        render();
+      } catch (err) {
+        status.className = 'notice notice-error';
+        status.textContent = `${deleted} von ${ids.length} Terminen gelöscht. Fehler: ${friendlyError(err)}`;
+        deleteButton.disabled = false;
+      }
+    };
+  } catch (err) {
+    status.className = 'notice notice-error';
+    status.textContent = `Termine konnten nicht geladen werden: ${friendlyError(err)}`;
+  }
 }
 
 // ---------- Anmeldung ----------
