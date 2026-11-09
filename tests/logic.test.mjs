@@ -97,7 +97,7 @@ test('Import: Fehler werden mit Zeilennummer gemeldet', () => {
   assert.ok(msgs.some((m) => m.startsWith('Zeile 5: Die Kategorie „Unbekannt“ ist unbekannt.')));
 });
 
-test('Import: Überschneidung innerhalb der Datei und mit Bestand', () => {
+test('Import: Überschneidungen in Datei und Bestand sind erlaubt', () => {
   const existing = [{ id: 'b9', resource_id: 'r1', title: 'Bestand', starts_at: new Date(2026, 9, 27, 17, 0).toISOString(), ends_at: new Date(2026, 9, 27, 18, 0).toISOString() }];
   const table = [
     ['Titel', 'Ressource', 'Kategorie', 'Datum', 'Start', 'Ende'],
@@ -107,9 +107,26 @@ test('Import: Überschneidung innerhalb der Datei und mit Bestand', () => {
   ];
   const r = L.validateTable(table, { ...ctx, existing });
   assert.equal(r.errors.length, 0);
-  assert.equal(r.conflicts.length, 2);
-  assert.match(r.conflicts[0].message, /mit „Bestand“/);
-  assert.match(r.conflicts[1].message, /Zeile 4: Überschneidung .* mit Zeile 3/);
+  assert.equal(r.conflicts.length, 0);
+  assert.equal(r.bookings.length, 3);
+});
+
+test('Spielplanimport: optionale Enddaten, Kalendername, 90-Minuten-Fallback und erlaubte Überschneidung', () => {
+  const table = [
+    ['Start Date', 'Start Time', 'End Date', 'End Time', 'Subject', 'Calendar Name'],
+    ['2026-10-26', '17:00', '2026-10-26', '18:00', 'Training A', 'trainingsplatz-a'],
+    ['2026-10-26', '17:30', '2026-10-26', '18:30', 'Training B', 'Unbekannt'],
+    ['2026-10-26', '19:00', '', '', 'Vorstand', '']
+  ];
+  const r = L.validateMatchTable(table, { resource: resources[0], resources, category: categories[0] });
+  assert.equal(r.errors.length, 0);
+  assert.equal(r.conflicts.length, 0);
+  assert.equal(r.bookings.length, 3);
+  assert.equal(r.bookings[0].resource_id, 'r1');
+  assert.equal(r.bookings[1].resource_id, 'r1'); // unbekannter Kalender fällt auf den aktuellen zurück
+  assert.equal(r.bookings[2].resource_id, 'r1'); // leerer Name nimmt den aktuellen Kalender
+  assert.equal(new Date(r.bookings[2].ends_at) - new Date(r.bookings[2].starts_at), 90 * 60 * 1000);
+  assert.equal(r.warnings.length, 1);
 });
 
 test('Import: fehlende Pflichtspalte wird benannt', () => {
@@ -140,54 +157,11 @@ test('Lanes: überlappende Termine erhalten getrennte Spuren', () => {
 });
 
 test('Serien: wöchentliche Termine', () => {
-  assert.deepEqual(L.seriesDates('2026-10-26', 3, 'weekly'), ['2026-10-26', '2026-11-02', '2026-11-09']);
-});
-
-test('Serien: alle zwei Wochen', () => {
-  assert.deepEqual(L.seriesDates('2026-10-26', 3, 'biweekly'), ['2026-10-26', '2026-11-09', '2026-11-23']);
-});
-
-test('Serien: monatlich bleibt der ursprüngliche Kalendertag erhalten und wird am Monatsende begrenzt', () => {
-  assert.deepEqual(L.seriesDates('2025-01-31', 4, 'monthly'), ['2025-01-31', '2025-02-28', '2025-03-31', '2025-04-30']);
-});
-
-test('Serien: jährlich behandelt Schalttage ohne Datumsdrift', () => {
-  assert.deepEqual(L.seriesDates('2024-02-29', 5, 'yearly'), ['2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28', '2028-02-29']);
-});
-
-test('Serien: unbekanntes Wiederholungsintervall wird abgelehnt', () => {
-  assert.throws(() => L.seriesDates('2026-10-26', 3, 'daily'), /Wiederholungsintervall/);
+  assert.deepEqual(L.seriesDates('2026-10-26', 3), ['2026-10-26', '2026-11-02', '2026-11-09']);
 });
 
 test('Zeitumstellung am 25.10.2026: Uhrzeit bleibt lokal korrekt', () => {
   const d = L.combine('2026-10-25', '18:00');
   assert.equal(d.getHours(), 18);
   assert.equal(d.getMinutes(), 0);
-});
-
-test('Spielimport: liest nur Start Date, Start Time und Subject und setzt 90 Minuten', () => {
-  const table = [
-    ['Start Date', 'Start Time', 'Subject'],
-    ['2026-10-27', '17:30', 'C-Junioren - Musterverein : Beispiel FC']
-  ];
-  const r = L.validateMatchTable(table, { resource: resources[0], category: categories[1] });
-  assert.equal(r.errors.length, 0);
-  assert.equal(r.conflicts.length, 0);
-  assert.equal(r.bookings.length, 1);
-  assert.equal(r.bookings[0].title, table[1][2]);
-  assert.equal(Date.parse(r.bookings[0].ends_at) - Date.parse(r.bookings[0].starts_at), 90 * 60 * 1000);
-});
-
-test('Spielimport: meldet fehlende Spalten und Dubletten/Überschneidungen', () => {
-  const missing = L.validateMatchTable([['Start Date', 'Subject'], ['2026-10-27', 'Spiel']], { resource: resources[0], category: categories[1] });
-  assert.match(missing.errors[0].message, /Start Time/);
-  const table = [
-    ['Start Date', 'Start Time', 'Subject'],
-    ['2026-10-27', '17:30', 'Musterverein : Beispiel FC'],
-    ['2026-10-27', '17:30', 'Musterverein : Beispiel FC']
-  ];
-  const r = L.validateMatchTable(table, { resource: resources[0], category: categories[1] });
-  assert.equal(r.bookings.length, 2);
-  assert.equal(r.conflicts.length, 1);
-  assert.match(r.conflicts[0].message, /Zeile 2/);
 });

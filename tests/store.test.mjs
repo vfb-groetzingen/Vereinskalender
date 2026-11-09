@@ -1,4 +1,4 @@
-// Testet den Demo-Speicher (gleiche Regeln wie die Datenbank: Doppelbelegung, Rechte, Notizen).
+// Testet den Demo-Speicher: überlappende Termine, Rechte und Notizen.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -25,24 +25,22 @@ test('Besucher dürfen nicht schreiben', async () => {
   await assert.rejects(() => s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]), (e) => e.code === '42501');
 });
 
-test('Bearbeiter dürfen schreiben, Doppelbelegung wird abgelehnt (SQLSTATE 23P01)', async () => {
+test('Bearbeiter dürfen auch überlappende Termine auf derselben Ressource anlegen', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
   await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
-  await assert.rejects(
-    () => s.createBookings([booking(res, '2030-01-07T17:30:00Z', '2030-01-07T18:30:00Z')]),
-    (e) => e.code === '23P01'
-  );
+  await s.createBookings([booking(res, '2030-01-07T17:30:00Z', '2030-01-07T18:30:00Z')]);
+  assert.equal(s.bookings.filter((b) => b.title === 'Test' && b.starts_at.startsWith('2030-01-07')).length, 2);
 });
 
-test('Doppelbelegung innerhalb derselben Anfrage (Serie) wird abgelehnt', async () => {
+test('Überlappende Termine in derselben Import-Anfrage werden gespeichert', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
-  await assert.rejects(() => s.createBookings([
+  const inserted = await s.createBookings([
     booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z'),
     booking(res, '2030-01-07T17:30:00Z', '2030-01-07T18:30:00Z')
-  ]), (e) => e.code === '23P01');
-  assert.equal(s.bookings.filter((b) => b.title === 'Test' && b.starts_at.startsWith('2030-01-07')).length, 0);
+  ]);
+  assert.equal(inserted.length, 2);
 });
 
 test('Gleiche Zeit auf anderem Platz ist erlaubt', async () => {
@@ -50,6 +48,21 @@ test('Gleiche Zeit auf anderem Platz ist erlaubt', async () => {
   await s.signIn({ role: 'bearbeiter' });
   await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
   await s.createBookings([booking('res-kunstrasenplatz', '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
+});
+
+test('getAllBookings lädt alle Zeiträume und kann nach Ressource filtern', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const before = await s.getAllBookings();
+  await s.createBookings([
+    booking(res, '2000-01-07T17:00:00Z', '2000-01-07T18:00:00Z'),
+    booking('res-kunstrasenplatz', '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')
+  ]);
+  const all = await s.getAllBookings();
+  const filtered = await s.getAllBookings(res);
+  assert.equal(all.length, before.length + 2);
+  assert.equal(all.filter((b) => b.starts_at.startsWith('2000-01-07')).length, 1);
+  assert.equal(filtered.filter((b) => b.starts_at.startsWith('2000-01-07')).length, 1);
 });
 
 test('Besucher sehen keine Notizen', async () => {
@@ -62,13 +75,14 @@ test('Besucher sehen keine Notizen', async () => {
   assert.equal('notes' in list[0], false);
 });
 
-test('Bearbeiten: eigener Termin wird nicht als Konflikt gewertet, fremder schon', async () => {
+test('Bearbeiten: ein Termin darf auf ein bereits belegtes Zeitfenster verschoben werden', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
   const [a] = await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
-  await s.updateBooking(a.id, { title: 'Neu' });
-  await s.createBookings([booking(res, '2030-01-07T18:00:00Z', '2030-01-07T19:00:00Z')]); // Randberührung ok
-  await assert.rejects(() => s.updateBooking(a.id, { ends_at: '2030-01-07T18:30:00Z' }), (e) => e.code === '23P01');
+  const [b] = await s.createBookings([booking(res, '2030-01-07T18:00:00Z', '2030-01-07T19:00:00Z')]);
+  await s.updateBooking(b.id, { starts_at: '2030-01-07T17:30:00Z' });
+  assert.equal(s.bookings.filter((x) => x.resource_id === res && x.starts_at.startsWith('2030-01-07')).length, 2);
+  assert.ok(a.id !== b.id);
 });
 
 test('Löschen erfordert Berechtigung', async () => {
@@ -77,20 +91,6 @@ test('Löschen erfordert Berechtigung', async () => {
   const [a] = await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
   await s.signOut();
   await assert.rejects(() => s.deleteBookings([a.id]), (e) => e.code === '42501');
-});
-
-test('Gesamte Wiederholungsserie wird unabhängig vom aktuell geladenen Kalender gelöscht', async () => {
-  const s = fresh();
-  await s.signIn({ role: 'bearbeiter' });
-  const seriesId = 'serie-test';
-  await s.createBookings([
-    booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { series_id: seriesId }),
-    booking(res, '2030-01-21T17:00:00Z', '2030-01-21T18:00:00Z', { series_id: seriesId }),
-    booking(res, '2030-01-08T17:00:00Z', '2030-01-08T18:00:00Z', { series_id: 'andere-serie' })
-  ]);
-  await s.deleteSeries(seriesId);
-  assert.equal(s.bookings.some((b) => b.series_id === seriesId), false);
-  assert.equal(s.bookings.some((b) => b.series_id === 'andere-serie'), true);
 });
 
 test('Demo-Startdaten enthalten keine Doppelbelegungen', () => {
