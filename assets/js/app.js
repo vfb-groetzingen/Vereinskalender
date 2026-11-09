@@ -503,6 +503,51 @@ function planMonthGrid(range, bookings) {
   return `<div class="mg plan-month-grid"><div class="mg-head">${weekdays}</div><div class="mg-grid">${cells}</div></div>`;
 }
 
+// Wochenübersicht: sieben feste Tages-Spalten, damit Montag bis Sonntag
+// gemeinsam sichtbar sind, statt eine breite horizontale Stundentimeline.
+function planWeekBoard(range, groups) {
+  const headers = range.days.map((day) => `
+    <div class="week-day-head" role="columnheader">
+      <span>${esc(dayName(day))}</span>
+      <time datetime="${L.ymd(day)}">${day.getDate()}.${day.getMonth() + 1}.</time>
+    </div>`).join('');
+  const groupRows = groups.map(([title, list]) => {
+    if (!list.length) return '';
+    const rows = list.map((resource) => {
+      const segments = S.bookings
+        .filter((booking) => booking.resource_id === resource.id && (!S.catFilter || booking.category_id === S.catFilter))
+        .flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
+      const cells = range.days.map((day, dayIndex) => {
+        const daySegments = segments.filter((segment) => segment.dayIndex === dayIndex)
+          .sort((a, b) => a.start - b.start);
+        const events = daySegments.map((segment) => {
+          const booking = segment.booking;
+          const category = catById(booking.category_id)?.name || 'Sonstige';
+          const time = `${hhmm(segment.start)}–${hhmm(segment.end)}`;
+          return `<button type="button" class="week-booking" data-id="${esc(booking.id)}"
+            style="border-left-color:${esc(catColor(booking.category_id))}"
+            title="${esc(booking.title)} · ${esc(category)} · ${esc(time)}"
+            aria-label="${esc(resource.name)}, ${esc(dayLong(day))}: ${esc(booking.title)}, ${esc(category)}, ${esc(time)}">
+            <span class="week-booking-time">${time}</span>
+            <span class="week-booking-title">${esc(booking.title)}</span>
+          </button>`;
+        }).join('');
+        return `<div class="week-day-cell" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
+      }).join('');
+      return `<div class="week-resource-row" role="row">
+        <div class="week-resource-label" role="rowheader"><span class="chip" style="background:${esc(resource.color)}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>
+        ${cells}
+      </div>`;
+    }).join('');
+    return `<div class="week-group-title" role="rowheader">${title}</div>${rows}`;
+  }).join('');
+  return `<div class="week-board" role="table" aria-label="Belegungsplan von Montag bis Sonntag">
+    <div class="week-grid-header" role="row">
+      <div class="week-resource-head" role="columnheader">Platz / Raum</div>${headers}
+    </div>${groupRows || '<p class="empty">Keine Räume oder Plätze vorhanden.</p>'}
+  </div>`;
+}
+
 // ---------- Belegungsplan ----------
 async function renderPlan() {
   const range = planRange();
@@ -523,6 +568,47 @@ async function renderPlan() {
     bindPlan();
     return;
   }
+  if (S.planRange === 'week') {
+    const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
+    const groups = [['Räume', visible.filter((r) => r.type === 'raum')], ['Plätze', visible.filter((r) => r.type === 'platz')]];
+    const label = `${range.days[0].toLocaleDateString('de-DE')} – ${range.days[6].toLocaleDateString('de-DE')}`;
+    const rubriken = S.resources.map((r) => `
+      <li><label class="check">
+        <input type="checkbox" data-res-toggle="${esc(r.id)}" ${S.hiddenRes.has(r.id) ? '' : 'checked'}>
+        <span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span>
+        <span>${esc(r.name)}</span></label></li>`).join('');
+    app.innerHTML = `
+      <header class="page-head">
+        <div><h1>Belegungsplan</h1><p class="muted">Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.</p></div>
+        <div class="page-actions">${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}</div>
+      </header>
+      <div class="plan-layout">
+        <aside class="sidebar" aria-label="Filter">
+          <section class="filter-box">
+            <h2>Rubriken</h2>
+            <div class="filter-actions"><button type="button" class="link-btn" id="show-all">Alle einblenden</button><button type="button" class="link-btn" id="hide-all">Alle ausblenden</button></div>
+            <ul class="check-list">${rubriken}</ul>
+          </section>
+          <section class="filter-box">
+            <h2><label for="cat-filter">Kategorie</label></h2>
+            <select id="cat-filter" class="input"><option value="">Alle Kategorien</option>${S.categories.map((c) => `<option value="${esc(c.id)}" ${S.catFilter === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+            <ul class="legend">${S.categories.map((c) => `<li><span class="chip" style="background:${esc(c.color)}" aria-hidden="true"></span>${esc(c.name)}</li>`).join('')}</ul>
+          </section>
+        </aside>
+        <section class="plan-main">
+          <div class="toolbar" role="toolbar" aria-label="Zeitraum steuern">
+            <div class="btn-group"><button type="button" class="btn" id="p-prev" aria-label="Vorherige Woche">‹</button><button type="button" class="btn" id="p-today">Heute</button><button type="button" class="btn" id="p-next" aria-label="Nächste Woche">›</button></div>
+            <label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="p-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
+            <p class="range-label" aria-live="polite">${esc(label)}</p>
+            <div class="btn-group" role="group" aria-label="Zeitraum">${['day','week','month'].map((v) => `<button type="button" class="btn ${S.planRange === v ? 'btn-active' : ''}" data-prange="${v}" aria-pressed="${S.planRange === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div>
+          </div>
+          ${planWeekBoard(range, groups)}
+        </section>
+      </div>`;
+    bindPlan();
+    return;
+  }
+
   const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
   const groups = [['Räume', visible.filter((r) => r.type === 'raum')], ['Plätze', visible.filter((r) => r.type === 'platz')]];
   const cats = S.categories;
@@ -631,7 +717,7 @@ function bindPlan() {
   $('#show-all').onclick = () => { S.hiddenRes.clear(); render(); };
   $('#hide-all').onclick = () => { S.resources.forEach((r) => S.hiddenRes.add(r.id)); render(); };
   $('#cat-filter').onchange = (e) => { S.catFilter = e.target.value; render(); };
-  document.querySelectorAll('.bar, .plan-month-event').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
+  document.querySelectorAll('.bar, .plan-month-event, .week-booking').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('[data-plan-goto]').forEach((b) => b.onclick = () => { const [y, m, d] = b.dataset.planGoto.split('-').map(Number); S.planAnchor = new Date(y, m - 1, d); S.planRange = 'day'; render(); });
   const nb = $('#btn-new-plan'); if (nb) nb.onclick = () => openBookingForm({ resource_id: S.resources[0]?.id, date: S.planAnchor });
 }
