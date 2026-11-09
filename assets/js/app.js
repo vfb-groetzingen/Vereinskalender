@@ -46,7 +46,11 @@ function relPath() {
 
 function parseRoute() {
   const p = relPath();
-  if (p === '/') return { name: 'home' };
+  if (p === '/') {
+    const planPath = BASE + '/belegungsplan';
+    if (location.pathname !== planPath) history.replaceState(null, '', planPath + location.search);
+    return { name: 'plan' };
+  }
   if (p === '/belegungsplan') return { name: 'plan' };
   if (p === '/admin') return { name: 'admin' };
   const m = p.match(/^\/raeume\/([a-z0-9-]+)$/);
