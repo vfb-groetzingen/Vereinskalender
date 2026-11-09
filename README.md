@@ -3,8 +3,9 @@
 Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 
 - **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan und QR-Codes.
-- **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen. Sie importieren Belegungen aus CSV- oder Excel-Dateien.
-- **Doppelbelegungen** verhindert die Datenbank selbst, auch bei gleichzeitigen Eingaben.
+- **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
+- **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
+- **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
 
 ## Technik
 
@@ -28,13 +29,15 @@ impressum.html          Vorlage, muss ergänzt werden
 assets/css/style.css    Gestaltung
 assets/js/app.js        Oberfläche
 assets/js/data.js       Datenzugriff (Demo-Modus und Supabase)
-assets/js/logic.js      Prüfregeln: Datum, Uhrzeit, Doppelbelegung, Import
+assets/js/logic.js      Prüfregeln: Datum, Uhrzeit, Import und Kalenderzuordnung
 assets/js/layout.js     Positionen im Kalender und Zeitstrahl
 assets/js/config.js     Einstellungen (öffentliche Werte)
-assets/vendor/          SheetJS (Apache-2.0) für Excel-Import
+assets/vendor/          SheetJS (Apache-2.0) für Excel-Import/-Export
+assets/templates/       CSV- und Excel-Beispiele für den Import
 data/seed.json          Räume, Plätze, Kategorien, Basisadresse für QR-Codes
 qr/                     Automatisch erzeugte QR-Codes (SVG)
-supabase/schema.sql     Tabellen, Doppelbelegungssperre, Rechte (RLS)
+supabase/schema.sql     Tabellen und Rechte (RLS), ohne Überschneidungssperre
+supabase/migration-allow-booking-overlaps.sql  Migration für bestehende Datenbanken
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
@@ -46,8 +49,9 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 ## Schnellstart
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
-2. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
-3. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
+2. Bei einer bestehenden Supabase-Installation zusätzlich `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
+3. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
+4. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
 **Ohne Supabase ausprobieren (Demo-Modus):** Solange `SUPABASE_URL` in `assets/js/config.js` leer ist, zeigt die Seite Beispieldaten. Lokal starten mit `python3 -m http.server 8000` im Projektordner und `BASE_PATH: '/'` setzen, dann `http://localhost:8000/` öffnen. Der Demo-Modus bietet keinen echten Schutz.
 
@@ -57,7 +61,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 npm test
 ```
 
-Die Tests prüfen Datumsangaben, Doppelbelegung, Import, Kalenderpositionen und die Regeln des Datenspeichers. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
+Die Tests prüfen Datumsangaben, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen und die Regeln des Datenspeichers. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
 
 ## Sicherheit in Kürze
 
