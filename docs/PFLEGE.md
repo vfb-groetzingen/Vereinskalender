@@ -50,7 +50,7 @@ Ein Termin, der genau um 18:00 Uhr endet, kann direkt von einem Termin ab 18:00 
 2. **Bearbeiten** oder **Löschen** wählen.
 3. Beim Bearbeiten kann **Kalender / Platz / Raum** geändert werden; danach speichern.
 
-Bei Serien gibt es zusätzlich **Ganze Serie löschen**. Bitte vorsichtig verwenden, es werden alle Termine der Serie entfernt.
+Bei Serien fragt die Anwendung vor dem Bearbeiten oder Löschen nach dem Umfang: **Nur diesen Termin** oder **diesen und alle folgenden Termine der Serie**. Frühere Termine bleiben dabei unverändert. Bei einer Änderung ab dem ausgewählten Termin werden Datum und Uhrzeit der folgenden Vorkommen entsprechend fortgeschrieben.
 
 ## Mehrere Termine importieren (Excel oder CSV)
 

@@ -12,11 +12,11 @@ Befehl: `npm test` bzw. `node --test tests/logic.test.mjs tests/layout.test.mjs 
 
 | Testdatei | Umfang | Ergebnis |
 |---|---|---|
-| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung (inkl. 31.02., Excel-Seriennummern), Import mit Zeilenfehlern, optionalen Endangaben und Kalenderzuordnung, erlaubte Überschneidungen, CSV-Erkennung, Spurenlayout, Serien, Zeitumstellung | 20 von 20 bestanden |
+| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Import mit Zeilenfehlern und Kalenderzuordnung, erlaubte Überschneidungen, Anpassung einer Serie ab ausgewähltem Termin, CSV-Erkennung und Layout | 21 von 21 bestanden |
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
-| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen beim Anlegen und Bearbeiten, vollständiges Laden aller Zeiträume, Notizen für Besucher ausgeblendet, Löschen nur mit Berechtigung | 9 von 9 bestanden |
+| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, vollständiges Laden aller Zeiträume und einer Serie, Notizen und Löschen | 10 von 10 bestanden |
 
-**Ergebnis: 35 von 35 automatisierten Tests bestanden.**
+**Ergebnis: 37 von 37 automatisierten Tests bestanden.**
 
 Zusätzlich geprüft:
 - Die JavaScript-Dateien sind syntaktisch gültig (`node --check`); die CSS-Datei wurde geparst.
@@ -108,6 +108,8 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Besucher (ohne Anmeldung) sehen keine Schaltfläche zum Bearbeiten
 - [ ] Anmeldelink wird per E-Mail zugestellt und öffnet die Seite angemeldet
 - [ ] Termin anlegen, bearbeiten, löschen funktioniert
+- [ ] Serie bearbeiten: nur diesen oder diesen und alle folgenden Termine wählen; frühere Termine bleiben unverändert
+- [ ] Serie löschen: nur diesen oder diesen und alle folgenden Termine wählen
 - [ ] Serie mit 4 Terminen wird angelegt
 - [ ] Zwei überlappende Termine auf demselben Platz werden gespeichert und in getrennten Spuren angezeigt
 - [ ] Bearbeiten kann einen bestehenden Termin einem anderen Platz/Raum zuordnen
