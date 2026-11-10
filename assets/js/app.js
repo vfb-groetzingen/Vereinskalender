@@ -397,6 +397,7 @@ async function renderRoom(res) {
     <div class="cal-wrap">
       ${S.roomView === 'month' ? monthGrid(range, mine) : timeGrid(range, mine)}
     </div>
+    ${isEditor() ? '<p class="hint calendar-create-hint">Tipp: Doppelklick oder Rechtsklick auf eine freie Kalenderfläche legt einen Termin an. Im Zeitraster wird die angeklickte Uhrzeit übernommen.</p>' : ''}
     <section class="section">
       <h2>Aktuelle und kommende Termine</h2>
       ${futureTable(S.futureList)}
@@ -424,7 +425,7 @@ function timeGrid(range, bookings) {
         <span class="ev-time">${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</span>
         <span class="ev-title">${esc(b.title)}</span></button>`;
     }).join('');
-    return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(d))}">
+    return `<div class="tg-col ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}" role="group" aria-label="${esc(dayLong(d))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(d))}</span><span class="tg-date">${d.getDate()}.${d.getMonth() + 1}.</span></div>
       <div class="tg-body" style="height:${height}px">${hours.map((h) => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${evs}</div>
     </div>`;
@@ -446,7 +447,7 @@ function monthGrid(range, bookings) {
     const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${esc(b.title)}</button>`).join('');
     const more = list.length > 3 ? `<button type="button" class="link-btn" data-goto="${L.ymd(d)}">+${list.length - 3} weitere</button>` : '';
     const isToday = d.toDateString() === new Date().toDateString();
-    return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}">
+    return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}">
       <button type="button" class="mg-date" data-goto="${L.ymd(d)}" aria-label="${esc(dayLong(d))} in Tagesansicht öffnen">${d.getDate()}</button>
       ${shown}${more}</div>`;
   }).join('');
@@ -468,6 +469,42 @@ function futureTable(list) {
     <tbody>${rows}</tbody></table></div>`;
 }
 
+function formatClock(totalMinutes) {
+  const safe = Math.max(0, Math.min(23 * 60 + 59, totalMinutes));
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+function defaultEndClock(startTime) {
+  const [hours, minutes] = startTime.split(':').map(Number);
+  return formatClock(Math.min(hours * 60 + minutes + 60, DE * 60));
+}
+
+function snappedTimeFromY(event, element, pixelsPerHour) {
+  const rect = element.getBoundingClientRect();
+  const rawMinutes = ((event.clientY - rect.top) / pixelsPerHour) * 60;
+  const visibleMinutes = (DE - DS - 1) * 60;
+  const minutes = Math.max(0, Math.min(visibleMinutes, Math.round(rawMinutes / 15) * 15));
+  return formatClock(DS * 60 + minutes);
+}
+
+function bindCalendarCreate(selector, resolveOptions) {
+  if (!isEditor()) return;
+  const ignored = 'button, a, .event, .chip-ev, .plan-month-event, .week-booking, .bar, .plan-month-more';
+  document.querySelectorAll(selector).forEach((surface) => {
+    const openFromGesture = (event) => {
+      if (event.type === 'dblclick' && event.button !== 0) return;
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target || target.closest(ignored)) return;
+      const options = resolveOptions(event, surface);
+      if (!options?.resource_id || !options.date) return;
+      event.preventDefault();
+      openBookingForm({ ...options, startTime: options.startTime || '17:00', endTime: options.endTime || defaultEndClock(options.startTime || '17:00') });
+    };
+    surface.addEventListener('dblclick', openFromGesture);
+    surface.addEventListener('contextmenu', openFromGesture);
+  });
+}
+
 function bindRoomControls(res) {
   const shift = (n) => {
     const a = S.roomAnchor;
@@ -486,6 +523,14 @@ function bindRoomControls(res) {
   });
   document.querySelectorAll('.event, .chip-ev').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('.table button[data-id]').forEach((b) => b.onclick = () => openDetail(b.dataset.id, true));
+  bindCalendarCreate('.tg-body', (event, surface) => {
+    const col = surface.closest('.tg-col');
+    const startTime = snappedTimeFromY(event, surface, HOUR_PX);
+    return { resource_id: res.id, date: L.parseISODate(col.dataset.date), startTime };
+  });
+  bindCalendarCreate('.mg-cell', (event, cell) => ({
+    resource_id: res.id, date: L.parseISODate(cell.dataset.date), startTime: '17:00'
+  }));
   const nb = $('#btn-new'); if (nb) nb.onclick = () => openBookingForm({ resource_id: res.id, date: S.roomAnchor });
   const ib = $('#btn-import-room'); if (ib) ib.onclick = () => openImport(res);
 }
@@ -505,7 +550,7 @@ function planMonthGrid(range, bookings) {
     const more = rows.length > 4 ? `<span class="plan-month-more">+${rows.length - 4} weitere</span>` : '';
     const out = day.getMonth() !== range.month;
     const today = day.toDateString() === new Date().toDateString();
-    return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}">
+    return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}" data-date="${L.ymd(day)}">
       <button type="button" class="mg-date" data-plan-goto="${L.ymd(day)}" aria-label="${esc(dayLong(day))} in Tagesansicht öffnen">${day.getDate()}</button>${shown}${more}</div>`;
   }).join('');
   return `<div class="mg plan-month-grid"><div class="mg-head">${weekdays}</div><div class="mg-grid">${cells}</div></div>`;
@@ -540,7 +585,7 @@ function planWeekBoard(range, groups) {
             <span class="week-booking-title">${esc(booking.title)}</span>
           </button>`;
         }).join('');
-        return `<div class="week-day-cell" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
+        return `<div class="week-day-cell" data-date="${L.ymd(day)}" data-resource-id="${esc(resource.id)}" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
       }).join('');
       return `<div class="week-resource-row" role="row">
         <div class="week-resource-label" role="rowheader"><span class="chip" style="background:${esc(resource.color)}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>
@@ -651,7 +696,7 @@ async function renderPlan() {
       const grid = range.days.map((_, i) => `<span class="tl-daysep" style="left:${i * dayW}px"></span>`).join('');
       return `<div class="tl-row" role="row">
         <div class="tl-label" role="rowheader"><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></div>
-        <div class="tl-track" style="width:${tl.width}px;height:${h}px" role="cell">${grid}${bars}${tl.bars.length ? '' : '<span class="tl-empty">Keine Belegung</span>'}</div>
+        <div class="tl-track" data-resource-id="${esc(r.id)}" data-first-date="${L.ymd(range.days[0])}" data-days="${range.days.length}" style="width:${tl.width}px;height:${h}px" role="cell">${grid}${bars}${tl.bars.length ? '' : '<span class="tl-empty">Keine Belegung</span>'}</div>
       </div>`;
     }).join('');
     return `<div class="tl-group" role="rowgroup"><div class="tl-group-title">${title}</div>${rows}</div>`;
@@ -737,6 +782,28 @@ function bindPlan() {
   $('#cat-filter').onchange = (e) => { S.catFilter = e.target.value; render(); };
   document.querySelectorAll('.bar, .plan-month-event, .week-booking').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('[data-plan-goto]').forEach((b) => b.onclick = () => { const [y, m, d] = b.dataset.planGoto.split('-').map(Number); S.planAnchor = new Date(y, m - 1, d); S.planRange = 'day'; render(); });
+  bindCalendarCreate('.week-day-cell', (event, cell) => ({
+    resource_id: cell.dataset.resourceId, date: L.parseISODate(cell.dataset.date), startTime: '17:00'
+  }));
+  bindCalendarCreate('.tl-track', (event, track) => {
+    const days = Number(track.dataset.days);
+    const dayWidth = (DE - DS) * TL_HOUR_PX;
+    const rect = track.getBoundingClientRect();
+    const x = Math.max(0, Math.min(track.clientWidth, event.clientX - rect.left));
+    const dayIndex = Math.min(days - 1, Math.floor(x / dayWidth));
+    const withinDay = x - dayIndex * dayWidth;
+    const visibleMinutes = (DE - DS - 1) * 60;
+    const minuteOfDay = Math.max(0, Math.min(visibleMinutes, Math.round((withinDay / TL_HOUR_PX * 60) / 15) * 15));
+    return {
+      resource_id: track.dataset.resourceId,
+      date: L.addDays(L.parseISODate(track.dataset.firstDate), dayIndex),
+      startTime: formatClock(DS * 60 + minuteOfDay)
+    };
+  });
+  bindCalendarCreate('.plan-month-grid .mg-cell', (event, cell) => ({
+    resource_id: S.resources.find((resource) => !S.hiddenRes.has(resource.id))?.id,
+    date: L.parseISODate(cell.dataset.date), startTime: '17:00'
+  }));
   const nb = $('#btn-new-plan'); if (nb) nb.onclick = () => openBookingForm({ resource_id: S.resources[0]?.id, date: S.planAnchor });
 }
 
@@ -861,11 +928,13 @@ function catOptions(selected) {
   return S.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 }
 
-function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single' } = {}) {
+function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single', startTime = null, endTime = null } = {}) {
   const isEdit = !!booking;
   const start = booking ? new Date(booking.starts_at) : null;
   const end = booking ? new Date(booking.ends_at) : null;
   const dateVal = booking ? L.ymd(start) : L.ymd(date);
+  const initialStartTime = start ? hhmm(start) : (startTime || '17:00');
+  const initialEndTime = end ? hhmm(end) : (endTime || defaultEndClock(initialStartTime));
   const d = makeDialog(isEdit ? 'Termin bearbeiten' : 'Neuer Termin', `
     <form id="bf" class="form" novalidate>
       ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten für diesen Termin und alle folgenden Termine der Serie.</p>' : ''}
@@ -882,9 +951,9 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <div class="field"><label for="bf-date">Datum <span class="req">*</span></label>
           <input id="bf-date" type="date" class="input" value="${dateVal}" required></div>
         <div class="field"><label for="bf-start">Startzeit <span class="req">*</span></label>
-          <input id="bf-start" type="time" class="input" value="${start ? hhmm(start) : '17:00'}" required></div>
+          <input id="bf-start" type="time" class="input" value="${initialStartTime}" required></div>
         <div class="field"><label for="bf-end">Endzeit <span class="req">*</span></label>
-          <input id="bf-end" type="time" class="input" value="${end ? hhmm(end) : '18:00'}" required></div>
+          <input id="bf-end" type="time" class="input" value="${initialEndTime}" required></div>
       </div>
       ${isEdit ? '' : `<div class="field-row recurrence-row">
         <div class="field"><label for="bf-repeat">Wiederholung</label>
