@@ -112,6 +112,13 @@ export class DemoStore {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
       .map((b) => { const c = { ...b }; if (!this.isEditor()) delete c.notes; return c; });
   }
+  async getSeriesBookings(seriesId) {
+    this.requireEditor();
+    return this.bookings
+      .filter((b) => b.series_id === seriesId)
+      .slice()
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }
   async getAllFuture(fromDate, limit = 300, resourceId = null) {
     return this.bookings
       .filter((b) => new Date(b.ends_at) >= fromDate && (!resourceId || b.resource_id === resourceId))
@@ -290,6 +297,10 @@ export class SupabaseStore {
       offset += page.length;
     }
     return all;
+  }
+  async getSeriesBookings(seriesId) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req(`/rest/v1/bookings?select=*&series_id=eq.${encodeURIComponent(seriesId)}&order=starts_at.asc,id.asc&limit=1000`);
   }
 
   async getAllFuture(fromDate, limit = 300, resourceId = null) {

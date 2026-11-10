@@ -123,6 +123,43 @@ export function layoutLanes(items) {
 
 // Erzeugt wiederkehrende Termine; count enthält den ersten Termin.
 // Monats- und Jahresserien bleiben am ursprünglichen Kalendertag verankert.
+function dateOrdinal(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function shiftDateString(dateStr, days) {
+  return new Date(dateOrdinal(dateStr) + days * 86400000).toISOString().slice(0, 10);
+}
+
+// Select the current occurrence and all later occurrences, leaving earlier ones untouched.
+export function followingSeriesBookings(bookings, selected) {
+  if (!selected?.series_id) return [];
+  const selectedStart = new Date(selected.starts_at).getTime();
+  return bookings
+    .filter((booking) => booking.series_id === selected.series_id && new Date(booking.starts_at).getTime() >= selectedStart)
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+}
+
+// Build changes for the selected occurrence and all later occurrences of its series.
+// Date shifts use calendar days; start/end times remain local wall-clock times across DST.
+export function buildFollowingSeriesUpdates(bookings, selected, { dateStr, startTime, endTime, fields = {} } = {}) {
+  if (!selected?.series_id) return [];
+  const oldDate = ymd(new Date(selected.starts_at));
+  const dayShift = Math.round((dateOrdinal(dateStr) - dateOrdinal(oldDate)) / 86400000);
+  return followingSeriesBookings(bookings, selected)
+    .map((booking) => {
+      const occurrenceDate = shiftDateString(ymd(new Date(booking.starts_at)), dayShift);
+      const startsAt = combine(occurrenceDate, startTime);
+      const endsAt = combine(occurrenceDate, endTime);
+      if (endsAt <= startsAt) throw new Error('Die Endzeit muss nach der Startzeit liegen.');
+      return {
+        id: booking.id,
+        patch: { ...fields, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() }
+      };
+    });
+}
+
 export function seriesDates(dateStr, count, frequency = 'weekly') {
   const base = parseISODate(dateStr);
   if (!Number.isInteger(count) || count < 1 || count > 52) throw new RangeError('Die Anzahl muss zwischen 1 und 52 liegen.');

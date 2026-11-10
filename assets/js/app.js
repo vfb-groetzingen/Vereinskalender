@@ -774,23 +774,83 @@ function openDetail(id, editFirst = false) {
     </dl>
     ${isEditor() ? `<div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="d-del">Löschen</button>
-      ${b.series_id ? '<button type="button" class="btn btn-danger" id="d-del-series">Ganze Serie löschen</button>' : ''}
       <button type="button" class="btn btn-primary" id="d-edit">Bearbeiten</button></div>` : '<p class="muted">Änderungen sind nur mit einem berechtigten Konto möglich.</p>'}
     <p class="msg" id="d-msg" role="alert"></p>`, 'dialog-narrow');
   if (!isEditor()) return;
   const msg = (t) => { $('#d-msg', d).textContent = t; };
-  $('#d-edit', d).onclick = () => { d.close(); openBookingForm({ booking: b }); };
+  $('#d-edit', d).onclick = () => {
+    if (b.series_id) {
+      d.addEventListener('close', () => openSeriesScopeDialog(b, 'edit'), { once: true });
+      d.close();
+    } else {
+      d.close();
+      openBookingForm({ booking: b });
+    }
+  };
   $('#d-del', d).onclick = async () => {
+    if (b.series_id) {
+      d.addEventListener('close', () => openSeriesScopeDialog(b, 'delete'), { once: true });
+      d.close();
+      return;
+    }
     if (!confirm('Diesen Termin wirklich löschen?')) return;
     try { await S.store.deleteBookings([b.id]); d.close(); setNotice('ok', 'Termin wurde gelöscht.'); render(); }
     catch (e) { msg(friendlyError(e)); }
   };
-  const ds = $('#d-del-series', d);
-  if (ds) ds.onclick = async () => {
-    if (!confirm('Alle Termine der gesamten Wiederholungsserie endgültig löschen?')) return;
-    try { await S.store.deleteSeries(b.series_id); d.close(); setNotice('ok', 'Die gesamte Terminserie wurde gelöscht.'); render(); }
-    catch (e) { msg(friendlyError(e)); }
+}
+
+function openSeriesScopeDialog(booking, action) {
+  const isEdit = action === 'edit';
+  const dateLabel = L.fmtDateDE(new Date(booking.starts_at));
+  const d = makeDialog(
+    isEdit ? 'Wiederholung bearbeiten' : 'Wiederholung löschen',
+    `
+      <p>Dieser Termin gehört zu einer Terminserie. Ausgewählter Termin: <strong>${esc(dateLabel)}</strong>.</p>
+      <p>${isEdit ? 'Welche Termine sollen geändert werden?' : 'Welche Termine sollen endgültig gelöscht werden?'}</p>
+      <div class="dialog-actions series-scope-actions">
+        <button type="button" class="btn ${isEdit ? '' : 'btn-danger'}" id="series-only">Nur diesen Termin ${isEdit ? 'bearbeiten' : 'löschen'}</button>
+        <button type="button" class="btn ${isEdit ? 'btn-primary' : 'btn-danger'}" id="series-following">Diesen und alle folgenden ${isEdit ? 'bearbeiten' : 'löschen'}</button>
+        <button type="button" class="btn" data-close>Abbrechen</button>
+      </div>
+      <p class="msg" id="series-scope-msg" role="alert"></p>`, 'dialog-narrow'
+  );
+  const msg = (text) => { $('#series-scope-msg', d).textContent = text; };
+  const buttons = [$('#series-only', d), $('#series-following', d)];
+  const editScope = (scope) => {
+    d.addEventListener('close', () => openBookingForm({ booking, seriesScope: scope }), { once: true });
+    d.close();
   };
+  const deleteScope = async (scope) => {
+    buttons.forEach((button) => { button.disabled = true; });
+    msg(scope === 'following' ? 'Folgende Termine werden ermittelt …' : 'Termin wird gelöscht …');
+    try {
+      let targets = [booking];
+      if (scope === 'following') {
+        const series = await S.store.getSeriesBookings(booking.series_id);
+        targets = L.followingSeriesBookings(series, booking);
+      }
+      if (!targets.length) {
+        msg('Für diesen Termin wurden keine zugehörigen Wiederholungen gefunden.');
+        buttons.forEach((button) => { button.disabled = false; });
+        return;
+      }
+      msg(targets.length === 1 ? 'Termin wird gelöscht …' : `${targets.length} Termine werden gelöscht …`);
+      await S.store.deleteBookings(targets.map((item) => item.id));
+      d.close();
+      setNotice('ok', targets.length === 1 ? 'Termin wurde gelöscht.' : `${targets.length} Termine ab diesem Datum wurden gelöscht.`);
+      render();
+    } catch (err) {
+      msg(friendlyError(err));
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  };
+  if (isEdit) {
+    $('#series-only', d).onclick = () => editScope('single');
+    $('#series-following', d).onclick = () => editScope('following');
+  } else {
+    $('#series-only', d).onclick = () => deleteScope('single');
+    $('#series-following', d).onclick = () => deleteScope('following');
+  }
 }
 
 function resOptions(selected) {
@@ -800,13 +860,14 @@ function catOptions(selected) {
   return S.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 }
 
-function openBookingForm({ booking = null, resource_id = null, date = new Date() } = {}) {
+function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single' } = {}) {
   const isEdit = !!booking;
   const start = booking ? new Date(booking.starts_at) : null;
   const end = booking ? new Date(booking.ends_at) : null;
   const dateVal = booking ? L.ymd(start) : L.ymd(date);
   const d = makeDialog(isEdit ? 'Termin bearbeiten' : 'Neuer Termin', `
     <form id="bf" class="form" novalidate>
+      ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten für diesen Termin und alle folgenden Termine der Serie.</p>' : ''}
       <div class="field"><label for="bf-title">Titel <span class="req">*</span></label>
         <input id="bf-title" class="input" required maxlength="120" value="${esc(booking?.title || '')}" autocomplete="off">
         <p class="hint">Öffentlich sichtbar. Bitte allgemein formulieren.</p></div>
@@ -839,6 +900,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     </form>`, 'dialog-wide');
 
   const form = $('#bf', d);
+  const saveButton = form.querySelector('button[type="submit"]');
   const msg = (t) => { $('#bf-msg', d).textContent = t; };
   const repeat = $('#bf-repeat', d);
   if (repeat) repeat.onchange = () => { $('#bf-count', d).disabled = repeat.value === 'none'; };
@@ -872,16 +934,36 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       notes,
       series_id: seriesId
     }));
+    saveButton.disabled = true;
     try {
-      if (isEdit) {
+      let successMessage;
+      if (isEdit && booking.series_id && seriesScope === 'following') {
+        const series = await S.store.getSeriesBookings(booking.series_id);
+        const updates = L.buildFollowingSeriesUpdates(series, booking, {
+          dateStr,
+          startTime: s,
+          endTime: en,
+          fields: { title, resource_id: resId, category_id: catId, notes }
+        });
+        if (!updates.length) { saveButton.disabled = false; return msg('Ab diesem Termin wurden keine weiteren Serien-Termine gefunden.'); }
+        const results = await Promise.allSettled(updates.map((update) => S.store.updateBooking(update.id, update.patch)));
+        const savedCount = results.filter((result) => result.status === 'fulfilled').length;
+        if (savedCount !== updates.length) throw new Error(`${savedCount} von ${updates.length} Terminen wurden gespeichert. Bitte die Seite neu laden und den Serienstand prüfen.`);
+        successMessage = `${updates.length} Termine ab diesem Datum wurden angepasst.`;
+      } else if (isEdit) {
         await S.store.updateBooking(booking.id, { title, resource_id: resId, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
+        successMessage = 'Termin wurde gespeichert.';
       } else {
         await S.store.createBookings(rows);
+        successMessage = count > 1 ? `${count} Termine wurden angelegt.` : 'Termin wurde angelegt.';
       }
       d.close();
-      setNotice('ok', isEdit ? 'Termin wurde gespeichert.' : (count > 1 ? `${count} Termine wurden angelegt.` : 'Termin wurde angelegt.'));
+      setNotice('ok', successMessage);
       render();
-    } catch (err) { msg(friendlyError(err)); }
+    } catch (err) {
+      msg(friendlyError(err));
+      saveButton.disabled = false;
+    }
   };
   $('#bf-title', d).focus();
 }
