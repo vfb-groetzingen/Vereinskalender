@@ -160,6 +160,27 @@ test('Serien: wöchentliche Termine', () => {
   assert.deepEqual(L.seriesDates('2026-10-26', 3), ['2026-10-26', '2026-11-02', '2026-11-09']);
 });
 
+test('Serie: Änderung ab ausgewähltem Termin verschiebt nur diesen und spätere Termine', () => {
+  const seriesId = 'series-1';
+  const bookings = [
+    { id: 'before', series_id: seriesId, starts_at: L.combine('2026-03-22', '17:00').toISOString() },
+    { id: 'selected', series_id: seriesId, starts_at: L.combine('2026-03-29', '17:00').toISOString() },
+    { id: 'following', series_id: seriesId, starts_at: L.combine('2026-04-05', '17:00').toISOString() },
+    { id: 'other-series', series_id: 'series-2', starts_at: L.combine('2026-04-05', '17:00').toISOString() }
+  ];
+  const following = L.followingSeriesBookings(bookings, bookings[1]);
+  assert.deepEqual(following.map((item) => item.id), ['selected', 'following']);
+  const updates = L.buildFollowingSeriesUpdates(bookings, bookings[1], {
+    dateStr: '2026-03-30', startTime: '18:30', endTime: '19:45',
+    fields: { title: 'Geändert', resource_id: 'r2' }
+  });
+  assert.deepEqual(updates.map((item) => item.id), ['selected', 'following']);
+  assert.deepEqual(updates.map((item) => L.ymd(new Date(item.patch.starts_at))), ['2026-03-30', '2026-04-06']);
+  assert.ok(updates.every((item) => L.fmtTime(new Date(item.patch.starts_at)) === '18:30'));
+  assert.ok(updates.every((item) => L.fmtTime(new Date(item.patch.ends_at)) === '19:45'));
+  assert.ok(updates.every((item) => item.patch.title === 'Geändert' && item.patch.resource_id === 'r2'));
+});
+
 test('Zeitumstellung am 25.10.2026: Uhrzeit bleibt lokal korrekt', () => {
   const d = L.combine('2026-10-25', '18:00');
   assert.equal(d.getHours(), 18);

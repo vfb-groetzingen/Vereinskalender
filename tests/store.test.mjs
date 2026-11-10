@@ -65,6 +65,19 @@ test('getAllBookings lädt alle Zeiträume und kann nach Ressource filtern', asy
   assert.equal(filtered.filter((b) => b.starts_at.startsWith('2000-01-07')).length, 1);
 });
 
+test('getSeriesBookings lädt eine vollständige Serie chronologisch', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  await s.createBookings([
+    booking(res, '2030-01-14T17:00:00Z', '2030-01-14T18:00:00Z', { series_id: 'series-test' }),
+    booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { series_id: 'series-test' }),
+    booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { series_id: 'other-series' })
+  ]);
+  const result = await s.getSeriesBookings('series-test');
+  assert.equal(result.length, 2);
+  assert.ok(result[0].starts_at < result[1].starts_at);
+});
+
 test('Besucher sehen keine Notizen', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
