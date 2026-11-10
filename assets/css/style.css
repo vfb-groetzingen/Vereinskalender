@@ -299,3 +299,6 @@ textarea.input { resize: vertical; }
   .export-actions .btn { flex: 1 1 100%; }
   .bulk-select-all { align-items: flex-start; flex-direction: column; gap: .25rem; }
 }
+
+.series-scope-actions { display: grid; grid-template-columns: 1fr; }
+.series-scope-actions .btn { width: 100%; justify-content: center; }
