@@ -5,6 +5,7 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan und QR-Codes.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
+- **Serientermine** können ab einem ausgewählten Termin einzeln oder zusammen mit allen folgenden Vorkommen bearbeitet bzw. gelöscht werden.
 - **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
 
 ## Technik
