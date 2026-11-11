@@ -37,13 +37,18 @@ SMTP_USER = required_env("STRATO_SMTP_USER")
 SMTP_PASSWORD = required_env("STRATO_SMTP_PASSWORD")
 
 
+def api_headers():
+    headers = {"apikey": SERVICE_KEY}
+    # New Supabase secret API keys are not JWTs: send them only as apikey.
+    # The legacy service_role key is a JWT and also belongs in Authorization.
+    if not SERVICE_KEY.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {SERVICE_KEY}"
+    return headers
+
+
 def api(method, path, body=None, prefer=None):
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-    headers = {
-        "apikey": SERVICE_KEY,
-        "Authorization": f"Bearer {SERVICE_KEY}",
-        "Accept": "application/json",
-    }
+    headers = {**api_headers(), "Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
     if prefer:
@@ -64,7 +69,7 @@ def download_asset(path, event_id):
     encoded = quote(path, safe="/")
     request = Request(
         f"{SUPABASE_URL}/storage/v1/object/annual-event-files/{encoded}",
-        headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"},
+        headers=api_headers(),
     )
     try:
         with urlopen(request, timeout=40) as response:
@@ -195,10 +200,12 @@ def build_message(event, recipient):
     return message
 
 
-def upsert_delivery(event_id, year, recipient, status, sent_at=None, error=None):
+def upsert_delivery(event, event_date, recipient, status, sent_at=None, error=None):
     row = {
-        "event_id": event_id,
-        "occurrence_year": year,
+        "event_id": event["id"],
+        "event_title": event.get("title"),
+        "event_date": event_date.isoformat(),
+        "occurrence_year": event_date.year,
         "recipient": recipient,
         "status": status,
         "sent_at": sent_at,
@@ -209,7 +216,105 @@ def upsert_delivery(event_id, year, recipient, status, sent_at=None, error=None)
         "resolution=merge-duplicates,return=minimal")
 
 
+def smtp_connect():
+    smtp = smtplib.SMTP_SSL("smtp.strato.de", 465, timeout=35, context=ssl.create_default_context())
+    smtp.login(SMTP_USER, SMTP_PASSWORD)
+    return smtp
+
+
+def send_checked(smtp, message, recipient):
+    refused = smtp.send_message(message)
+    if recipient in refused:
+        code, reason = refused[recipient]
+        if isinstance(reason, bytes):
+            reason = reason.decode("utf-8", "replace")
+        raise RuntimeError(f"SMTP hat die Empfängeradresse abgelehnt ({code}): {reason}")
+    return refused
+
+
+def update_test_request(request_id, status, error=None, event=None):
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    row = {
+        "status": status,
+        "processed_at": now if status in {"sent", "failed"} else None,
+        "updated_at": now,
+        "error": (error or "")[:1000] or None,
+    }
+    if event:
+        row.update({"event_title": event.get("title"), "event_month": event.get("event_month"), "event_day": event.get("event_day")})
+    api("PATCH", f"annual_email_test_requests?id=eq.{request_id}", row, "return=minimal")
+
+
+def claim_test_request():
+    rows = api("POST", "rpc/claim_annual_email_test_request", {}) or []
+    return rows[0] if rows else None
+
+
+def process_test_requests():
+    pending = api("GET", "annual_email_test_requests?select=id&status=eq.pending&limit=1") or []
+    if not pending:
+        print("Keine Testmail-Anfragen in der Warteschlange.")
+        return
+    try:
+        smtp = smtp_connect()
+    except Exception as exc:
+        error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
+        while True:
+            request = claim_test_request()
+            if not request:
+                break
+            update_test_request(request["id"], "failed", error)
+            print(f"Testmail fehlgeschlagen für {request.get('recipient')}: {error}", file=sys.stderr)
+        return
+    try:
+        while True:
+            request = claim_test_request()
+            if not request:
+                break
+            request_id = request["id"]
+            event = None
+            try:
+                events = api(
+                    "GET",
+                    "annual_email_events?select=id,title,subject,body_html,assets"
+                    f"&id=eq.{request['event_id']}&limit=1",
+                ) or []
+                if not events:
+                    raise RuntimeError("Das zugehörige Ereignis wurde nicht gefunden.")
+                event = dict(events[0])
+                update_test_request(request_id, "sending", event=event)
+                event["subject"] = "[TEST] " + event["subject"]
+                event["body_html"] = (
+                    '<p><strong>Dies ist eine Testmail. Es wurde noch keine reguläre Ereignis-E-Mail versendet.</strong></p>'
+                    + event.get("body_html", "")
+                )
+                message = build_message(event, request["recipient"])
+                send_checked(smtp, message, request["recipient"])
+                update_test_request(request_id, "sent", event=event)
+                print(f"Testmail vom SMTP-Server angenommen: {request['recipient']}")
+            except Exception as exc:
+                error = str(exc)[:1000]
+                update_test_request(request_id, "failed", error, event=event)
+                print(f"Testmail fehlgeschlagen für {request.get('recipient')}: {error}", file=sys.stderr)
+    finally:
+        try:
+            smtp.quit()
+        except Exception:
+            pass
+
+
+def previous_delivery_statuses(event_id, year):
+    return api(
+        "GET",
+        "annual_email_deliveries?select=recipient,status"
+        f"&event_id=eq.{event_id}&occurrence_year=eq.{year}",
+    ) or []
+
+
 def main():
+    if "--tests-only" in sys.argv:
+        process_test_requests()
+        return
     now = dt.datetime.now(TZ)
     # GitHub Actions runs at 04:00 and 05:00 UTC to cover CET/CEST. Never send early.
     if now.hour < 6:
@@ -223,40 +328,54 @@ def main():
     if not events:
         print(f"Keine aktiven Ereignisse am {now.strftime('%d.%m.')}.")
         return
-    smtp = None
+
+    event_date = now.date()
+    year = event_date.year
     try:
-        smtp = smtplib.SMTP_SSL("smtp.strato.de", 465, timeout=35, context=ssl.create_default_context())
-        smtp.login(SMTP_USER, SMTP_PASSWORD)
+        smtp = smtp_connect()
+    except Exception as exc:
+        error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
         for event in events:
-            year = now.year
             try:
-                previous = api(
-                    "GET",
-                    "annual_email_deliveries?select=recipient,status"
-                    f"&event_id=eq.{event['id']}&occurrence_year=eq.{year}",
-                ) or []
-                sent = {row["recipient"].lower() for row in previous if row.get("status") == "sent"}
+                previous = previous_delivery_statuses(event["id"], year)
+                handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
                 for recipient in event.get("recipients") or []:
-                    if recipient.lower() in sent:
-                        print(f"Bereits versendet: Ereignis {event['id']} an {recipient}")
+                    if recipient.lower() not in handled:
+                        upsert_delivery(event, event_date, recipient, "failed", error=error)
+            except Exception as log_error:
+                print(f"Fehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
+        print(error, file=sys.stderr)
+        return
+
+    try:
+        for event in events:
+            try:
+                previous = previous_delivery_statuses(event["id"], year)
+                handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
+                for recipient in event.get("recipients") or []:
+                    if recipient.lower() in handled:
+                        print(f"Bereits versendet oder in Bearbeitung: Ereignis {event['id']} an {recipient}")
                         continue
+                    handled.add(recipient.lower())
                     try:
-                        upsert_delivery(event["id"], year, recipient, "sending")
+                        upsert_delivery(event, event_date, recipient, "sending")
                         message = build_message(event, recipient)
-                        smtp.send_message(message)
-                        upsert_delivery(event["id"], year, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
+                        send_checked(smtp, message, recipient)
+                        upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
                         print(f"Versendet: Ereignis {event['id']} an {recipient}")
-                    except Exception as exc:  # keep processing other recipients/events
-                        upsert_delivery(event["id"], year, recipient, "failed", error=str(exc))
+                    except Exception as exc:
+                        try:
+                            upsert_delivery(event, event_date, recipient, "failed", error=str(exc))
+                        except Exception as log_error:
+                            print(f"Versandfehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
                         print(f"FEHLER für Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
             except Exception as exc:
                 print(f"FEHLER für Ereignis {event.get('id')}: {exc}", file=sys.stderr)
     finally:
-        if smtp:
-            try:
-                smtp.quit()
-            except Exception:
-                pass
+        try:
+            smtp.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
