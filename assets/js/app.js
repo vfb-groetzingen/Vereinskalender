@@ -3,6 +3,7 @@ import * as L from './logic.js';
 import * as LY from './layout.js';
 import { ROOT, loadSeed, createStore, friendlyError } from './data.js';
 import { createQrMatrix, qrMatrixToSvgDataUrl, qrMatrixToPngDataUrl } from './qr-generator.js';
+import { renderAnnualEvents } from './annual-events.js';
 
 const HOUR_PX = 48;          // Kalender: Pixel je Stunde
 const TL_HOUR_PX = 40;       // Belegungsplan: Pixel je Stunde
@@ -49,6 +50,7 @@ function parseRoute() {
   if (p === '/') return { name: 'home' };
   if (p === '/belegungsplan') return { name: 'plan' };
   if (p === '/admin') return { name: 'admin' };
+  if (p === '/ereignisse') return { name: 'annualEvents' };
   const m = p.match(/^\/raeume\/([a-z0-9-]+)$/);
   if (m) {
     const res = S.resources.find((r) => r.slug === m[1]);
@@ -116,6 +118,7 @@ function renderHeader() {
     ? '<button type="button" class="btn btn-ghost" id="btn-logout">Abmelden</button>'
     : '<button type="button" class="btn btn-ghost" id="btn-login">Anmelden</button>';
   const adminLink = s.mode === 'supabase' && s.isAdmin() ? `<a href="${BASE}/admin" data-link="/admin">Administration</a>` : '';
+  const eventsLink = s.mode === 'supabase' && s.isEditor() ? `<a href="${BASE}/ereignisse" data-link="/ereignisse">Ereignisse</a>` : '';
   const passwordBtn = s.mode === 'supabase' && s.session ? '<button type="button" class="btn btn-ghost" id="btn-password">Passwort</button>' : '';
   $('#header').innerHTML = `
     <div class="wrap topbar">
@@ -123,6 +126,7 @@ function renderHeader() {
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
         <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
+        ${eventsLink}
         ${adminLink}
       </nav>
       <div class="auth">${demo}${who}${passwordBtn}${authBtn}</div>
@@ -861,12 +865,13 @@ function makeDialog(title, bodyHtml, cls = '') {
 function openDetail(id, editFirst = false) {
   const b = S.bookings.find((x) => x.id === id) || S.futureList.find((x) => x.id === id);
   if (!b) return;
-  const res = resById(b.resource_id);
+  const resourceIds = b.resource_ids?.length ? b.resource_ids : [b.resource_id];
+  const resourceNames = resourceIds.map((id) => resById(id)?.name).filter(Boolean).join(', ');
   const cat = catById(b.category_id);
   const start = new Date(b.starts_at), end = new Date(b.ends_at);
   const d = makeDialog(b.title, `
     <dl class="details">
-      <dt>Ressource</dt><dd>${esc(res?.name || '')}</dd>
+      <dt>Ressourcen</dt><dd>${esc(resourceNames)}</dd>
       <dt>Kategorie</dt><dd><span class="chip" style="background:${catColor(b.category_id)}"></span>${esc(cat?.name || '')}</dd>
       <dt>Datum</dt><dd>${esc(dayLong(start))}</dd>
       <dt>Zeit</dt><dd>${hhmm(start)} – ${hhmm(end)} Uhr</dd>
@@ -954,8 +959,9 @@ function openSeriesScopeDialog(booking, action) {
   }
 }
 
-function resOptions(selected) {
-  return S.resources.map((r) => `<option value="${esc(r.id)}" ${r.id === selected ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+function resOptions(selectedIds) {
+  const selected = new Set(Array.isArray(selectedIds) ? selectedIds : selectedIds ? [selectedIds] : []);
+  return S.resources.map((r) => `<label class="check resource-check"><input type="checkbox" name="bf-res" value="${esc(r.id)}" ${selected.has(r.id) ? 'checked' : ''}><span>${esc(r.name)}</span></label>`).join('');
 }
 function catOptions(selected) {
   return S.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -963,6 +969,7 @@ function catOptions(selected) {
 
 function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single', startTime = null, endTime = null } = {}) {
   const isEdit = !!booking;
+  const selectedResourceIds = booking?.resource_ids?.length ? booking.resource_ids : [booking?.resource_id || resource_id].filter(Boolean);
   const start = booking ? new Date(booking.starts_at) : null;
   const end = booking ? new Date(booking.ends_at) : null;
   const dateVal = booking ? L.ymd(start) : L.ymd(date);
@@ -975,8 +982,8 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <input id="bf-title" class="input" required maxlength="120" value="${esc(booking?.title || '')}" autocomplete="off">
         <p class="hint">Öffentlich sichtbar. Bitte allgemein formulieren.</p></div>
       <div class="field-row">
-        <div class="field"><label for="bf-res">Kalender / Platz / Raum <span class="req">*</span></label>
-          <select id="bf-res" class="input">${resOptions(booking?.resource_id || resource_id)}</select></div>
+        <fieldset class="field resource-picker"><legend>Kalender / Plätze / Räume <span class="req">*</span></legend>
+          <div class="resource-checkboxes">${resOptions(selectedResourceIds)}</div><p class="hint">Mehrere Ressourcen auswählen; der Termin erscheint in jedem ausgewählten Kalender.</p></fieldset>
         <div class="field"><label for="bf-cat">Kategorie <span class="req">*</span></label>
           <select id="bf-cat" class="input">${catOptions(booking?.category_id)}</select></div>
       </div>
@@ -1012,13 +1019,15 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     e.preventDefault();
     msg('');
     const title = $('#bf-title', d).value.trim();
-    const resId = $('#bf-res', d).value;
+    const resourceIds = [...d.querySelectorAll('[name="bf-res"]:checked')].map((input) => input.value);
+    const resId = resourceIds[0];
     const catId = $('#bf-cat', d).value;
     const dateStr = $('#bf-date', d).value;
     const s = $('#bf-start', d).value;
     const en = $('#bf-end', d).value;
     const notes = $('#bf-note', d).value.trim() || null;
     if (!title) return msg('Bitte einen Titel eingeben.');
+    if (!resourceIds.length) return msg('Bitte mindestens einen Kalender, Platz oder Raum auswählen.');
     if (!dateStr || !s || !en) return msg('Bitte Datum, Start- und Endzeit eingeben.');
     const parsedS = L.combine(dateStr, s), parsedE = L.combine(dateStr, en);
     if (parsedE <= parsedS) return msg('Die Endzeit muss nach der Startzeit liegen.');
@@ -1030,6 +1039,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     const seriesId = count > 1 ? newUuid() : null;
     const rows = dates.map((ds) => ({
       resource_id: resId,
+      resource_ids: resourceIds,
       category_id: catId,
       title,
       starts_at: L.combine(ds, s).toISOString(),
@@ -1046,7 +1056,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
           dateStr,
           startTime: s,
           endTime: en,
-          fields: { title, resource_id: resId, category_id: catId, notes }
+          fields: { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, notes }
         });
         if (!updates.length) { saveButton.disabled = false; return msg('Ab diesem Termin wurden keine weiteren Serien-Termine gefunden.'); }
         const results = await Promise.allSettled(updates.map((update) => S.store.updateBooking(update.id, update.patch)));
@@ -1054,7 +1064,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         if (savedCount !== updates.length) throw new Error(`${savedCount} von ${updates.length} Terminen wurden gespeichert. Bitte die Seite neu laden und den Serienstand prüfen.`);
         successMessage = `${updates.length} Termine ab diesem Datum wurden angepasst.`;
       } else if (isEdit) {
-        await S.store.updateBooking(booking.id, { title, resource_id: resId, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
+        await S.store.updateBooking(booking.id, { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
         successMessage = 'Termin wurde gespeichert.';
       } else {
         await S.store.createBookings(rows);
@@ -1575,12 +1585,13 @@ async function render() {
     else if (route.name === 'room') await renderRoom(route.res);
     else if (route.name === 'plan') await renderPlan();
     else if (route.name === 'admin') await renderAdmin();
+    else if (route.name === 'annualEvents') await renderAnnualEvents(app, S.store, setNotice);
     else renderNotFound();
   } catch (err) {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Jährliche Ereignisse · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {

@@ -29,6 +29,14 @@ function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
 }
 
+function expandResourceBookings(rows) {
+  return rows.flatMap((booking) => {
+    const ids = Array.isArray(booking.resource_ids) && booking.resource_ids.length
+      ? booking.resource_ids : [booking.resource_id];
+    return [...new Set(ids)].map((resource_id) => ({ ...booking, resource_id }));
+  });
+}
+
 function demoSeedBookings(seed) {
   const res = Object.fromEntries(seed.resources.map((r) => [r.slug, 'res-' + r.slug]));
   const catId = (name) => 'cat-' + name.toLowerCase();
@@ -96,19 +104,14 @@ export class DemoStore {
     localStorage.removeItem(DEMO_SESSION);
   }
   async getBookings({ from, to }) {
-    return this.bookings
-      .filter((b) => new Date(b.ends_at) > from && new Date(b.starts_at) < to)
-      .map((b) => {
-        const copy = { ...b };
-        if (!this.isEditor()) delete copy.notes; // gleiche Regel wie in der Datenbank
-        return copy;
-      })
+    return expandResourceBookings(this.bookings
+      .filter((b) => new Date(b.ends_at) > from && new Date(b.starts_at) < to))
+      .map((b) => { const copy = { ...b }; if (!this.isEditor()) delete copy.notes; return copy; })
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }
   async getAllBookings(resourceId = null) {
-    return this.bookings
+    return expandResourceBookings(this.bookings)
       .filter((b) => !resourceId || b.resource_id === resourceId)
-      .slice()
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
       .map((b) => { const c = { ...b }; if (!this.isEditor()) delete c.notes; return c; });
   }
@@ -120,7 +123,7 @@ export class DemoStore {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }
   async getAllFuture(fromDate, limit = 300, resourceId = null) {
-    return this.bookings
+    return expandResourceBookings(this.bookings)
       .filter((b) => new Date(b.ends_at) >= fromDate && (!resourceId || b.resource_id === resourceId))
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
       .slice(0, limit)
@@ -128,7 +131,7 @@ export class DemoStore {
   }
   async createBookings(rows) {
     this.requireEditor();
-    const inserted = rows.map((r) => ({ id: uid(), series_id: null, ...r }));
+    const inserted = rows.map((r) => ({ id: uid(), series_id: null, ...r, resource_ids: r.resource_ids?.length ? [...r.resource_ids] : [r.resource_id] }));
     this.bookings.push(...inserted);
     this.persist();
     return inserted;
@@ -138,6 +141,8 @@ export class DemoStore {
     const b = this.bookings.find((x) => x.id === id);
     if (!b) throw { code: 'P0002', message: 'Termin nicht gefunden.' };
     Object.assign(b, patch);
+    if (patch.resource_ids) b.resource_ids = [...patch.resource_ids];
+    else if (patch.resource_id) b.resource_ids = [patch.resource_id];
     this.persist();
   }
   async deleteBookings(ids) {
@@ -280,13 +285,14 @@ export class SupabaseStore {
   async getBookings({ from, to }) {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';
     const sel = this.isEditor() ? '*' : 'id,resource_id,category_id,title,starts_at,ends_at,series_id';
-    return this._req(`/rest/v1/${table}?select=${sel}&starts_at=lt.${encodeURIComponent(to.toISOString())}&ends_at=gt.${encodeURIComponent(from.toISOString())}&order=starts_at`);
+    const rows = await this._req(`/rest/v1/${table}?select=${sel}&starts_at=lt.${encodeURIComponent(to.toISOString())}&ends_at=gt.${encodeURIComponent(from.toISOString())}&order=starts_at`);
+    return this.isEditor() ? expandResourceBookings(rows) : rows;
   }
 
   async getAllBookings(resourceId = null) {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';
     const sel = this.isEditor() ? '*' : 'id,resource_id,category_id,title,starts_at,ends_at,series_id';
-    const filter = resourceId ? `&resource_id=eq.${encodeURIComponent(resourceId)}` : '';
+    const filter = !this.isEditor() && resourceId ? `&resource_id=eq.${encodeURIComponent(resourceId)}` : '';
     const all = [];
     const pageSize = 500;
     let offset = 0;
@@ -296,7 +302,8 @@ export class SupabaseStore {
       if (page.length < pageSize) break;
       offset += page.length;
     }
-    return all;
+    const expanded = this.isEditor() ? expandResourceBookings(all) : all;
+    return resourceId ? expanded.filter((b) => b.resource_id === resourceId) : expanded;
   }
   async getSeriesBookings(seriesId) {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
@@ -306,8 +313,10 @@ export class SupabaseStore {
   async getAllFuture(fromDate, limit = 300, resourceId = null) {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';
     const sel = this.isEditor() ? '*' : 'id,resource_id,category_id,title,starts_at,ends_at,series_id';
-    const res = resourceId ? `&resource_id=eq.${encodeURIComponent(resourceId)}` : '';
-    return this._req(`/rest/v1/${table}?select=${sel}&ends_at=gte.${encodeURIComponent(fromDate.toISOString())}${res}&order=starts_at&limit=${limit}`);
+    const res = !this.isEditor() && resourceId ? `&resource_id=eq.${encodeURIComponent(resourceId)}` : '';
+    const rows = await this._req(`/rest/v1/${table}?select=${sel}&ends_at=gte.${encodeURIComponent(fromDate.toISOString())}${res}&order=starts_at&limit=${limit}`);
+    const expanded = this.isEditor() ? expandResourceBookings(rows) : rows;
+    return resourceId ? expanded.filter((b) => b.resource_id === resourceId) : expanded;
   }
 
   async createBookings(rows) {
@@ -321,6 +330,49 @@ export class SupabaseStore {
   }
   async deleteSeries(seriesId) {
     return this._req(`/rest/v1/bookings?series_id=eq.${encodeURIComponent(seriesId)}`, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+
+  async getAnnualEvents() {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req('/rest/v1/annual_email_events?select=*&order=event_month.asc,event_day.asc,title.asc');
+  }
+  async saveAnnualEvent(event) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req('/rest/v1/annual_email_events?on_conflict=id', {
+      method: 'POST', body: event, prefer: 'resolution=merge-duplicates,return=representation'
+    });
+  }
+  async deleteAnnualEvent(id) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req(`/rest/v1/annual_email_events?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+  async getAnnualDeliveryLog(id) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req(`/rest/v1/annual_email_deliveries?select=occurrence_year,recipient,status,sent_at,error&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`);
+  }
+  async uploadAnnualAsset(eventId, file) {
+    if (!this.isEditor() || !this.session?.access_token) throw { code: '42501', message: 'Bitte anmelden.' };
+    const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'datei';
+    const path = `${eventId}/${crypto.randomUUID()}-${safeName}`;
+    const res = await fetch(`${this.url}/storage/v1/object/annual-event-files/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'POST',
+      headers: { apikey: this.key, Authorization: `Bearer ${this.session.access_token}`, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'false' },
+      body: file
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let data = null; try { data = text ? JSON.parse(text) : null; } catch {}
+      throw { status: res.status, message: data?.message || data?.error || 'Datei konnte nicht hochgeladen werden.' };
+    }
+    return path;
+  }
+  async deleteAnnualAsset(path) {
+    if (!this.isEditor() || !this.session?.access_token) throw { code: '42501', message: 'Bitte anmelden.' };
+    const encoded = path.split('/').map(encodeURIComponent).join('/');
+    const res = await fetch(`${this.url}/storage/v1/object/annual-event-files/${encoded}`, {
+      method: 'DELETE', headers: { apikey: this.key, Authorization: `Bearer ${this.session.access_token}` }
+    });
+    if (!res.ok) throw { status: res.status, message: 'Datei konnte nicht entfernt werden.' };
   }
 }
 
