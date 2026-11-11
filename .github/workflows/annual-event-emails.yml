@@ -1,0 +1,26 @@
+name: Jährliche Ereignis-E-Mails
+
+on:
+  # 04:00 UTC entspricht 06:00 CEST; 05:00 UTC entspricht 06:00 CET.
+  # Das Skript prüft zusätzlich Europe/Berlin und verhindert einen frühen Versand.
+  schedule:
+    - cron: "0 4 * * *"
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-annual-event-emails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fällige Ereignis-E-Mails versenden
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STRATO_SMTP_USER: ${{ secrets.STRATO_SMTP_USER }}
+          STRATO_SMTP_PASSWORD: ${{ secrets.STRATO_SMTP_PASSWORD }}
+        run: python3 scripts/send_annual_event_emails.py
