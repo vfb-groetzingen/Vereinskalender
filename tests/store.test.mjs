@@ -50,6 +50,19 @@ test('Gleiche Zeit auf anderem Platz ist erlaubt', async () => {
   await s.createBookings([booking('res-kunstrasenplatz', '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
 });
 
+test('Ein gemeinsamer Termin erscheint in allen ausgewählten Ressourcenkalendern', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const second = 'res-kunstrasenplatz';
+  const [created] = await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { resource_ids: [res, second] })]);
+  assert.deepEqual(created.resource_ids, [res, second]);
+  const all = (await s.getAllBookings()).filter((item) => item.id === created.id);
+  assert.deepEqual(new Set(all.map((item) => item.resource_id)), new Set([res, second]));
+  assert.equal((await s.getAllBookings(second)).filter((item) => item.id === created.id).length, 1);
+  await s.updateBooking(created.id, { resource_id: second, resource_ids: [second] });
+  assert.deepEqual(s.bookings.find((item) => item.id === created.id).resource_ids, [second]);
+});
+
 test('getAllBookings lädt alle Zeiträume und kann nach Ressource filtern', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
