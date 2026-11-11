@@ -302,3 +302,51 @@ textarea.input { resize: vertical; }
 
 .series-scope-actions { display: grid; grid-template-columns: 1fr; }
 .series-scope-actions .btn { width: 100%; justify-content: center; }
+
+
+/* Mehrfachauswahl von Räumen und Plätzen */
+.resource-picker { border: 1px solid var(--border); border-radius: 8px; padding: .75rem; min-width: 0; }
+.resource-picker legend { padding: 0 .25rem; font-weight: 600; }
+.resource-checkboxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .4rem .75rem; max-height: 220px; overflow: auto; }
+.resource-check { display: flex; align-items: center; gap: .45rem; font-weight: 400; }
+
+/* Jahresereignisse */
+.annual-hero { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.annual-section { overflow: hidden; }
+.annual-toolbar { display: flex; align-items: center; gap: .65rem; margin-bottom: 1rem; }
+.annual-toolbar h2 { margin: 0 auto 0 0; text-transform: capitalize; }
+.annual-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+.annual-weekday { padding: .45rem .25rem; text-align: center; font-weight: 700; color: var(--muted); background: #f5f7fa; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.annual-day { min-height: 95px; min-width: 0; padding: .35rem; background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.annual-day-empty { background: #f8fafc; }
+.annual-day-number { display: block; font-size: .85rem; font-weight: 700; margin-bottom: .2rem; }
+.annual-event-chip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .18rem 0; padding: .18rem .35rem; border: 0; border-left: 3px solid var(--primary); border-radius: 3px; color: var(--text); background: var(--primary-soft); font: inherit; font-size: .78rem; text-align: left; cursor: pointer; }
+.annual-event-chip:hover { background: #d5e7f8; }
+.annual-list-heading { margin-top: 1.25rem; }
+.annual-event-list { list-style: none; margin: 0; padding: 0; }
+.annual-event-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem .2rem; border-bottom: 1px solid #edf1f6; }
+.annual-event-list li span { color: var(--muted); font-size: .9rem; }
+.annual-recipients { border: 0; padding: 0; margin: 0; min-width: 0; }
+.annual-recipients legend { font-weight: 600; margin-bottom: .35rem; }
+.annual-recipient-row { display: grid; grid-template-columns: 75px minmax(0, 1fr) auto; align-items: center; gap: .5rem; margin-bottom: .45rem; }
+.annual-recipient-row label { font-size: .9rem; }
+.annual-editor-toolbar { display: flex; flex-wrap: wrap; gap: .35rem; padding: .45rem; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: #f7f9fb; }
+.annual-editor { min-height: 180px; max-height: 360px; overflow: auto; padding: .75rem; border: 1px solid var(--border); border-radius: 0 0 8px 8px; background: #fff; }
+.annual-editor:focus { outline: 3px solid var(--focus); outline-offset: 1px; }
+.annual-editor img, .annual-inline-image { display: block; max-width: min(100%, 600px); height: auto; margin: .5rem 0; }
+.annual-assets { margin: 0; padding-left: 1.2rem; }
+.annual-assets li { display: flex; justify-content: space-between; gap: .75rem; padding: .25rem 0; }
+
+@media (max-width: 640px) {
+  .annual-day { min-height: 72px; padding: .2rem; }
+  .annual-event-chip { font-size: .68rem; padding: .12rem .2rem; }
+  .annual-weekday { font-size: .8rem; }
+  .annual-recipient-row { grid-template-columns: 1fr auto; }
+  .annual-recipient-row label { grid-column: 1 / -1; }
+  .annual-recipient-row input { min-width: 0; }
+  .annual-event-list li { flex-direction: column; gap: .15rem; }
+}
+.annual-log { padding: .6rem .75rem; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
+.annual-log summary { cursor: pointer; font-weight: 600; }
+.annual-log ul { margin: .5rem 0 0; padding-left: 1.25rem; }
+.annual-log li { margin: .35rem 0; overflow-wrap: anywhere; }
