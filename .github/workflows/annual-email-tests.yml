@@ -1,0 +1,27 @@
+name: Testmails für jährliche Ereignisse
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: annual-event-test-mails
+  cancel-in-progress: false
+
+jobs:
+  send-test-mails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testmail-Anfragen verarbeiten
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STRATO_SMTP_USER: ${{ secrets.STRATO_SMTP_USER }}
+          STRATO_SMTP_PASSWORD: ${{ secrets.STRATO_SMTP_PASSWORD }}
+        run: python3 scripts/send_annual_event_emails.py --tests-only

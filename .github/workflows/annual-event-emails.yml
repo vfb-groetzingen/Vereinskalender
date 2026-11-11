@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: annual-event-reminders
+  cancel-in-progress: false
+
 jobs:
   send-annual-event-emails:
     runs-on: ubuntu-latest
