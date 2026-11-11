@@ -40,6 +40,26 @@ function dateKey(event) { return `${String(event.event_month).padStart(2, '0')}-
 function monthName(date) { return date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); }
 function eventLabel(event) { return `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}. · ${event.title}`; }
 
+function eventDateFromLog(row, fallback = null) {
+  if (row.event_date) {
+    const [year, month, day] = String(row.event_date).slice(0, 10).split('-');
+    return `${day}.${month}.${year}`;
+  }
+  const month = Number(row.event_month ?? fallback?.event_month);
+  const day = Number(row.event_day ?? fallback?.event_day);
+  return month && day ? `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}. (jährlich)` : 'Datum nicht erfasst';
+}
+
+function eventLogHtml(rows, fallbackEvent = null) {
+  if (!rows.length) return 'Noch keine Versandversuche protokolliert.';
+  return `<ul>${rows.map((row) => {
+    const title = row.event_title || fallbackEvent?.title || 'Ereignis';
+    const kind = row.kind === 'test' ? 'Testmail' : `Jahresmail ${esc(row.occurrence_year || '')}`;
+    const status = row.status === 'sent' ? 'Vom SMTP-Server angenommen' : row.status === 'failed' ? 'Fehler' : row.status === 'sending' ? 'Wird verarbeitet' : 'Ausstehend';
+    return `<li><strong>${esc(title)}</strong> · Ereignisdatum ${esc(eventDateFromLog(row, fallbackEvent))}<br>${kind} · ${esc(row.recipient)} · ${status}${row.log_time ? ` · ${esc(new Date(row.log_time).toLocaleString('de-DE'))}` : ''}${row.error ? `<br><span class="notice-error">${esc(row.error)}</span>` : ''}</li>`;
+  }).join('')}</ul>`;
+}
+
 export async function renderAnnualEvents(app, store, setNotice) {
   if (store.mode !== 'supabase' || !store.isEditor()) {
     app.innerHTML = '<section class="section"><h1>Jährliche Ereignisse</h1><p class="notice notice-error">Dieser Bereich ist nur für angemeldete Bearbeiter und Administratoren verfügbar.</p></section>';
@@ -73,12 +93,18 @@ function drawCalendar(app, store, setNotice) {
       </div>
       <h2 class="annual-list-heading">Ereignisse im ${esc(monthName(monthCursor))}</h2>
       ${monthEvents.length ? `<ul class="annual-event-list">${monthEvents.map((event) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse in diesem Monat.</p>'}
+    </section>
+    <section class="section annual-error-panel" aria-labelledby="annual-errors-title">
+      <div class="annual-error-head"><div><h2 id="annual-errors-title">Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler beim Verarbeiten von Test- oder Jahresmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div>
+      <div id="annual-errors-list" aria-live="polite"><p class="muted">Fehlerprotokoll wird geladen …</p></div>
     </section>`;
   app.querySelector('#annual-prev').onclick = () => { monthCursor.setMonth(monthCursor.getMonth() - 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-next').onclick = () => { monthCursor.setMonth(monthCursor.getMonth() + 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
   app.querySelectorAll('[data-edit-event]').forEach((button) => button.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((event) => event.id === button.dataset.editEvent)));
+  app.querySelector('#annual-errors-refresh').onclick = () => loadErrorLog(app, store);
+  loadErrorLog(app, store);
   const calendar = app.querySelector('.annual-calendar');
   const createFromCell = (event) => {
     if (event.target.closest('[data-edit-event]')) return;
@@ -89,6 +115,25 @@ function drawCalendar(app, store, setNotice) {
   };
   calendar.addEventListener('dblclick', createFromCell);
   calendar.addEventListener('contextmenu', createFromCell);
+}
+
+async function loadErrorLog(app, store) {
+  const container = app.querySelector('#annual-errors-list');
+  if (!container) return;
+  container.innerHTML = '<p class="muted">Fehlerprotokoll wird geladen …</p>';
+  try {
+    const rows = await store.getAnnualEmailErrors();
+    if (!container.isConnected) return;
+    if (!rows.length) { container.innerHTML = '<p class="empty">Keine Versandfehler protokolliert.</p>'; return; }
+    container.innerHTML = `<ul class="annual-error-list">${rows.map((row) => {
+      const event = currentEvents.find((item) => item.id === row.event_id);
+      const title = row.event_title || event?.title || 'Ereignis';
+      const when = row.updated_at ? new Date(row.updated_at).toLocaleString('de-DE') : '';
+      return `<li><div><strong>${esc(title)} · Ereignisdatum ${esc(eventDateFromLog(row, event))}</strong><span>${row.kind === 'test' ? 'Testmail' : `Jahresmail ${esc(row.occurrence_year || '')}`} · ${esc(row.recipient)}${when ? ` · Fehlerzeitpunkt ${esc(when)}` : ''}</span></div><p class="notice notice-error">${esc(row.error || 'Unbekannter Versandfehler')}</p></li>`;
+    }).join('')}</ul>`;
+  } catch (error) {
+    if (container.isConnected) container.innerHTML = `<p class="notice notice-error">Fehlerprotokoll konnte nicht geladen werden: ${esc(error.message || 'Unbekannter Fehler')}</p>`;
+  }
 }
 
 function openEventForm(app, store, setNotice, event, initialDate = null) {
@@ -118,6 +163,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" hidden>
       <div class="field"><strong>Dateien</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
       <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> Ereignis aktiv – E-Mail jährlich versenden</label>
+      ${event ? `<section class="annual-test-mail"><h3>Testmail versenden</h3><div class="field-row"><div class="field"><label for="ae-test-recipient">Test-Empfängeradresse</label><input id="ae-test-recipient" class="input" type="email" maxlength="254" placeholder="name@example.org"></div><div class="field annual-test-action"><span class="hint">Es wird der zuletzt gespeicherte Ereignisstand verwendet.</span><button class="btn btn-small btn-primary" type="button" id="ae-send-test">Testmail senden</button></div></div><p id="ae-test-status" class="hint" role="status" aria-live="polite"></p></section>` : '<p class="hint">Eine Testmail ist verfügbar, sobald das Ereignis gespeichert wurde.</p>'}
       ${event ? '<details class="annual-log"><summary>Letzte Versandversuche</summary><div id="ae-log" class="hint">Versandprotokoll wird geladen …</div></details>' : ''}
       <p class="msg" id="ae-msg" role="alert"></p><div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button>${event ? '<button type="button" class="btn btn-danger" id="ae-delete">Löschen</button>' : ''}<button type="submit" class="btn btn-primary" id="ae-save">Speichern</button></div>
     </form></div></div>`;
@@ -146,8 +192,61 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   if (event) store.getAnnualDeliveryLog(event.id).then((rows) => {
     const log = q('#ae-log');
     if (!log) return;
-    log.innerHTML = rows.length ? `<ul>${rows.map((row) => `<li>${esc(row.occurrence_year)} · ${esc(row.recipient)} · ${row.status === 'sent' ? 'Gesendet' : row.status === 'failed' ? 'Fehler' : 'Ausstehend'}${row.sent_at ? ` · ${esc(new Date(row.sent_at).toLocaleString('de-DE'))}` : ''}${row.error ? `<br><span class="notice-error">${esc(row.error)}</span>` : ''}</li>`).join('')}</ul>` : 'Noch keine Versandversuche protokolliert.';
+    log.innerHTML = eventLogHtml(rows, event);
   }).catch(() => { if (q('#ae-log')) q('#ae-log').textContent = 'Versandprotokoll derzeit nicht verfügbar.'; });
+  if (event) q('#ae-send-test').onclick = async () => {
+    const recipient = q('#ae-test-recipient').value.trim();
+    const status = q('#ae-test-status');
+    const button = q('#ae-send-test');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) { status.className = 'notice notice-error'; status.textContent = 'Bitte eine gültige Test-E-Mail-Adresse eingeben.'; return; }
+    button.disabled = true;
+    status.className = 'hint';
+    status.textContent = 'Testmail wird in die sichere Versandwarteschlange gestellt …';
+    try {
+      const created = await store.createAnnualTestRequest(event, recipient);
+      const request = Array.isArray(created) ? created[0] : created;
+      if (!request?.id) throw new Error('Testmail-Anfrage wurde nicht bestätigt.');
+      status.textContent = 'Angefordert. GitHub Actions prüft die Warteschlange etwa alle 5 Minuten.';
+      const queuedLogs = await store.getAnnualDeliveryLog(event.id);
+      if (q('#ae-log')) q('#ae-log').innerHTML = eventLogHtml(queuedLogs, event);
+      await loadErrorLog(app, store);
+      for (let attempt = 0; attempt < 36 && dialog.isConnected; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        const result = await store.getAnnualTestRequest(request.id);
+        if (!result) break;
+        if (result.status === 'sent') {
+          status.className = 'notice notice-ok';
+          status.textContent = 'Der Strato-SMTP-Server hat die Testmail angenommen. Bitte auch den Spam-Ordner prüfen.';
+          button.disabled = false;
+          await loadErrorLog(app, store);
+          const logs = await store.getAnnualDeliveryLog(event.id);
+          const log = q('#ae-log');
+          if (log) log.innerHTML = eventLogHtml(logs, event);
+          return;
+        }
+        if (result.status === 'failed') {
+          status.className = 'notice notice-error';
+          status.textContent = `Testmail fehlgeschlagen: ${result.error || 'Der SMTP-Server hat den Versand abgelehnt.'}`;
+          button.disabled = false;
+          await loadErrorLog(app, store);
+          const logs = await store.getAnnualDeliveryLog(event.id);
+          if (q('#ae-log')) q('#ae-log').innerHTML = eventLogHtml(logs, event);
+          return;
+        }
+        status.textContent = result.status === 'sending' ? 'Testmail wird gerade versendet …' : 'Testmail wartet auf den nächsten Workflow-Lauf …';
+      }
+      if (dialog.isConnected) {
+        status.className = 'notice notice-warn';
+        status.textContent = 'Noch keine Rückmeldung. Die Anfrage bleibt in der Warteschlange; aktualisiere später das Fehlerprotokoll.';
+        button.disabled = false;
+      }
+    } catch (error) {
+      status.className = 'notice notice-error';
+      status.textContent = error.code === '23505' ? 'Für diese Adresse ist bereits eine Testmail in Bearbeitung.' : (error.message || 'Testmail konnte nicht angefordert werden.');
+      button.disabled = false;
+      await loadErrorLog(app, store);
+    }
+  };
   q('#ae-add-recipient').onclick = () => {
     const list = q('#ae-recipients');
     const count = list.querySelectorAll('input').length;

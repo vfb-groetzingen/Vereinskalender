@@ -348,7 +348,39 @@ export class SupabaseStore {
   }
   async getAnnualDeliveryLog(id) {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
-    return this._req(`/rest/v1/annual_email_deliveries?select=occurrence_year,recipient,status,sent_at,error&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`);
+    const [annual, tests] = await Promise.all([
+      this._req(`/rest/v1/annual_email_deliveries?select=event_title,event_date,occurrence_year,recipient,status,sent_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`),
+      this._req(`/rest/v1/annual_email_test_requests?select=event_title,event_month,event_day,recipient,status,requested_at,processed_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=requested_at.desc&limit=50`)
+    ]);
+    return [
+      ...annual.map((row) => ({ ...row, kind: 'annual', log_time: row.sent_at || row.updated_at })),
+      ...tests.map((row) => ({ ...row, kind: 'test', log_time: row.processed_at || row.updated_at || row.requested_at }))
+    ].sort((a, b) => new Date(b.log_time) - new Date(a.log_time)).slice(0, 50);
+  }
+  async createAnnualTestRequest(event, recipient) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req('/rest/v1/annual_email_test_requests', {
+      method: 'POST', body: {
+        event_id: event.id, event_title: event.title,
+        event_month: event.event_month, event_day: event.event_day, recipient
+      }, prefer: 'return=representation'
+    });
+  }
+  async getAnnualTestRequest(id) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    const rows = await this._req(`/rest/v1/annual_email_test_requests?select=id,status,error,processed_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`);
+    return rows[0] || null;
+  }
+  async getAnnualEmailErrors() {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    const [annual, tests] = await Promise.all([
+      this._req('/rest/v1/annual_email_deliveries?select=event_id,event_title,event_date,occurrence_year,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50'),
+      this._req('/rest/v1/annual_email_test_requests?select=event_id,event_title,event_month,event_day,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50')
+    ]);
+    return [
+      ...annual.map((row) => ({ ...row, kind: 'annual' })),
+      ...tests.map((row) => ({ ...row, kind: 'test' }))
+    ].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 50);
   }
   async uploadAnnualAsset(eventId, file) {
     if (!this.isEditor() || !this.session?.access_token) throw { code: '42501', message: 'Bitte anmelden.' };
