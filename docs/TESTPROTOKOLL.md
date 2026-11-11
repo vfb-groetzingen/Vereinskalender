@@ -14,14 +14,15 @@ Befehl: `npm test` bzw. `node --test tests/logic.test.mjs tests/layout.test.mjs 
 |---|---|---|
 | `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Import mit Zeilenfehlern, Kalenderzuordnung und Standardkalender-Fallback, erlaubte Überschneidungen, Serien und Layout | 22 von 22 bestanden |
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
-| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, vollständiges Laden aller Zeiträume und einer Serie, Notizen und Löschen | 10 von 10 bestanden |
+| `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, Mehrfachressourcen, vollständiges Laden aller Zeiträume und einer Serie, Notizen und Löschen | 11 von 11 bestanden |
 
-**Ergebnis: 38 von 38 automatisierten Tests bestanden.**
+**Ergebnis: 39 von 39 automatisierten Tests bestanden.**
 
 Zusätzlich geprüft:
 - Die JavaScript-Dateien sind syntaktisch gültig (`node --check`); die CSS-Datei wurde geparst.
 - CSV- und Excel-Beispielvorlagen wurden über die Importlogik geprüft; Exceldatei lädt korrekt und die fehlende Endzeit ergibt 90 Minuten.
-- Die GitHub-Workflows sind gültiges YAML.
+- Die vier GitHub-Workflows sind gültiges YAML.
+- Der Mailer wurde mit synthetischen Daten auf HTML-Sanitizing, Absenderformat und Inline-Bilder geprüft; kein echter SMTP-Versand.
 - Die QR-Codes wurden für alle sieben Ressourcen als SVG erzeugt.
 
 ## 2. Nicht ausgeführt (noch offen)
@@ -30,10 +31,11 @@ Diese Punkte konnten in der Entwicklungsumgebung nicht getestet werden, da dort 
 
 | Bereich | Warum offen | Vorgehen |
 |---|---|---|
-| **SQL-Schema/Migrationen** (`supabase/schema.sql`, `supabase/migration-allow-booking-overlaps.sql`, `supabase/migration-booking-retention-3-years.sql`) | Keine PostgreSQL-Instanz in der Entwicklungsumgebung | Schema/Migrationen im SQL Editor ausführen. Bestehende Installationen benötigen beide Migrationen. |
+| **SQL-Schema/Migrationen** (`supabase/schema.sql`, `supabase/migration-allow-booking-overlaps.sql`, `supabase/migration-booking-retention-3-years.sql`) | Keine PostgreSQL-Instanz in der Entwicklungsumgebung | Schema und die jeweils erforderlichen Migrationen im SQL Editor ausführen; für diese Erweiterung zusätzlich `supabase/migration-multi-resource-annual-events.sql`. |
 | **Sicherheitstests gegen die echte Datenbank** | Benötigt ein laufendes Supabase-Projekt | Abschnitt 3 durchführen |
 | **Benutzeroberfläche im Browser** | Kein Browser verfügbar | Checkliste in Abschnitt 4 durchführen |
 | **Supabase Cron / Aufbewahrung** (`supabase/migration-booking-retention-3-years.sql`) | Benötigt ein laufendes Supabase-Projekt und Cron-Erweiterung | Migration ausführen; Cron-Jobs und Ausführungshistorie im Dashboard prüfen. In einer Testumgebung sicherstellen, dass nur Starts vor der 3-Jahres-Grenze gelöscht werden. |
+| **Mehrfachressourcen und Ereignis-E-Mails** (`supabase/migration-multi-resource-annual-events.sql`) | Benötigt Supabase, Storage-Bucket und GitHub Actions Secrets | Migration ausführen. Mehrere Ressourcen buchen und prüfen, dass der Termin in jedem Kalender erscheint. Testereignis am heutigen Datum einrichten; Workflow manuell starten und Versandprotokoll sowie Empfänger-Mail prüfen. |
 | **Keepalive** | Benötigt echtes Projekt und mehrere Wochen Beobachtung | Abschnitt 5 |
 | **Sicherung und Wiederherstellung** | Benötigt Projekt und Secrets | Abschnitt 5 |
 

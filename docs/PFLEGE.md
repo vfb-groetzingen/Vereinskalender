@@ -126,3 +126,16 @@ Bitte prüfen, ob der Computer auf die deutsche Zeitzone eingestellt ist. Die Um
 - **Mehrfach löschen:** Im Belegungsplan **Mehrere löschen** öffnen, einzelne Termine oder alle markieren und die Löschung bestätigen. Die Liste umfasst Termine aus allen Kalendern und Zeiträumen.
 - **Überschneidungen aktivieren:** Bei bestehenden Supabase-Projekten einmal `supabase/migration-allow-booking-overlaps.sql` im SQL Editor ausführen. Neue Installationen erhalten das aktualisierte Schema.
 - **Datenbank pausiert?** Wenn die Seite Fehler zeigt, im Supabase-Dashboard das Projekt mit **Restore** wieder aktivieren und prüfen, ob der Keepalive läuft.
+
+
+## Jährliche Ereignisse und E-Mail-Erinnerungen
+
+Bearbeiter und Administratoren öffnen **Ereignisse** im Menü. Ein Ereignis wird über Tag und Monat jährlich wiederholt; am 29. Februar wird nur in Schaltjahren versendet. Die Nachricht wird um 06:00 Uhr deutscher Zeit an die eingetragenen Adressen gesendet. Empfänger erhalten jeweils eine separate Nachricht, damit ihre Adressen einander nicht offengelegt werden. Zustellversuche werden pro Empfänger und Jahr protokolliert; fehlgeschlagene Versuche können im nächsten Workflow-Lauf erneut versucht werden.
+
+Bilder und Dateien werden in einem privaten Supabase-Storage-Bucket gespeichert. Eingebettete Bilder werden beim Hochladen auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen dürfen 5 MB nicht überschreiten. Beim Löschen eines Ereignisses werden auch seine Dateien entfernt.
+
+Der Versand läuft serverseitig über GitHub Actions und Strato SMTP. Hinterlege `SUPABASE_SERVICE_ROLE_KEY`, `STRATO_SMTP_USER` und `STRATO_SMTP_PASSWORD` unter **GitHub > Settings > Secrets and variables > Actions**. Verwende dafür das Strato-Postfach des Vereins; schreibe Zugangsdaten niemals in Projektdateien. Den Workflow **Jährliche Ereignis-E-Mails** regelmäßig unter **Actions** auf erfolgreiche Läufe prüfen. Geplante GitHub-Läufe können verspätet sein oder nach längerer Inaktivität deaktiviert werden.
+
+## Mehrere Ressourcen pro Termin
+
+Beim Anlegen oder Bearbeiten eines Termins können mehrere Räume und Plätze markiert werden. Es bleibt ein gemeinsamer Termin, der in den Kalendern aller ausgewählten Ressourcen erscheint.

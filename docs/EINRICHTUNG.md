@@ -2,7 +2,7 @@
 
 Diese Anleitung richtet die Webseite vollständig ein: Datenbank, Anmeldung, Veröffentlichung, Sicherung und Keepalive. Sie benötigt etwa 1 bis 2 Stunden. Die Schritte bauen aufeinander auf.
 
-Vorhandene Konten: GitHub, Supabase, Brevo.
+Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzingen.de`.
 
 ---
 
@@ -20,8 +20,9 @@ Vorhandene Konten: GitHub, Supabase, Brevo.
 1. Im Dashboard **SQL Editor** öffnen, **New query**.
 2. Den Inhalt von `supabase/schema.sql` einfügen und **Run** ausführen.
 3. Die Datei `supabase/migration-booking-retention-3-years.sql` im SQL Editor ausführen. Sie aktiviert Cron und plant die tägliche Löschung von Terminen ein, deren Start mehr als drei Jahre zurückliegt. Falls die Erweiterung `pg_cron` nicht verfügbar ist, zuerst im Supabase-Dashboard unter **Integrations > Cron** aktivieren und die Migration erneut ausführen.
-4. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
-5. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings` und `memberships` sind vorhanden; unter **Integrations > Cron** die beiden geplanten Jobs prüfen.
+4. Die Datei `supabase/migration-multi-resource-annual-events.sql` im SQL Editor ausführen. Sie aktiviert Mehrfachzuordnungen von Ressourcen, den Ereigniskalender, private Dateiablage und Versandprotokoll.
+5. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
+6. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships` und `annual_email_events` sind vorhanden; unter **Integrations > Cron** die Aufbewahrungsjobs prüfen.
 
 ## Schritt 3: Anmeldung konfigurieren
 
@@ -29,11 +30,11 @@ Vorhandene Konten: GitHub, Supabase, Brevo.
 2. **Authentication > URL Configuration**:
    - **Site URL**: `https://DEIN-GITHUB-NAME.github.io/vereinskalender/`
    - **Redirect URLs**: dieselbe Adresse eintragen.
-3. **Authentication > Emails > SMTP Settings** (Tab „SMTP Settings“, Schalter **Enable Custom SMTP** einschalten; Versand über Brevo, da der Standardversand stark begrenzt ist). Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen. Ältere Anleitungen nennen noch „Project Settings > Auth“.
-   - Host: `smtp-relay.brevo.com`, Port: `587`
-   - Benutzername und Passwort: die SMTP-Zugangsdaten aus dem Brevo-Konto (SMTP & API)
-   - Absenderadresse: eine in Brevo verifizierte Adresse des Vereins
-   - Mit Custom SMTP steigt das Limit für Anmelde-E-Mails von 2 auf 30 pro Stunde (anpassbar unter **Authentication > Rate Limits**).
+3. **Authentication > Emails > SMTP Settings**: **Enable Custom SMTP** ist für den Anmeldelink-Versand eingeschaltet. Laut derzeitiger Konfiguration:
+   - Host: `smtp.strato.de`, Port: `465`
+   - Benutzername/Absender: `vfb-app@vfb-groetzingen.de`
+   - Passwort: das Kennwort des Strato-Postfachs (niemals in GitHub committen oder im Chat teilen)
+   Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen.
 4. **Authentication > Emails > Magic Link** (Vorlage): Der Text sollte erklären, dass es sich um einen Anmeldelink für den Vereinskalender handelt.
 
 ## Schritt 4: Ersten Administrator anlegen
@@ -78,6 +79,9 @@ Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die
 | `SUPABASE_URL` | Project URL (wie in Schritt 5) |
 | `SUPABASE_ANON_KEY` | Schlüssel anon public |
 | `SUPABASE_DB_URL` | Verbindungs-URI für Datenbankzugriff (siehe unten) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase-Service-Role-Key für den serverseitigen E-Mail-Workflow (sehr weitreichend; nur als GitHub Secret speichern) |
+| `STRATO_SMTP_USER` | `vfb-app@vfb-groetzingen.de` |
+| `STRATO_SMTP_PASSWORD` | Kennwort dieses Strato-Postfachs (nicht in Projektdateien oder Chat eintragen) |
 | `BACKUP_PASSPHRASE` | Langes Zufallspasswort für verschlüsselte Sicherungen (mindestens 24 Zeichen) |
 
 **Verbindungs-URI** (für `SUPABASE_DB_URL`): Im Dashboard auf **Connect** klicken. Die Variante **Session pooler** wählen (Port 5432). Das Datenbankpasswort aus Schritt 1 eintragen. Die direkte Verbindung funktioniert auf GitHub-Servern oft nicht, da sie IPv6 benötigt.
@@ -86,11 +90,12 @@ Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlü
 
 ## Schritt 8: Automatisierung prüfen
 
-Unter **Actions** die drei Workflows prüfen:
+Unter **Actions** die Workflows prüfen:
 
 1. **QR-Codes aktualisieren**: Läuft automatisch nach Änderungen an `data/seed.json`. Manuell mit **Run workflow** starten. Ergebnis: Im Ordner `qr/` liegen die SVG-Dateien mit der richtigen Adresse.
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
+4. **Jährliche Ereignis-E-Mails**: Die Workflow-Datei benötigt `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRATO_SMTP_USER` und `STRATO_SMTP_PASSWORD` als GitHub Secrets. Der Workflow prüft täglich die Ereignisse und versendet an deren Datum ab 06:00 Uhr Europe/Berlin. GitHub Actions kann Läufe verzögern; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass der Workflow aktiviert ist und erfolgreich läuft.
 
 **Keepalive und Pausierung:** Der Free-Tarif von Supabase pausiert Projekte nach 7 Tagen ohne Aktivität. Der Keepalive verhindert das nach bisherigem Kenntnisstand, ist aber nicht zugesichert. Deshalb unbedingt prüfen, ob das Projekt nach 2 bis 3 Wochen noch läuft. Wenn nicht, auf Supabase Pro umstellen (ca. 25 US-Dollar im Monat).
 
@@ -106,7 +111,7 @@ Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor s
 
 ## Schritt 10: Rechtliche Seiten vervollständigen
 
-Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Brevo müssen Auftragsverarbeitungsverträge abgeschlossen werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
+Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Strato müssen die jeweils erforderlichen Datenschutz- und Auftragsverarbeitungsvereinbarungen geprüft werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
 
 ## Schritt 11: Eigene Domain (optional)
 
@@ -119,11 +124,11 @@ Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain*
 - [ ] Schema und Startdaten eingespielt
 - [ ] Öffentliche Registrierung in Supabase deaktiviert
 - [ ] Site URL und Redirect URL korrekt
-- [ ] SMTP über Brevo funktioniert (Testanmeldung)
+- [ ] Strato-SMTP funktioniert (Testanmeldung über Supabase Auth)
 - [ ] Administrator eingeladen und in `memberships` eingetragen
 - [ ] `config.js` mit URL und anon-Schlüssel gefüllt
 - [ ] `public_base_url` gesetzt, QR-Codes neu erzeugt
-- [ ] Geheimnisse (vier Stück) hinterlegt
-- [ ] Keepalive, Sicherung und Wiederherstellung geprüft
+- [ ] GitHub Actions Secrets für Datenbank, Strato-Versand und Sicherung hinterlegt
+- [ ] Keepalive, Sicherung, Wiederherstellung und jährlichen E-Mail-Workflow geprüft
 - [ ] Impressum und Datenschutzerklärung vervollständigt
 - [ ] Testprotokoll (`docs/TESTPROTOKOLL.md`) durchgeführt
