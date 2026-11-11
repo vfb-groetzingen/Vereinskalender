@@ -59,13 +59,14 @@ function drawCalendar(app, store, setNotice) {
   for (let i = 0; i < startOffset; i++) cells.push('<div class="annual-day annual-day-empty" aria-hidden="true"></div>');
   for (let day = 1; day <= days; day++) {
     const events = monthEvents.filter((event) => Number(event.event_day) === day);
-    cells.push(`<div class="annual-day"><span class="annual-day-number">${day}</span>${events.map((event) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
+    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map((event) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
   }
   app.innerHTML = `
     <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Jährliche Ereignisse</h1><p>Jährlich wiederkehrende Ereignisse und ihre automatischen E-Mail-Erinnerungen.</p></div>
       <button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section>
     <section class="section annual-section">
       <div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Vorheriger Monat">‹</button><h2>${esc(monthName(monthCursor))}</h2><button type="button" class="btn" id="annual-next" aria-label="Nächster Monat">›</button><button type="button" class="btn btn-small" id="annual-today">Heute</button></div>
+      <p class="hint">Doppelklick oder Rechtsklick auf einen Tag legt dort ein neues Ereignis an.</p>
       <div class="annual-calendar" role="grid" aria-label="Kalender für ${esc(monthName(monthCursor))}">
         ${['Mo','Di','Mi','Do','Fr','Sa','So'].map((day) => `<div class="annual-weekday" role="columnheader">${day}</div>`).join('')}
         ${cells.join('')}
@@ -78,9 +79,19 @@ function drawCalendar(app, store, setNotice) {
   app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
   app.querySelectorAll('[data-edit-event]').forEach((button) => button.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((event) => event.id === button.dataset.editEvent)));
+  const calendar = app.querySelector('.annual-calendar');
+  const createFromCell = (event) => {
+    if (event.target.closest('[data-edit-event]')) return;
+    const cell = event.target.closest('.annual-day[data-month][data-day]');
+    if (!cell) return;
+    event.preventDefault();
+    openEventForm(app, store, setNotice, null, { month: Number(cell.dataset.month), day: Number(cell.dataset.day) });
+  };
+  calendar.addEventListener('dblclick', createFromCell);
+  calendar.addEventListener('contextmenu', createFromCell);
 }
 
-function openEventForm(app, store, setNotice, event) {
+function openEventForm(app, store, setNotice, event, initialDate = null) {
   const id = event?.id || crypto.randomUUID();
   let assets = (event?.assets || []).map((asset) => ({ ...asset }));
   const newlyUploaded = [];
@@ -89,7 +100,9 @@ function openEventForm(app, store, setNotice, event) {
   const dialog = document.createElement('dialog');
   dialog.className = 'dialog dialog-wide';
   dialog.id = 'annual-event-dialog';
-  const dateValue = `2000-${String(event?.event_month || (monthCursor.getMonth() + 1)).padStart(2, '0')}-${String(event?.event_day || 1).padStart(2, '0')}`;
+  const selectedMonth = event?.event_month || initialDate?.month || (monthCursor.getMonth() + 1);
+  const selectedDay = event?.event_day || initialDate?.day || 1;
+  const dateValue = `2000-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
   const recipients = event?.recipients?.length ? event.recipients : [''];
   dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Jährliches Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
@@ -204,7 +217,7 @@ function openEventForm(app, store, setNotice, event) {
       await store.saveAnnualEvent({ id, title, event_month: month, event_day: day, recipients: emails, subject, body_html: body, assets, active: q('#ae-active').checked });
       for (const asset of removedAssets) await store.deleteAnnualAsset(asset.path);
       saved = true;
-      dialog.close(); setNotice('ok', 'Jährliches Ereignis wurde gespeichert.'); monthCursor = new Date(2000, month - 1, 1); await rerenderPage();
+      dialog.close(); setNotice('ok', 'Jährliches Ereignis wurde gespeichert.'); monthCursor = new Date(monthCursor.getFullYear(), month - 1, 1); await rerenderPage();
     } catch (error) { msg(error.message || 'Ereignis konnte nicht gespeichert werden.'); q('#ae-save').disabled = false; }
   };
   q('#ae-title').focus();
