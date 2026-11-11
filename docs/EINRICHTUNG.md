@@ -19,8 +19,9 @@ Vorhandene Konten: GitHub, Supabase, Brevo.
 
 1. Im Dashboard **SQL Editor** öffnen, **New query**.
 2. Den Inhalt von `supabase/schema.sql` einfügen und **Run** ausführen.
-3. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
-4. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings` und `memberships` sind vorhanden.
+3. Die Datei `supabase/migration-booking-retention-3-years.sql` im SQL Editor ausführen. Sie aktiviert Cron und plant die tägliche Löschung von Terminen ein, deren Start mehr als drei Jahre zurückliegt. Falls die Erweiterung `pg_cron` nicht verfügbar ist, zuerst im Supabase-Dashboard unter **Integrations > Cron** aktivieren und die Migration erneut ausführen.
+4. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
+5. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings` und `memberships` sind vorhanden; unter **Integrations > Cron** die beiden geplanten Jobs prüfen.
 
 ## Schritt 3: Anmeldung konfigurieren
 

@@ -56,20 +56,28 @@ Bei Serien fragt die Anwendung vor dem Bearbeiten oder Löschen nach dem Umfang:
 
 Nützlich für Trainingspläne, die bereits in einer Tabelle stehen.
 
-1. Im **Belegungsplan** auf **Import (CSV/Excel)** klicken.
+1. Im **Belegungsplan** oder in einem einzelnen Kalender auf **Spiele importieren** klicken.
 2. Eine der Beispielvorlagen im Dialog herunterladen und ausfüllen.
 3. Die Datei auswählen und in der Vorschau die Hinweise prüfen.
-4. Erst wenn keine Fehler angezeigt werden, auf **Importieren** klicken.
+4. Wenn die Datei keinen gültigen Kalendernamen/Slug enthält, im Feld **Zielkalender** den Kalender für diese Zeilen auswählen.
+5. Erst wenn keine Fehler angezeigt werden, auf **Importieren** klicken.
 
 **Format:**
 - Pflichtspalten: `Start Date`, `Start Time`, `Subject`
 - Optional: `End Date`, `End Time`, `Calendar Name`
 - Wenn End Date oder End Time fehlt, werden 90 Minuten ab Start angenommen. Fehlt nur eine der beiden Endangaben, erscheint ein Hinweis und ebenfalls die 90-Minuten-Dauer.
-- `Calendar Name` akzeptiert Kalendername oder Slug. Fehlt der Wert oder gibt es keinen Treffer, wird der aktuell geöffnete Kalender verwendet.
+- `Calendar Name` akzeptiert Kalendername oder Slug und kann pro Zeile einen Zielkalender festlegen. Beim Import aus dem Belegungsplan fragt die Anwendung über das Feld **Zielkalender** nach, wenn eine oder mehrere Zeilen keinen gültigen Wert haben. In einem einzelnen Kalender dient dieser als Standard.
 - Datum: `2027-03-01` oder `01.03.2027`; Uhrzeit: `17:30`
 - CSV wird mit Semikolon oder Komma unterstützt.
 - Überschneidungen sind zulässig. Bei Eingabefehlern wird nichts importiert; eine Zeilennummer hilft beim Korrigieren.
 
+
+
+## Automatische Aufbewahrung
+
+Die Cron-Migration `supabase/migration-booking-retention-3-years.sql` plant eine tägliche Bereinigung um 03:00 UTC. Dabei werden Termine aus allen Plätzen und Räumen gelöscht, deren Startzeit mehr als drei Jahre zurückliegt; jüngere Termine bleiben erhalten. Einzelne alte Vorkommen einer Serie werden gelöscht, spätere Vorkommen bleiben bestehen. Die Löschung ist dauerhaft. Vor dem erstmaligen Ausführen bei Bedarf einen CSV-/Excel-Export oder ein Datenbank-Backup erstellen.
+
+Die vereinbarte Regel löscht keine jüngeren Termine, um Speicher freizumachen. Daher kann sie keine Reserve von 20 MB garantieren. Außerdem wird Datenbankplatz nach `DELETE` nicht zwingend sofort an den Tarif-Speicher zurückgegeben; PostgreSQL markiert gelöschte Zeilen zunächst zur Wiederverwendung und Autovacuum bereinigt sie später.
 
 ## Kalender exportieren
 

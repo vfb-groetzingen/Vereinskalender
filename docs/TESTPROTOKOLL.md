@@ -12,11 +12,11 @@ Befehl: `npm test` bzw. `node --test tests/logic.test.mjs tests/layout.test.mjs 
 
 | Testdatei | Umfang | Ergebnis |
 |---|---|---|
-| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Import mit Zeilenfehlern und Kalenderzuordnung, erlaubte Überschneidungen, Anpassung einer Serie ab ausgewähltem Termin, CSV-Erkennung und Layout | 21 von 21 bestanden |
+| `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Import mit Zeilenfehlern, Kalenderzuordnung und Standardkalender-Fallback, erlaubte Überschneidungen, Serien und Layout | 22 von 22 bestanden |
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
 | `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, vollständiges Laden aller Zeiträume und einer Serie, Notizen und Löschen | 10 von 10 bestanden |
 
-**Ergebnis: 37 von 37 automatisierten Tests bestanden.**
+**Ergebnis: 38 von 38 automatisierten Tests bestanden.**
 
 Zusätzlich geprüft:
 - Die JavaScript-Dateien sind syntaktisch gültig (`node --check`); die CSS-Datei wurde geparst.
@@ -30,9 +30,10 @@ Diese Punkte konnten in der Entwicklungsumgebung nicht getestet werden, da dort 
 
 | Bereich | Warum offen | Vorgehen |
 |---|---|---|
-| **SQL-Schema/Migration** (`supabase/schema.sql`, `supabase/migration-allow-booking-overlaps.sql`) | Keine PostgreSQL-Instanz in der Entwicklungsumgebung | Neues Schema bei Neueinrichtung ausführen; bestehende Installation mit der Migration aktualisieren. |
+| **SQL-Schema/Migrationen** (`supabase/schema.sql`, `supabase/migration-allow-booking-overlaps.sql`, `supabase/migration-booking-retention-3-years.sql`) | Keine PostgreSQL-Instanz in der Entwicklungsumgebung | Schema/Migrationen im SQL Editor ausführen. Bestehende Installationen benötigen beide Migrationen. |
 | **Sicherheitstests gegen die echte Datenbank** | Benötigt ein laufendes Supabase-Projekt | Abschnitt 3 durchführen |
 | **Benutzeroberfläche im Browser** | Kein Browser verfügbar | Checkliste in Abschnitt 4 durchführen |
+| **Supabase Cron / Aufbewahrung** (`supabase/migration-booking-retention-3-years.sql`) | Benötigt ein laufendes Supabase-Projekt und Cron-Erweiterung | Migration ausführen; Cron-Jobs und Ausführungshistorie im Dashboard prüfen. In einer Testumgebung sicherstellen, dass nur Starts vor der 3-Jahres-Grenze gelöscht werden. |
 | **Keepalive** | Benötigt echtes Projekt und mehrere Wochen Beobachtung | Abschnitt 5 |
 | **Sicherung und Wiederherstellung** | Benötigt Projekt und Secrets | Abschnitt 5 |
 
@@ -113,6 +114,8 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Serie mit 4 Terminen wird angelegt
 - [ ] Zwei überlappende Termine auf demselben Platz werden gespeichert und in getrennten Spuren angezeigt
 - [ ] Bearbeiten kann einen bestehenden Termin einem anderen Platz/Raum zuordnen
+- [ ] Import: Importbutton ist im Belegungsplan und in einzelnen Kalendern vorhanden
+- [ ] Import: bei fehlender Kalenderangabe im Belegungsplan muss ein Zielkalender ausgewählt werden; Calendar Name in der Datei ordnet pro Zeile zu
 - [ ] Import: CSV-Beispiel herunterladen und importieren
 - [ ] Import: End Date/End Time werden übernommen; fehlende Endangaben ergeben 90 Minuten
 - [ ] Import: Kalendername und Slug ordnen den Zielkalender zu; fehlender/unbekannter Name fällt auf den aktuellen Kalender zurück
@@ -132,6 +135,7 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Sicherung: Artefakt vorhanden und mit `BACKUP_PASSPHRASE` entschlüsselbar
 - [ ] Wiederherstellung: Sicherung auf einem Testprojekt eingespielt, Termine vorhanden
 - [ ] QR-Codes zeigen nach Änderung der Adresse auf die neue Adresse
+- [ ] Cron: täglicher Aufbewahrungsjob ist aktiv; alte Termine werden entfernt, Termine innerhalb der letzten drei Jahre bleiben erhalten
 - [ ] Mindestens zwei Administratoren eingetragen
 
 ---
