@@ -6,6 +6,7 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Serientermine** können ab einem ausgewählten Termin einzeln oder zusammen mit allen folgenden Vorkommen bearbeitet bzw. gelöscht werden.
+- **Aufbewahrung:** Eine tägliche Supabase-Cron-Bereinigung entfernt Termine, die älter als drei Jahre sind; jüngere Termine werden nicht automatisch gelöscht.
 - **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
 
 ## Technik
@@ -16,7 +17,7 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 | Hosting | GitHub Pages (öffentliches Repository) | 0 € |
 | Datenbank, Anmeldung | Supabase (Free-Tarif, Region Frankfurt) | 0 € |
 | E-Mail (Anmeldelinks) | Brevo (Free-Tarif) | 0 € |
-| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung) | 0 € |
+| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung) und Supabase Cron (Datenaufbewahrung) | 0 € |
 
 Die Architektur und die Begründungen stehen im Konzept (`Konzept_Vereinswebseite_Raumverwaltung.md`).
 
@@ -38,7 +39,8 @@ assets/templates/       CSV- und Excel-Beispiele für den Import
 data/seed.json          Räume, Plätze, Kategorien, Basisadresse für QR-Codes
 qr/                     Automatisch erzeugte QR-Codes (SVG)
 supabase/schema.sql     Tabellen und Rechte (RLS), ohne Überschneidungssperre
-supabase/migration-allow-booking-overlaps.sql  Migration für bestehende Datenbanken
+supabase/migration-allow-booking-overlaps.sql  Überschneidungen aktivieren
+supabase/migration-booking-retention-3-years.sql  Automatische 3-Jahres-Aufbewahrung
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
@@ -50,9 +52,10 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 ## Schnellstart
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
-2. Bei einer bestehenden Supabase-Installation zusätzlich `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
-4. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
+2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
+3. Für bestehende und neue Supabase-Projekte `supabase/migration-booking-retention-3-years.sql` im SQL Editor ausführen, um die tägliche 3-Jahres-Bereinigung einzurichten.
+4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
+5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
 **Ohne Supabase ausprobieren (Demo-Modus):** Solange `SUPABASE_URL` in `assets/js/config.js` leer ist, zeigt die Seite Beispieldaten. Lokal starten mit `python3 -m http.server 8000` im Projektordner und `BASE_PATH: '/'` setzen, dann `http://localhost:8000/` öffnen. Der Demo-Modus bietet keinen echten Schutz.
 
