@@ -143,7 +143,7 @@ function renderHome() {
       <span class="room-actions">
         <span class="qr-downloads" data-qr-downloads="${esc(r.slug)}"><a class="btn btn-small" data-qr-svg href="#" download="qr-${esc(r.slug)}.svg">QR SVG</a><a class="btn btn-small" data-qr-png href="#" download="qr-${esc(r.slug)}.png">QR PNG</a><span class="hint" data-qr-error role="status" hidden></span></span>
         <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" disabled aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
-        <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
+        <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomAbsoluteUrl(r.slug))}">Link kopieren</button>
       </span>
     </li>`).join('');
   app.innerHTML = `
@@ -168,11 +168,40 @@ function renderHome() {
   bindPosterButtons();
 }
 
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '0';
+  textarea.style.top = '0';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  return copied;
+}
+
 function bindCopy() {
-  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
-    const url = new URL(b.getAttribute('data-copy'), location.origin).href;
-    try { await navigator.clipboard.writeText(url); setNotice('ok', 'Link wurde kopiert.'); }
-    catch { setNotice('error', 'Der Link konnte nicht kopiert werden: ' + url); }
+  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const url = button.dataset.copy;
+    try {
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API nicht verfügbar');
+        await navigator.clipboard.writeText(url);
+      } catch {
+        if (!fallbackCopyText(url)) throw new Error('Kopieren durch Browser- oder Iframe-Berechtigungen blockiert');
+      }
+      setNotice('ok', 'Direktlink zum Kalender wurde kopiert.');
+    } catch {
+      setNotice('error', 'Der Direktlink konnte nicht automatisch kopiert werden: ' + url);
+    }
   }));
 }
 
@@ -377,7 +406,7 @@ async function renderRoom(res) {
       <div class="page-actions">
         <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" disabled aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
         <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="#" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="#" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-error role="status" hidden></span></span>
-        <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
+        <button type="button" class="btn btn-ghost" data-copy="${esc(roomAbsoluteUrl(res.slug))}">Link kopieren</button>
         ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button>` : ''}
         <button type="button" class="btn btn-ghost" data-export-target="${esc(res.id)}">Exportieren</button>
         ${isEditor() ? `<button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
@@ -612,6 +641,7 @@ async function renderPlan() {
       <header class="page-head"><div><h1>Belegungsplan</h1><p class="muted">Monatsübersicht aller Räume und Plätze.</p></div>
         <div class="page-actions">
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
         </div>
@@ -639,6 +669,7 @@ async function renderPlan() {
         <div><h1>Belegungsplan</h1><p class="muted">Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.</p></div>
         <div class="page-actions">
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
         </div>
@@ -716,6 +747,7 @@ async function renderPlan() {
       <div><h1>Belegungsplan</h1><p class="muted">Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.</p></div>
       <div class="page-actions">
         <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+        ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
         ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
       </div>
@@ -804,6 +836,7 @@ function bindPlan() {
     resource_id: S.resources.find((resource) => !S.hiddenRes.has(resource.id))?.id,
     date: L.parseISODate(cell.dataset.date), startTime: '17:00'
   }));
+  const ib = $('#btn-import-plan'); if (ib) ib.onclick = () => openImport(null);
   const nb = $('#btn-new-plan'); if (nb) nb.onclick = () => openBookingForm({ resource_id: S.resources[0]?.id, date: S.planAnchor });
 }
 
@@ -1039,14 +1072,17 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
 }
 
 // ---------- Import ----------
-function openImport(selectedResource) {
-  if (!selectedResource) { setNotice('error', 'Bitte zuerst den Raum- oder Platzkalender öffnen.'); return; }
+function openImport(selectedResource = null) {
   const defaultCategory = S.categories.find((c) => c.name.toLowerCase() === 'spiel') || S.categories[0];
   const categoryOptions = S.categories.map((c) => `<option value="${esc(c.id)}" ${defaultCategory?.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  const resourceField = `<p class="notice notice-ok">Standardkalender: <strong>${esc(selectedResource.name)}</strong>. Eine gefüllte Spalte „Calendar Name“ kann den Zielkalender pro Zeile ändern.</p>`;
+  const resourceOptions = `<option value="">Kein Standardkalender ausgewählt</option>` +
+    S.resources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  const resourceField = selectedResource
+    ? `<p class="notice notice-ok">Standardkalender: <strong>${esc(selectedResource.name)}</strong>. Eine gefüllte Spalte „Calendar Name“ kann den Zielkalender pro Zeile überschreiben.</p>`
+    : `<div class="field"><label for="imp-resource">Zielkalender für Zeilen ohne gültigen Calendar Name</label><select id="imp-resource" class="input">${resourceOptions}</select><p class="hint">Wenn in der Datei kein Kalendername oder Slug steht, wähle hier den Kalender, in den diese Termine importiert werden sollen. Ein gültiger Calendar Name in der Datei hat Vorrang.</p></div>`;
   const d = makeDialog('Spielplan importieren', `
     <p>Pflichtspalten: <strong>Start Date</strong>, <strong>Start Time</strong> und <strong>Subject</strong>. Optional: <strong>End Date</strong>, <strong>End Time</strong> und <strong>Calendar Name</strong>.</p>
-    <p class="hint">Wenn End Date oder End Time fehlt, werden 90 Minuten ab Startzeit angenommen. Calendar Name kann ein Kalendername oder Slug sein; bei fehlendem oder unbekanntem Wert gilt der aktuelle Kalender. Überschneidungen sind erlaubt. Unterstützt: Excel (.xlsx) und CSV.</p>
+    <p class="hint">Wenn End Date oder End Time fehlt, werden 90 Minuten ab Startzeit angenommen. Calendar Name kann ein Kalendername oder Slug sein. Bei einem Import aus dem Belegungsplan musst du einen Zielkalender wählen, wenn Calendar Name fehlt oder unbekannt ist. Überschneidungen sind erlaubt. Unterstützt: Excel (.xlsx) und CSV.</p>
     <div class="page-actions">
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.xlsx', ROOT).href}" download>Beispiel herunterladen (.xlsx)</a>
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.csv', ROOT).href}" download>Beispiel herunterladen (.csv)</a>
@@ -1062,7 +1098,7 @@ function openImport(selectedResource) {
   const out = $('#imp-result', d);
   const go = $('#imp-go', d);
   const getSelection = () => ({
-    resource: selectedResource,
+    resource: selectedResource || S.resources.find((r) => r.id === $('#imp-resource', d)?.value) || null,
     resources: S.resources,
     category: S.categories.find((c) => c.id === $('#imp-category', d)?.value)
   });
@@ -1074,10 +1110,14 @@ function openImport(selectedResource) {
     const result = L.validateMatchTable(sourceTable, { resource, resources, category, durationMinutes: 90 });
     prepared = result;
     out.innerHTML = renderImportResult(result);
+    const needsDefault = !resource && result.errors.some((error) => /Calendar Name|Kalender/i.test(error.message));
+    if (needsDefault) out.insertAdjacentHTML('afterbegin', '<p class="notice notice-warn">Für mindestens einen Termin fehlt eine gültige Kalenderzuordnung. Bitte oben den Zielkalender auswählen oder Calendar Name in der Datei ergänzen.</p>');
     go.disabled = !!(result.errors.length || !result.bookings.length);
     if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Termine sind gültig. Fehlende Endangaben erhalten 90 Minuten Dauer; Überschneidungen sind erlaubt.</p>`);
   };
   $('#imp-category', d).addEventListener('change', validate);
+  const resourceSelect = $('#imp-resource', d);
+  if (resourceSelect) resourceSelect.addEventListener('change', validate);
   $('#imp-file', d).onchange = async (e) => {
     const file = e.target.files[0];
     sourceTable = null;
