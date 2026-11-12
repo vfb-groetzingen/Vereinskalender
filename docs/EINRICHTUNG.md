@@ -23,8 +23,9 @@ Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzi
 4. Die Datei `supabase/migration-multi-resource-annual-events.sql` im SQL Editor ausführen. Sie aktiviert Mehrfachzuordnungen von Ressourcen, den Ereigniskalender, private Dateiablage und Versandprotokoll.
 5. Danach `supabase/migration-annual-email-test-requests.sql` im SQL Editor ausführen. Sie richtet die geschützte Warteschlange für Testmails ein.
 6. Danach `supabase/migration-annual-email-log-context.sql` ausführen. Damit speichert das Protokoll Ereignisname und betroffenes Datum direkt am Versandversuch.
-7. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
-8. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships`, `annual_email_events` und `annual_email_test_requests` sind vorhanden; unter **Integrations > Cron** die Aufbewahrungsjobs prüfen.
+7. Danach `supabase/migration-event-recurrence-retention-3-years.sql` ausführen. Sie ergänzt einmalige Ereignisse und richtet die automatische Bereinigung nach drei Jahren ein. Die Jahresregel bleibt bestehen; nur alte Durchläufe und Protokolle werden entfernt.
+8. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
+9. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships`, `annual_email_events` und `annual_email_test_requests` sind vorhanden; unter **Integrations > Cron** auch den Job `vereinskalender-annual-event-retention-3-years` prüfen.
 
 ## Schritt 3: Anmeldung konfigurieren
 
@@ -97,8 +98,11 @@ Unter **Actions** die Workflows prüfen:
 1. **QR-Codes aktualisieren**: Läuft automatisch nach Änderungen an `data/seed.json`. Manuell mit **Run workflow** starten. Ergebnis: Im Ordner `qr/` liegen die SVG-Dateien mit der richtigen Adresse.
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
-4. **Jährliche Ereignis-E-Mails**: Der Workflow prüft täglich fällige Ereignisse und versendet ab 06:00 Uhr Europe/Berlin.
-5. **Testmails für Ereignisse**: Ein weiterer Workflow prüft etwa alle fünf Minuten die Testmail-Warteschlange. In der Ereignisbearbeitung kann eine Testadresse eingegeben werden; der Status erscheint im Versandprotokoll und im Fehlerbereich unten auf der Seite. Geplante GitHub-Läufe können verzögert sein; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass beide Workflows aktiv sind und erfolgreich laufen.
+4. **Jährliche Ereignis-E-Mails**: Der Workflow prüft täglich fällige einmalige und jährliche Ereignisse und versendet ab 06:00 Uhr Europe/Berlin.
+5. **Testmails für Ereignisse**: Ein weiterer Workflow prüft etwa alle fünf Minuten die Testmail-Warteschlange. In der Ereignisbearbeitung kann eine Testadresse eingegeben werden; der Status erscheint im Versandprotokoll und im Fehlerbereich unten auf der Seite.
+6. **Ereignisdaten nach drei Jahren bereinigen**: Ein täglicher Workflow löscht abgelaufene einmalige Ereignisse einschließlich ihrer Dateien über die Supabase-Storage-API. Jährliche Wiederholungsregeln bleiben bestehen; alte Durchläufe und Protokolle werden über Supabase Cron entfernt.
+
+Geplante GitHub-Läufe können verzögert sein; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass der Jahresversand-, Testmail- und Bereinigungs-Workflow aktiv sind und erfolgreich laufen.
 
 **Keepalive und Pausierung:** Der Free-Tarif von Supabase pausiert Projekte nach 7 Tagen ohne Aktivität. Der Keepalive verhindert das nach bisherigem Kenntnisstand, ist aber nicht zugesichert. Deshalb unbedingt prüfen, ob das Projekt nach 2 bis 3 Wochen noch läuft. Wenn nicht, auf Supabase Pro umstellen (ca. 25 US-Dollar im Monat).
 
