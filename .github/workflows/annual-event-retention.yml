@@ -1,0 +1,25 @@
+name: Ereignisdaten nach drei Jahren bereinigen
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: annual-event-retention
+  cancel-in-progress: false
+
+jobs:
+  cleanup-expired-events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Abgelaufene einmalige Ereignisse und Dateien entfernen
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 scripts/cleanup_annual_event_data.py
