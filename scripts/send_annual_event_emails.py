@@ -204,6 +204,7 @@ def upsert_delivery(event, event_date, recipient, status, sent_at=None, error=No
     row = {
         "event_id": event["id"],
         "event_title": event.get("title"),
+        "recurrence": event.get("recurrence") or "annual",
         "event_date": event_date.isoformat(),
         "occurrence_year": event_date.year,
         "recipient": recipient,
@@ -241,7 +242,13 @@ def update_test_request(request_id, status, error=None, event=None):
         "error": (error or "")[:1000] or None,
     }
     if event:
-        row.update({"event_title": event.get("title"), "event_month": event.get("event_month"), "event_day": event.get("event_day")})
+        row.update({
+            "event_title": event.get("title"),
+            "recurrence": event.get("recurrence") or "annual",
+            "event_date": event.get("event_date"),
+            "event_month": event.get("event_month"),
+            "event_day": event.get("event_day"),
+        })
     api("PATCH", f"annual_email_test_requests?id=eq.{request_id}", row, "return=minimal")
 
 
@@ -276,7 +283,7 @@ def process_test_requests():
             try:
                 events = api(
                     "GET",
-                    "annual_email_events?select=id,title,subject,body_html,assets"
+                    "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,subject,body_html,assets"
                     f"&id=eq.{request['event_id']}&limit=1",
                 ) or []
                 if not events:
@@ -311,6 +318,18 @@ def previous_delivery_statuses(event_id, year):
     ) or []
 
 
+def event_occurs_on(event, date):
+    recurrence = event.get("recurrence") or "annual"
+    if recurrence == "once":
+        return event.get("event_date") == date.isoformat()
+    if recurrence == "annual":
+        try:
+            return int(event.get("event_month")) == date.month and int(event.get("event_day")) == date.day
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
 def main():
     if "--tests-only" in sys.argv:
         process_test_requests()
@@ -321,10 +340,10 @@ def main():
         print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
         return
     query = (
-        "annual_email_events?select=id,title,event_month,event_day,recipients,subject,body_html,assets"
-        f"&event_month=eq.{now.month}&event_day=eq.{now.day}&active=eq.true"
+        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets"
+        "&active=eq.true"
     )
-    events = api("GET", query) or []
+    events = [event for event in (api("GET", query) or []) if event_occurs_on(event, now.date())]
     if not events:
         print(f"Keine aktiven Ereignisse am {now.strftime('%d.%m.')}.")
         return
