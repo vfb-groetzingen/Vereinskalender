@@ -349,8 +349,8 @@ export class SupabaseStore {
   async getAnnualDeliveryLog(id) {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
     const [annual, tests] = await Promise.all([
-      this._req(`/rest/v1/annual_email_deliveries?select=event_title,event_date,occurrence_year,recipient,status,sent_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`),
-      this._req(`/rest/v1/annual_email_test_requests?select=event_title,event_month,event_day,recipient,status,requested_at,processed_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=requested_at.desc&limit=50`)
+      this._req(`/rest/v1/annual_email_deliveries?select=event_title,recurrence,event_date,occurrence_year,recipient,status,sent_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`),
+      this._req(`/rest/v1/annual_email_test_requests?select=event_title,recurrence,event_date,event_month,event_day,recipient,status,requested_at,processed_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=requested_at.desc&limit=50`)
     ]);
     return [
       ...annual.map((row) => ({ ...row, kind: 'annual', log_time: row.sent_at || row.updated_at })),
@@ -361,8 +361,8 @@ export class SupabaseStore {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
     return this._req('/rest/v1/annual_email_test_requests', {
       method: 'POST', body: {
-        event_id: event.id, event_title: event.title,
-        event_month: event.event_month, event_day: event.event_day, recipient
+        event_id: event.id, event_title: event.title, recurrence: event.recurrence || 'annual',
+        event_date: event.event_date || null, event_month: event.event_month, event_day: event.event_day, recipient
       }, prefer: 'return=representation'
     });
   }
@@ -374,8 +374,8 @@ export class SupabaseStore {
   async getAnnualEmailErrors() {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
     const [annual, tests] = await Promise.all([
-      this._req('/rest/v1/annual_email_deliveries?select=event_id,event_title,event_date,occurrence_year,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50'),
-      this._req('/rest/v1/annual_email_test_requests?select=event_id,event_title,event_month,event_day,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50')
+      this._req('/rest/v1/annual_email_deliveries?select=event_id,event_title,recurrence,event_date,occurrence_year,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50'),
+      this._req('/rest/v1/annual_email_test_requests?select=event_id,event_title,recurrence,event_date,event_month,event_day,recipient,status,error,updated_at&status=eq.failed&order=updated_at.desc&limit=50')
     ]);
     return [
       ...annual.map((row) => ({ ...row, kind: 'annual' })),

@@ -1591,7 +1591,7 @@ async function render() {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Jährliche Ereignisse · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {

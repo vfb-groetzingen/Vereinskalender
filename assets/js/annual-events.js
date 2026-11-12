@@ -38,7 +38,13 @@ function safeHtml(input) {
 function fileTotal(assets) { return assets.reduce((sum, asset) => sum + Number(asset.size || 0), 0); }
 function dateKey(event) { return `${String(event.event_month).padStart(2, '0')}-${String(event.event_day).padStart(2, '0')}`; }
 function monthName(date) { return date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); }
-function eventLabel(event) { return `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}. · ${event.title}`; }
+function eventLabel(event) {
+  if (event.recurrence === 'once' && event.event_date) {
+    const [year, month, day] = event.event_date.split('-');
+    return `${day}.${month}.${year} · einmalig · ${event.title}`;
+  }
+  return `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}. · jährlich · ${event.title}`;
+}
 
 function eventDateFromLog(row, fallback = null) {
   if (row.event_date) {
@@ -54,7 +60,7 @@ function eventLogHtml(rows, fallbackEvent = null) {
   if (!rows.length) return 'Noch keine Versandversuche protokolliert.';
   return `<ul>${rows.map((row) => {
     const title = row.event_title || fallbackEvent?.title || 'Ereignis';
-    const kind = row.kind === 'test' ? 'Testmail' : `Jahresmail ${esc(row.occurrence_year || '')}`;
+    const kind = row.kind === 'test' ? 'Testmail' : row.recurrence === 'once' ? 'Einmaliges Ereignis' : `Jahresmail ${esc(row.occurrence_year || '')}`;
     const status = row.status === 'sent' ? 'Vom SMTP-Server angenommen' : row.status === 'failed' ? 'Fehler' : row.status === 'sending' ? 'Wird verarbeitet' : 'Ausstehend';
     return `<li><strong>${esc(title)}</strong> · Ereignisdatum ${esc(eventDateFromLog(row, fallbackEvent))}<br>${kind} · ${esc(row.recipient)} · ${status}${row.log_time ? ` · ${esc(new Date(row.log_time).toLocaleString('de-DE'))}` : ''}${row.error ? `<br><span class="notice-error">${esc(row.error)}</span>` : ''}</li>`;
   }).join('')}</ul>`;
@@ -62,7 +68,7 @@ function eventLogHtml(rows, fallbackEvent = null) {
 
 export async function renderAnnualEvents(app, store, setNotice) {
   if (store.mode !== 'supabase' || !store.isEditor()) {
-    app.innerHTML = '<section class="section"><h1>Jährliche Ereignisse</h1><p class="notice notice-error">Dieser Bereich ist nur für angemeldete Bearbeiter und Administratoren verfügbar.</p></section>';
+    app.innerHTML = '<section class="section"><h1>Ereignisse</h1><p class="notice notice-error">Dieser Bereich ist nur für angemeldete Bearbeiter und Administratoren verfügbar.</p></section>';
     return;
   }
   currentEvents = await store.getAnnualEvents();
@@ -71,7 +77,10 @@ export async function renderAnnualEvents(app, store, setNotice) {
 }
 
 function drawCalendar(app, store, setNotice) {
-  const monthEvents = currentEvents.filter((event) => Number(event.event_month) === monthCursor.getMonth() + 1).sort((a, b) => Number(a.event_day) - Number(b.event_day));
+  const monthEvents = currentEvents.filter((event) => {
+    if (Number(event.event_month) !== monthCursor.getMonth() + 1) return false;
+    return event.recurrence !== 'once' || Number(String(event.event_date || '').slice(0, 4)) === monthCursor.getFullYear();
+  }).sort((a, b) => Number(a.event_day) - Number(b.event_day));
   const firstDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
   const startOffset = (firstDay.getDay() + 6) % 7;
   const days = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0).getDate();
@@ -82,7 +91,7 @@ function drawCalendar(app, store, setNotice) {
     cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map((event) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
   }
   app.innerHTML = `
-    <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Jährliche Ereignisse</h1><p>Jährlich wiederkehrende Ereignisse und ihre automatischen E-Mail-Erinnerungen.</p></div>
+    <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div>
       <button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section>
     <section class="section annual-section">
       <div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Vorheriger Monat">‹</button><h2>${esc(monthName(monthCursor))}</h2><button type="button" class="btn" id="annual-next" aria-label="Nächster Monat">›</button><button type="button" class="btn btn-small" id="annual-today">Heute</button></div>
@@ -129,7 +138,7 @@ async function loadErrorLog(app, store) {
       const event = currentEvents.find((item) => item.id === row.event_id);
       const title = row.event_title || event?.title || 'Ereignis';
       const when = row.updated_at ? new Date(row.updated_at).toLocaleString('de-DE') : '';
-      return `<li><div><strong>${esc(title)} · Ereignisdatum ${esc(eventDateFromLog(row, event))}</strong><span>${row.kind === 'test' ? 'Testmail' : `Jahresmail ${esc(row.occurrence_year || '')}`} · ${esc(row.recipient)}${when ? ` · Fehlerzeitpunkt ${esc(when)}` : ''}</span></div><p class="notice notice-error">${esc(row.error || 'Unbekannter Versandfehler')}</p></li>`;
+      return `<li><div><strong>${esc(title)} · Ereignisdatum ${esc(eventDateFromLog(row, event))}</strong><span>${row.kind === 'test' ? 'Testmail' : row.recurrence === 'once' ? 'Einmaliges Ereignis' : `Jahresmail ${esc(row.occurrence_year || '')}`} · ${esc(row.recipient)}${when ? ` · Fehlerzeitpunkt ${esc(when)}` : ''}</span></div><p class="notice notice-error">${esc(row.error || 'Unbekannter Versandfehler')}</p></li>`;
     }).join('')}</ul>`;
   } catch (error) {
     if (container.isConnected) container.innerHTML = `<p class="notice notice-error">Fehlerprotokoll konnte nicht geladen werden: ${esc(error.message || 'Unbekannter Fehler')}</p>`;
@@ -145,14 +154,19 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const dialog = document.createElement('dialog');
   dialog.className = 'dialog dialog-wide';
   dialog.id = 'annual-event-dialog';
+  const selectedRecurrence = event?.recurrence || 'annual';
   const selectedMonth = event?.event_month || initialDate?.month || (monthCursor.getMonth() + 1);
   const selectedDay = event?.event_day || initialDate?.day || 1;
-  const dateValue = `2000-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
+  const defaultYear = selectedRecurrence === 'once' ? monthCursor.getFullYear() : 2000;
+  const dateValue = selectedRecurrence === 'once' && event?.event_date
+    ? event.event_date
+    : `${defaultYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
   const recipients = event?.recipients?.length ? event.recipients : [''];
-  dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Jährliches Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
+  dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
       <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
-      <div class="field-row"><div class="field"><label for="ae-date">Jährliches Datum (Tag und Monat) *</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p class="hint">Der Versand ist für 06:00 Uhr deutscher Zeit am Ereignistag vorgesehen. Der 29. Februar gilt nur in Schaltjahren.</p></div>
+      <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>
+      <div class="field-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${selectedRecurrence === 'once' ? 'Der Versand ist einmalig für 06:00 Uhr deutscher Zeit an diesem Datum geplant.' : 'Der Versand ist jährlich für 06:00 Uhr deutscher Zeit vorgesehen. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
       <div class="field"><label>Nachricht *</label><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
@@ -162,7 +176,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       </div>
       <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" hidden>
       <div class="field"><strong>Dateien</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
-      <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> Ereignis aktiv – E-Mail jährlich versenden</label>
+      <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> Ereignis aktiv – automatische E-Mail versenden</label>
       ${event ? `<section class="annual-test-mail"><h3>Testmail versenden</h3><div class="field-row"><div class="field"><label for="ae-test-recipient">Test-Empfängeradresse</label><input id="ae-test-recipient" class="input" type="email" maxlength="254" placeholder="name@example.org"></div><div class="field annual-test-action"><span class="hint">Es wird der zuletzt gespeicherte Ereignisstand verwendet.</span><button class="btn btn-small btn-primary" type="button" id="ae-send-test">Testmail senden</button></div></div><p id="ae-test-status" class="hint" role="status" aria-live="polite"></p></section>` : '<p class="hint">Eine Testmail ist verfügbar, sobald das Ereignis gespeichert wurde.</p>'}
       ${event ? '<details class="annual-log"><summary>Letzte Versandversuche</summary><div id="ae-log" class="hint">Versandprotokoll wird geladen …</div></details>' : ''}
       <p class="msg" id="ae-msg" role="alert"></p><div class="dialog-actions"><button type="button" class="btn" data-close>Abbrechen</button>${event ? '<button type="button" class="btn btn-danger" id="ae-delete">Löschen</button>' : ''}<button type="submit" class="btn btn-primary" id="ae-save">Speichern</button></div>
@@ -176,6 +190,32 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   dialog.showModal();
   const q = (selector) => dialog.querySelector(selector);
   const msg = (text) => { q('#ae-msg').textContent = text; };
+  let previousRecurrence = selectedRecurrence;
+  const syncRecurrenceUI = () => {
+    const recurrence = q('#ae-recurrence').value;
+    const dateInput = q('#ae-date');
+    const [currentYear, month, day] = (dateInput.value || dateValue).split('-').map(Number);
+    if (recurrence !== previousRecurrence && month && day) {
+      if (recurrence === 'annual') dateInput.value = `2000-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      else {
+        let year = monthCursor.getFullYear();
+        let date = new Date(year, month - 1, day);
+        while (date.getMonth() !== month - 1 || date.getDate() !== day) {
+          year++;
+          date = new Date(year, month - 1, day);
+        }
+        dateInput.value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+      previousRecurrence = recurrence;
+    }
+    const once = recurrence === 'once';
+    q('#ae-date-label').textContent = once ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *';
+    q('#ae-date-hint').textContent = once
+      ? 'Der Versand ist einmalig für 06:00 Uhr deutscher Zeit an diesem Datum geplant.'
+      : 'Der Versand ist jährlich für 06:00 Uhr deutscher Zeit vorgesehen. Der 29. Februar gilt nur in Schaltjahren.';
+  };
+  q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
+  syncRecurrenceUI();
   const updateAssets = () => {
     q('#ae-assets').innerHTML = assets.map((asset, i) => `<li><span>${esc(asset.inline ? 'Eingebettetes Bild' : 'Anhang')}: ${esc(asset.filename)} (${(asset.size / 1024).toFixed(0)} KB)</span><button class="link-btn" type="button" data-remove-asset="${i}">Entfernen</button></li>`).join('') || '<li>Keine Dateien hinzugefügt.</li>';
     q('#ae-size').textContent = `Gesamt: ${(fileTotal(assets) / 1024 / 1024).toFixed(2)} MB von 5 MB`;
@@ -313,10 +353,11 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     if (fileTotal(assets) > MAX_BYTES) return msg('Die Dateigröße liegt über 5 MB.');
     q('#ae-save').disabled = true;
     try {
-      await store.saveAnnualEvent({ id, title, event_month: month, event_day: day, recipients: emails, subject, body_html: body, assets, active: q('#ae-active').checked });
+      const recurrence = q('#ae-recurrence').value;
+      await store.saveAnnualEvent({ id, title, recurrence, event_date: recurrence === 'once' ? date : null, event_month: month, event_day: day, recipients: emails, subject, body_html: body, assets, active: q('#ae-active').checked });
       for (const asset of removedAssets) await store.deleteAnnualAsset(asset.path);
       saved = true;
-      dialog.close(); setNotice('ok', 'Jährliches Ereignis wurde gespeichert.'); monthCursor = new Date(monthCursor.getFullYear(), month - 1, 1); await rerenderPage();
+      dialog.close(); setNotice('ok', 'Ereignis wurde gespeichert.'); monthCursor = new Date(recurrence === 'once' ? year : monthCursor.getFullYear(), month - 1, 1); await rerenderPage();
     } catch (error) { msg(error.message || 'Ereignis konnte nicht gespeichert werden.'); q('#ae-save').disabled = false; }
   };
   q('#ae-title').focus();
