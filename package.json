@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Raumkalender und Belegungsplan für den Verein (GitHub Pages + Supabase)",
   "scripts": {
-    "test": "node --test tests/logic.test.mjs tests/layout.test.mjs tests/store.test.mjs",
+    "test": "node --test tests/logic.test.mjs tests/layout.test.mjs tests/store.test.mjs && python3 tests/test_annual_event_mailer.py",
     "qr": "python3 scripts/build_qr.py"
   },
   "license": "UNLICENSED"

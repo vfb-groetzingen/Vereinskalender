@@ -6,7 +6,8 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Serientermine** können ab einem ausgewählten Termin einzeln oder zusammen mit allen folgenden Vorkommen bearbeitet bzw. gelöscht werden.
-- **Aufbewahrung:** Eine tägliche Supabase-Cron-Bereinigung entfernt Termine, die älter als drei Jahre sind; jüngere Termine werden nicht automatisch gelöscht.
+- **Ereignisse und E-Mail-Erinnerungen:** Bearbeiter können einmalige oder jährlich wiederkehrende Ereignisse anlegen; jährliche Wiederholung ist der Standard.
+- **Aufbewahrung:** Buchungen und einmalige Ereignisse werden nach drei Jahren gelöscht. Bei Jahresereignissen werden nur alte Durchläufe und Protokolle bereinigt; die Wiederholungsregel und Zukunft bleiben erhalten.
 - **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
 
 ## Technik
@@ -16,8 +17,8 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 | Webseite | HTML, CSS, JavaScript (ohne Build-Schritt) | 0 € |
 | Hosting | GitHub Pages (öffentliches Repository) | 0 € |
 | Datenbank, Anmeldung | Supabase (Free-Tarif, Region Frankfurt) | 0 € |
-| E-Mail (Anmeldelinks) | Brevo (Free-Tarif) | 0 € |
-| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung) und Supabase Cron (Datenaufbewahrung) | 0 € |
+| E-Mail (Anmeldelinks und Ereignis-Erinnerungen) | Strato-SMTP (vorhandenes Vereins-Postfach) | bestehender Tarif |
+| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung, Ereignis-Erinnerungen und Ereignisbereinigung) sowie Supabase Cron (Protokollaufbewahrung) | 0 € zusätzlich |
 
 Die Architektur und die Begründungen stehen im Konzept (`Konzept_Vereinswebseite_Raumverwaltung.md`).
 
@@ -30,6 +31,7 @@ datenschutz.html        Vorlage, muss ergänzt werden
 impressum.html          Vorlage, muss ergänzt werden
 assets/css/style.css    Gestaltung
 assets/js/app.js        Oberfläche
+assets/js/annual-events.js  Ereigniskalender und Ereignis-E-Mail-Formular
 assets/js/data.js       Datenzugriff (Demo-Modus und Supabase)
 assets/js/logic.js      Prüfregeln: Datum, Uhrzeit, Import und Kalenderzuordnung
 assets/js/layout.js     Positionen im Kalender und Zeitstrahl
@@ -41,11 +43,17 @@ qr/                     Automatisch erzeugte QR-Codes (SVG)
 supabase/schema.sql     Tabellen und Rechte (RLS), ohne Überschneidungssperre
 supabase/migration-allow-booking-overlaps.sql  Überschneidungen aktivieren
 supabase/migration-booking-retention-3-years.sql  Automatische 3-Jahres-Aufbewahrung
+supabase/migration-multi-resource-annual-events.sql  Mehrfachressourcen und jährliche Ereignis-E-Mails
+supabase/migration-annual-email-test-requests.sql  Testmail-Warteschlange und Fehlerstatus
+supabase/migration-annual-email-log-context.sql  Ereignisdatum und Empfänger im Protokoll
+supabase/migration-event-recurrence-retention-3-years.sql  Einmalige Ereignisse und 3-Jahres-Aufbewahrung
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
+scripts/send_annual_event_emails.py  Versendet einmalige und jährliche Erinnerungen über Strato
+scripts/cleanup_annual_event_data.py  Löscht abgelaufene Einmalereignisse und Dateien
 tests/                  Automatisierte Tests (npm test)
-.github/workflows/      QR-Codes, Keepalive, verschlüsselte Sicherung
+.github/workflows/      QR-Codes, Keepalive, Sicherung, Ereignismails und Ereignisbereinigung
 docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 ```
 
@@ -53,7 +61,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
 2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Für bestehende und neue Supabase-Projekte `supabase/migration-booking-retention-3-years.sql` im SQL Editor ausführen, um die tägliche 3-Jahres-Bereinigung einzurichten.
+3. Für bestehende und neue Supabase-Projekte die erforderlichen Dateien `supabase/migration-booking-retention-3-years.sql`, `supabase/migration-multi-resource-annual-events.sql`, `supabase/migration-annual-email-test-requests.sql`, `supabase/migration-annual-email-log-context.sql` und `supabase/migration-event-recurrence-retention-3-years.sql` der Reihe nach im SQL Editor ausführen.
 4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
 5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
