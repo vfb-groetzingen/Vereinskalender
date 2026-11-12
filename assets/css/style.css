@@ -350,16 +350,3 @@ textarea.input { resize: vertical; }
 .annual-log summary { cursor: pointer; font-weight: 600; }
 .annual-log ul { margin: .5rem 0 0; padding-left: 1.25rem; }
 .annual-log li { margin: .35rem 0; overflow-wrap: anywhere; }
-.annual-error-panel { border-top: 3px solid var(--danger); }
-.annual-error-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
-.annual-error-head .hint { margin-bottom: .5rem; }
-.annual-error-list { list-style: none; margin: 0; padding: 0; }
-.annual-error-list li { padding: .65rem 0; border-bottom: 1px solid #edf1f6; }
-.annual-error-list li > div { display: flex; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; }
-.annual-error-list li > div span { color: var(--muted); overflow-wrap: anywhere; }
-.annual-error-list .notice { margin: .35rem 0 0; overflow-wrap: anywhere; }
-.annual-test-mail { border: 1px solid var(--border); border-radius: 8px; padding: .75rem; background: #f8fafc; }
-.annual-test-mail h3 { margin: 0 0 .5rem; }
-.annual-test-action { align-items: start; justify-content: end; }
-.annual-test-action .hint { margin: 0; }
-#ae-test-status { margin: .5rem 0 0; }
