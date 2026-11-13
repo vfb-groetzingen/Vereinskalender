@@ -86,6 +86,7 @@ export class DemoStore {
     const saved = localStorage.getItem(DEMO_KEY);
     this.bookings = saved ? JSON.parse(saved) : demoSeedBookings(seed);
     this.session = JSON.parse(localStorage.getItem(DEMO_SESSION) || 'null');
+    this.userEmail = this.session?.email || '';
   }
   persist() { localStorage.setItem(DEMO_KEY, JSON.stringify(this.bookings)); }
   get role() { return this.session?.role || null; }
@@ -97,10 +98,12 @@ export class DemoStore {
   async init() { return this.session; }
   async signIn({ role, email }) {
     this.session = { role, email: email || 'demo@verein.example' };
+    this.userEmail = this.session.email;
     localStorage.setItem(DEMO_SESSION, JSON.stringify(this.session));
   }
   async signOut() {
     this.session = null;
+    this.userEmail = '';
     localStorage.removeItem(DEMO_SESSION);
   }
   async getBookings({ from, to }) {
@@ -165,6 +168,8 @@ export class SupabaseStore {
     this.key = CONFIG.SUPABASE_ANON_KEY;
     this.sessionKey = 'vk-supabase-session';
     this.session = JSON.parse(localStorage.getItem(this.sessionKey) || 'null');
+    this.userEmail = '';
+    this.userId = null;
     this.role = null;
     this.pendingAuthFlow = null;
     this.authError = null;
@@ -216,6 +221,10 @@ export class SupabaseStore {
     if (this.session) {
       const uidClaim = JSON.parse(atob(this.session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))?.sub;
       this.userId = uidClaim;
+      try {
+        const claims = JSON.parse(atob(this.session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        this.userEmail = claims.email || '';
+      } catch { this.userEmail = ''; }
       try {
         const rows = await this._req(`/rest/v1/memberships?select=role&user_id=eq.${uidClaim}`);
         this.role = rows?.[0]?.role || null;
@@ -271,6 +280,7 @@ export class SupabaseStore {
   async signOut() {
     this.session = null;
     this.role = null;
+    this.userEmail = '';
     localStorage.removeItem(this.sessionKey);
   }
 
@@ -280,7 +290,63 @@ export class SupabaseStore {
   async createResource(resource) { return this._req('/rest/v1/resources', { method: 'POST', body: resource, prefer: 'return=representation' }); }
   async updateResource(id, patch) { return this._req(`/rest/v1/resources?id=eq.${id}`, { method: 'PATCH', body: patch, prefer: 'return=representation' }); }
   async deleteResource(id) { return this._req('/rest/v1/rpc/admin_delete_resource', { method: 'POST', body: { p_resource_id: id }, prefer: 'return=minimal' }); }
-  async getAuditLog() { return this._req('/rest/v1/booking_audit_log?select=*&order=occurred_at.desc&limit=200'); }
+  async getAuditLog() { return this._req('/rest/v1/admin_audit_log?select=*&order=occurred_at.desc&limit=1000'); }
+  async getSiteConfiguration() {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    const rows = await this._req('/rest/v1/site_configuration?select=*&singleton=eq.true&limit=1');
+    return rows[0] || null;
+  }
+  async saveSiteConfiguration(patch) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Nur Administratoren können Einstellungen ändern.' };
+    return this._req('/rest/v1/site_configuration?singleton=eq.true', { method: 'PATCH', body: patch, prefer: 'return=representation' });
+  }
+  async getPublicSiteContent() {
+    const fields = 'home_title,home_intro,rooms_title,rooms_intro,plan_title,plan_intro,calendar_help,impressum_text,datenschutz_text';
+    const rows = await this._req(`/rest/v1/public_site_content?select=${fields}&singleton=eq.true&limit=1`, { token: this.key });
+    return rows[0] || null;
+  }
+  async savePublicSiteContent(patch) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Nur Administratoren können Einstellungen ändern.' };
+    return this._req('/rest/v1/public_site_content?singleton=eq.true', { method: 'PATCH', body: patch, prefer: 'return=minimal' });
+  }
+  async getEventDocuments({ activeOnly = true } = {}) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req(`/rest/v1/event_documents?select=*&${activeOnly ? 'active=eq.true&' : ''}order=title.asc`);
+  }
+  async uploadEventDocument(file, title) {
+    if (!this.isAdmin() || !this.session?.access_token) throw { code: '42501', message: 'Nur Administratoren können Dokumente hochladen.' };
+    const id = crypto.randomUUID();
+    const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'datei';
+    const path = `${id}/${safeName}`;
+    const mime = file.type || 'application/octet-stream';
+    const uploadUrl = `${this.url}/storage/v1/object/event-documents/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const upload = await fetch(uploadUrl, { method: 'POST', headers: { apikey: this.key, Authorization: `Bearer ${this.session.access_token}`, 'Content-Type': mime, 'x-upsert': 'false' }, body: file });
+    const uploadText = await upload.text();
+    if (!upload.ok) throw { status: upload.status, message: uploadText || 'Datei konnte nicht hochgeladen werden.' };
+    try {
+      const rows = await this._req('/rest/v1/event_documents', { method: 'POST', body: { id, title, file_name: safeName, storage_path: path, mime_type: mime, file_size: file.size, active: true }, prefer: 'return=representation' });
+      return rows[0];
+    } catch (error) {
+      await this.deleteEventDocumentObject(path).catch(() => {});
+      throw error;
+    }
+  }
+  async deleteEventDocumentObject(path) {
+    if (!this.isAdmin() || !this.session?.access_token) throw { code: '42501', message: 'Keine Berechtigung.' };
+    const res = await fetch(`${this.url}/storage/v1/object/event-documents`, { method: 'DELETE', headers: { apikey: this.key, Authorization: `Bearer ${this.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: [path] }) });
+    const text = await res.text();
+    if (!res.ok) throw { status: res.status, message: text || res.statusText };
+  }
+  async removeEventDocument(id, path) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    // Delete metadata first through the guarded RPC; attached files stay untouched if the DB rejects deletion.
+    const deletedPath = await this._req('/rest/v1/rpc/admin_delete_event_document', { method: 'POST', body: { p_document_id: id } });
+    await this.deleteEventDocumentObject(typeof deletedPath === 'string' ? deletedPath : path);
+  }
+  async archiveEventDocument(id) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: { active: false }, prefer: 'return=representation' });
+  }
 
   async getBookings({ from, to }) {
     const table = this.isEditor() ? 'bookings' : 'public_bookings';

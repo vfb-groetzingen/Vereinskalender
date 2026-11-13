@@ -4,6 +4,8 @@ const BUCKET = 'annual-event-files';
 let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let currentEvents = [];
 let rerenderPage = null;
+let siteConfiguration = null;
+let eventDocuments = [];
 
 function safeHtml(input) {
   const parsed = new DOMParser().parseFromString(`<div>${input || ''}</div>`, 'text/html');
@@ -72,6 +74,8 @@ export async function renderAnnualEvents(app, store, setNotice) {
     return;
   }
   currentEvents = await store.getAnnualEvents();
+  try { siteConfiguration = await store.getSiteConfiguration(); } catch { siteConfiguration = null; }
+  try { eventDocuments = await store.getEventDocuments({ activeOnly: false }); } catch { eventDocuments = []; }
   rerenderPage = () => renderAnnualEvents(app, store, setNotice);
   drawCalendar(app, store, setNotice);
 }
@@ -162,20 +166,30 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     ? event.event_date
     : `${defaultYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
   const recipients = event?.recipients?.length ? event.recipients : [''];
+  const profiles = Array.isArray(siteConfiguration?.mail_profiles) && siteConfiguration.mail_profiles.length
+    ? siteConfiguration.mail_profiles : [{ id: 'default', label: 'VfB Grötzingen', display_name: 'VfB Grötzingen', reply_to: 'vfb-app@vfb-groetzingen.de' }];
+  const selectedProfileId = event?.sender_profile_id || profiles[0]?.id;
+  const profileOptions = profiles.map((profile) => `<option value="${esc(profile.id)}" ${profile.id === selectedProfileId ? 'selected' : ''}>${esc(profile.label)} · Antworten an ${esc(profile.reply_to)}</option>`).join('');
+  const selectedDocumentIds = new Set(event?.document_ids || []);
+  const availableDocuments = eventDocuments.filter((document) => document.active || selectedDocumentIds.has(document.id));
+  const documentOptions = availableDocuments.map((document) => `<label class="check annual-library-document"><input type="checkbox" data-library-document="${esc(document.id)}" ${selectedDocumentIds.has(document.id) ? 'checked' : ''}><span>${esc(document.title)} — ${esc(document.file_name)} (${(Number(document.file_size) / 1024).toFixed(0)} KB)${document.active ? '' : ' · archiviert'}</span></label>`).join('');
+  const defaultSignature = siteConfiguration?.event_signature_html || '<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href="http://www.vfb-groetzingen.de/">http://www.vfb-groetzingen.de/</a></p>';
   dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
       <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
       <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>
       <div class="field-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${selectedRecurrence === 'once' ? 'Der Versand ist einmalig für 06:00 Uhr deutscher Zeit an diesem Datum geplant.' : 'Der Versand ist jährlich für 06:00 Uhr deutscher Zeit vorgesehen. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
+      <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
       <div class="field"><label>Nachricht *</label><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
         <button type="button" class="btn btn-small" data-command="bold" aria-label="Fett">Fett</button><button type="button" class="btn btn-small" data-command="italic" aria-label="Kursiv">Kursiv</button><button type="button" class="btn btn-small" data-command="underline" aria-label="Unterstrichen">Unterstrichen</button><button type="button" class="btn btn-small" data-command="insertUnorderedList">Aufzählung</button><button type="button" class="btn btn-small" data-command="insertOrderedList">Nummerierung</button>
         <button type="button" class="btn btn-small" id="ae-add-link">Link</button><button type="button" class="btn btn-small" id="ae-add-image">Bild einbetten</button><button type="button" class="btn btn-small" id="ae-add-file">Anhang hinzufügen</button></div>
-        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(event?.body_html || '<p></p>')}</div><p class="hint">Bilder werden automatisch auf maximal 1600 Pixel verkleinert. Bilder und Anhänge zusammen höchstens 5 MB.</p>
+        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(event?.body_html || defaultSignature)}</div><p class="hint">Bilder werden automatisch auf maximal 1600 Pixel verkleinert. Bilder und Anhänge zusammen höchstens 5 MB.</p>
       </div>
-      <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" hidden>
-      <div class="field"><strong>Dateien</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
+      <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
+      <div class="field"><strong>Dateien des Ereignisses</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
+      <fieldset class="field annual-document-picker"><legend>Dokumente aus der Ablage</legend><div id="ae-library-documents">${documentOptions || '<p class="hint">Keine aktiven Dokumente in der Ablage.</p>'}</div><p class="hint">Ausgewählte Originale bleiben in der Ablage erhalten, auch wenn das Ereignis gelöscht wird. Gesamtlimit mit allen Anhängen: 5 MB.</p></fieldset>
       <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> Ereignis aktiv – automatische E-Mail versenden</label>
       ${event ? `<section class="annual-test-mail"><h3>Testmail versenden</h3><div class="field-row"><div class="field"><label for="ae-test-recipient">Test-Empfängeradresse</label><input id="ae-test-recipient" class="input" type="email" maxlength="254" placeholder="name@example.org"></div><div class="field annual-test-action"><span class="hint">Es wird der zuletzt gespeicherte Ereignisstand verwendet.</span><button class="btn btn-small btn-primary" type="button" id="ae-send-test">Testmail senden</button></div></div><p id="ae-test-status" class="hint" role="status" aria-live="polite"></p></section>` : '<p class="hint">Eine Testmail ist verfügbar, sobald das Ereignis gespeichert wurde.</p>'}
       ${event ? '<details class="annual-log"><summary>Letzte Versandversuche</summary><div id="ae-log" class="hint">Versandprotokoll wird geladen …</div></details>' : ''}
@@ -218,7 +232,10 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   syncRecurrenceUI();
   const updateAssets = () => {
     q('#ae-assets').innerHTML = assets.map((asset, i) => `<li><span>${esc(asset.inline ? 'Eingebettetes Bild' : 'Anhang')}: ${esc(asset.filename)} (${(asset.size / 1024).toFixed(0)} KB)</span><button class="link-btn" type="button" data-remove-asset="${i}">Entfernen</button></li>`).join('') || '<li>Keine Dateien hinzugefügt.</li>';
-    q('#ae-size').textContent = `Gesamt: ${(fileTotal(assets) / 1024 / 1024).toFixed(2)} MB von 5 MB`;
+    const selectedDocs = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')].map((input) => eventDocuments.find((document) => document.id === input.dataset.libraryDocument)).filter(Boolean);
+    const total = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
+    q('#ae-size').textContent = `Gesamt: ${(total / 1024 / 1024).toFixed(2)} MB von 5 MB`;
+    q('#ae-size').className = total > MAX_BYTES ? 'notice notice-error' : 'hint';
     q('#ae-assets').querySelectorAll('[data-remove-asset]').forEach((button) => button.onclick = async () => {
       const asset = assets[Number(button.dataset.removeAsset)];
       if (!confirm(`Datei „${asset.filename}“ entfernen?`)) return;
@@ -229,6 +246,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     });
   };
   updateAssets();
+  q('#ae-library-documents').addEventListener('change', updateAssets);
   if (event) store.getAnnualDeliveryLog(event.id).then((rows) => {
     const log = q('#ae-log');
     if (!log) return;
@@ -314,7 +332,9 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       let prepared = file;
       if (file.type.startsWith('image/')) prepared = await resizeImage(file);
       else if (inline) throw new Error('Bitte eine Bilddatei auswählen.');
-      if (fileTotal(assets) + prepared.size > MAX_BYTES) throw new Error('Die gemeinsame Dateigröße darf 5 MB nicht überschreiten.');
+      const selectedBytes = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')]
+        .reduce((sum, input) => sum + Number(eventDocuments.find((document) => document.id === input.dataset.libraryDocument)?.file_size || 0), 0);
+      if (fileTotal(assets) + prepared.size + selectedBytes > MAX_BYTES) throw new Error('Die gemeinsame Dateigröße darf 5 MB nicht überschreiten.');
       if (!inline && !prepared.type) prepared = new File([prepared], prepared.name, { type: 'application/octet-stream' });
       const path = await store.uploadAnnualAsset(id, prepared);
       const asset = { path, filename: prepared.name, content_type: prepared.type || 'application/octet-stream', size: prepared.size, inline, cid: inline ? crypto.randomUUID() : null };
@@ -350,11 +370,15 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     if (!title || !subject || !date || !body.replace(/<[^>]*>/g, '').trim()) return msg('Bitte Name, Datum, Betreff und Nachricht ausfüllen.');
     if (!emails.length || emails.length > 10 || emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return msg('Bitte 1 bis 10 gültige E-Mail-Adressen eingeben.');
     if (new Set(emails.map((email) => email.toLowerCase())).size !== emails.length) return msg('Eine E-Mail-Adresse ist mehrfach eingetragen.');
-    if (fileTotal(assets) > MAX_BYTES) return msg('Die Dateigröße liegt über 5 MB.');
+    const documentIds = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')].map((input) => input.dataset.libraryDocument);
+    const selectedDocs = documentIds.map((documentId) => eventDocuments.find((document) => document.id === documentId)).filter(Boolean);
+    const totalBytes = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
+    if (totalBytes > MAX_BYTES) return msg('Bilder und Anhänge dürfen zusammen höchstens 5 MB groß sein.');
     q('#ae-save').disabled = true;
     try {
       const recurrence = q('#ae-recurrence').value;
-      await store.saveAnnualEvent({ id, title, recurrence, event_date: recurrence === 'once' ? date : null, event_month: month, event_day: day, recipients: emails, subject, body_html: body, assets, active: q('#ae-active').checked });
+      const profile = profiles.find((item) => item.id === q('#ae-mail-profile').value) || profiles[0];
+      await store.saveAnnualEvent({ id, title, recurrence, event_date: recurrence === 'once' ? date : null, event_month: month, event_day: day, recipients: emails, subject, body_html: body, assets, document_ids: documentIds, sender_profile_id: profile.id, sender_display_name: profile.display_name, reply_to_email: profile.reply_to, active: q('#ae-active').checked });
       for (const asset of removedAssets) await store.deleteAnnualAsset(asset.path);
       saved = true;
       dialog.close(); setNotice('ok', 'Ereignis wurde gespeichert.'); monthCursor = new Date(recurrence === 'once' ? year : monthCursor.getFullYear(), month - 1, 1); await rerenderPage();
