@@ -1,6 +1,6 @@
 # Einrichtung: Vereinskalender (Schritt für Schritt)
 
-Diese Anleitung richtet die Webseite vollständig ein: Datenbank, Anmeldung, Veröffentlichung, Sicherung und Keepalive. Sie benötigt etwa 1 bis 2 Stunden. Die Schritte bauen aufeinander auf.
+Diese Anleitung richtet die Webseite vollständig ein: Datenbank, Anmeldung, Administration, Buchungs-/Ereignis-E-Mails, Kalenderfeeds, Veröffentlichung, Sicherung und Keepalive. Sie benötigt etwa 1 bis 2 Stunden. Die Schritte bauen aufeinander auf.
 
 Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzingen.de`.
 
@@ -24,8 +24,9 @@ Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzi
 5. Danach `supabase/migration-annual-email-test-requests.sql` im SQL Editor ausführen. Sie richtet die geschützte Warteschlange für Testmails ein.
 6. Danach `supabase/migration-annual-email-log-context.sql` ausführen. Damit speichert das Protokoll Ereignisname und betroffenes Datum direkt am Versandversuch.
 7. Danach `supabase/migration-event-recurrence-retention-3-years.sql` ausführen. Sie ergänzt einmalige Ereignisse und richtet die automatische Bereinigung nach drei Jahren ein. Die Jahresregel bleibt bestehen; nur alte Durchläufe und Protokolle werden entfernt.
-8. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
-9. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships`, `annual_email_events` und `annual_email_test_requests` sind vorhanden; unter **Integrations > Cron** auch den Job `vereinskalender-annual-event-retention-3-years` prüfen.
+8. Als letzte Erweiterungsmigration `supabase/migration-admin-configuration-communications.sql` ausführen. Sie ergänzt Admin-Konfiguration, Buchungskontakt und Erinnerungen, Dokumentablage, Auditlog, Mail-Outbox und die dafür nötigen RLS-Regeln.
+9. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
+10. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships`, `annual_email_events`, `annual_email_test_requests`, `site_configuration`, `public_site_content`, `event_documents` und `booking_email_outbox` sind vorhanden; unter **Integrations > Cron** auch die bestehenden Aufbewahrungsjobs prüfen.
 
 ## Schritt 3: Anmeldung konfigurieren
 
@@ -91,7 +92,17 @@ Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die
 
 Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlüsseln. **Ohne dieses Passwort sind die Sicherungen unbrauchbar.** Es muss an mindestens zwei Stellen gespeichert werden (z. B. im Vereins-Passwortmanager).
 
-## Schritt 8: Automatisierung prüfen
+## Schritt 8: iCalendar-Feed bereitstellen
+
+Der öffentliche Feed ist nur lesend und liest Buchungen aus `public_bookings`; Notizen, Kontakt-E-Mail-Adressen und andere interne Felder werden nicht ausgegeben. Nach der Datenbankmigration die Supabase CLI für das Projekt anmelden und im Projektordner verknüpfen (`supabase login`, `supabase link --project-ref DEINE_PROJECT_REF`). Danach die öffentliche Funktion bereitstellen:
+
+```sh
+supabase functions deploy calendar-feed --no-verify-jwt
+```
+
+`--no-verify-jwt` ist erforderlich, damit Kalenderprogramme den Feed ohne Anmeldung abrufen können. Die Funktion verwendet ausschließlich den öffentlichen anon-Schlüssel und die Datenbankrechte der öffentlichen Views. Keine Service-Role-Zugangsdaten in die Funktion oder Webseite eintragen. Anschließend auf der öffentlichen Seite **Kalender abonnieren** den Link kopieren und mit einem Kalenderprogramm testen.
+
+## Schritt 9: Automatisierung prüfen
 
 Unter **Actions** die Workflows prüfen:
 
@@ -99,16 +110,17 @@ Unter **Actions** die Workflows prüfen:
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
 4. **Jährliche Ereignis-E-Mails**: Der Workflow prüft täglich fällige einmalige und jährliche Ereignisse und versendet ab 06:00 Uhr Europe/Berlin.
-5. **Testmails für Ereignisse**: Ein weiterer Workflow prüft etwa alle fünf Minuten die Testmail-Warteschlange. In der Ereignisbearbeitung kann eine Testadresse eingegeben werden; der Status erscheint im Versandprotokoll und im Fehlerbereich unten auf der Seite.
-6. **Ereignisdaten nach drei Jahren bereinigen**: Ein täglicher Workflow löscht abgelaufene einmalige Ereignisse einschließlich ihrer Dateien über die Supabase-Storage-API. Jährliche Wiederholungsregeln bleiben bestehen; alte Durchläufe und Protokolle werden über Supabase Cron entfernt.
+5. **Buchungsnachrichten und Erinnerungen**: Der Workflow läuft etwa alle fünf Minuten. Er verarbeitet Bestätigungen, Änderungen, Absagen und fällige Erinnerungen aus der Outbox. Der authentifizierte Strato-Absender ist immer `vfb-app@vfb-groetzingen.de`; die konfigurierten Profile bestimmen Anzeigename und `Reply-To`.
+6. **Testmails für Ereignisse**: Ein weiterer Workflow prüft etwa alle fünf Minuten die Testmail-Warteschlange. In der Ereignisbearbeitung kann eine Testadresse eingegeben werden; der Status erscheint im Versandprotokoll und im Fehlerbereich unten auf der Seite.
+7. **Ereignisdaten nach drei Jahren bereinigen**: Ein täglicher Workflow löscht abgelaufene einmalige Ereignisse einschließlich ihrer Dateien über die Supabase-Storage-API. Jährliche Wiederholungsregeln bleiben bestehen; alte Durchläufe und Protokolle werden über Supabase Cron entfernt.
 
-Geplante GitHub-Läufe können verzögert sein; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass der Jahresversand-, Testmail- und Bereinigungs-Workflow aktiv sind und erfolgreich laufen.
+Geplante GitHub-Läufe können verzögert sein; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass der Buchungsversand-, Jahresversand-, Testmail- und Bereinigungs-Workflow aktiv sind und erfolgreich laufen.
 
 **Keepalive und Pausierung:** Der Free-Tarif von Supabase pausiert Projekte nach 7 Tagen ohne Aktivität. Der Keepalive verhindert das nach bisherigem Kenntnisstand, ist aber nicht zugesichert. Deshalb unbedingt prüfen, ob das Projekt nach 2 bis 3 Wochen noch läuft. Wenn nicht, auf Supabase Pro umstellen (ca. 25 US-Dollar im Monat).
 
 **Hinweis GitHub:** Geplante Workflows werden in öffentlichen Repositories nach 60 Tagen ohne Aktivität automatisch deaktiviert. Ein Commit oder ein manueller Start reaktiviert sie.
 
-## Schritt 9: Sicherung wiederherstellen (Probe durchführen)
+## Schritt 10: Sicherung wiederherstellen (Probe durchführen)
 
 Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor sie im Ernstfall nötig ist.
 
@@ -116,11 +128,11 @@ Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor s
 2. Entschlüsseln: `gpg --batch --passphrase "PASSPHRASE" -o backup.sql -d backup.sql.gpg`
 3. Einspielen in ein Testprojekt mit `psql` (Verbindungs-URI wie oben) oder über den SQL Editor.
 
-## Schritt 10: Rechtliche Seiten vervollständigen
+## Schritt 11: Rechtliche Seiten vervollständigen
 
 Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Strato müssen die jeweils erforderlichen Datenschutz- und Auftragsverarbeitungsvereinbarungen geprüft werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
 
-## Schritt 11: Eigene Domain (optional)
+## Schritt 12: Eigene Domain (optional)
 
 Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain** eingetragen. Danach die Site URL in Supabase (Schritt 3) und `public_base_url` in `data/seed.json` (Schritt 5) anpassen. Die QR-Codes werden danach automatisch neu erzeugt.
 
@@ -128,7 +140,7 @@ Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain*
 
 ## Checkliste vor dem Start
 
-- [ ] Schema und Startdaten eingespielt
+- [ ] Schema und alle Migrationen in der dokumentierten Reihenfolge eingespielt
 - [ ] Öffentliche Registrierung in Supabase deaktiviert
 - [ ] Site URL und Redirect URL korrekt
 - [ ] Strato-SMTP funktioniert (Testanmeldung über Supabase Auth)
@@ -136,6 +148,8 @@ Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain*
 - [ ] `config.js` mit URL und anon-Schlüssel gefüllt
 - [ ] `public_base_url` gesetzt, QR-Codes neu erzeugt
 - [ ] GitHub Actions Secrets für Datenbank, Strato-Versand und Sicherung hinterlegt
-- [ ] Keepalive, Sicherung, Wiederherstellung und jährlichen E-Mail-Workflow geprüft
+- [ ] `calendar-feed` mit `--no-verify-jwt` bereitgestellt und öffentlichen iCalendar-Link getestet
+- [ ] Buchungsnachrichten-Workflow manuell gestartet und Strato-Versand mit kontrollierter Adresse geprüft
+- [ ] Keepalive, Sicherung, Wiederherstellung sowie Buchungs- und Ereignis-E-Mail-Workflows geprüft
 - [ ] Impressum und Datenschutzerklärung vervollständigt
 - [ ] Testprotokoll (`docs/TESTPROTOKOLL.md`) durchgeführt

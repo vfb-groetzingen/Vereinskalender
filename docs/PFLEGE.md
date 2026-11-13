@@ -33,10 +33,12 @@ Nicht eingeladene Adressen erhalten keinen Link. Dies ist Absicht.
    - **Titel**: kurz und allgemein, z. B. „A-Junioren Training“. Der Titel ist öffentlich sichtbar.
    - **Ressource** und **Kategorie** (z. B. Training, Spiel, Vermietung).
    - **Datum, Startzeit, Endzeit**.
+   - **Kontakt-E-Mail** (optional): erhält Bestätigungen, Änderungen und Absagen.
+   - **Erinnerung** (optional): keine, 1, 2 oder 7 Tage vorher; benötigt eine Kontakt-E-Mail.
    - **Notiz** (optional, nur für Mitglieder sichtbar).
 4. Auf **Termin anlegen** klicken.
 
-**Serien:** Für regelmäßige Termine das Feld **Wöchentliche Serie anlegen** aktivieren und die Anzahl eintragen (max. 52). Jeder Termin wird einzeln gespeichert.
+**Serien:** Für regelmäßige Termine im Feld **Wiederholung** eine Frequenz wählen und die Anzahl eintragen (max. 52). Jeder Termin wird einzeln gespeichert.
 
 ## Überschneidende Termine
 
@@ -119,8 +121,8 @@ Bitte prüfen, ob der Computer auf die deutsche Zeitzone eingestellt ist. Die Um
 
 ## Für Administratoren
 
-- **Neues Mitglied einladen:** Im Supabase-Dashboard unter *Authentication > Users > Invite user*. Danach die Rolle im SQL Editor vergeben (siehe `supabase/admin-setup.sql`).
-- **Zugang entziehen:** Im SQL Editor die Zeile aus `memberships` löschen (Beispiel in `supabase/admin-setup.sql`). Das Konto kann danach keine Termine mehr ändern.
+- **Neues Mitglied einladen:** In der Administration unter **Benutzer und Einladungen** die E-Mail-Adresse und Rolle wählen. Der erste Administrator wird einmalig über `supabase/admin-setup.sql` eingerichtet.
+- **Zugang entziehen:** In **Benutzer und Einladungen** den Zugang entfernen. Das Konto kann danach keine Termine mehr ändern.
 - **Neuer Raum oder Platz:** Eintrag in `data/seed.json` (und in der Datenbank unter *Table Editor > resources*) anlegen, danach den QR-Code neu erzeugen lassen.
 - **Sicherung:** Läuft wöchentlich automatisch. Einrichtung und Wiederherstellung siehe `docs/EINRICHTUNG.md`.
 - **Mehrfach löschen:** Im Belegungsplan **Mehrere löschen** öffnen, einzelne Termine oder alle markieren und die Löschung bestätigen. Die Liste umfasst Termine aus allen Kalendern und Zeiträumen.
@@ -130,11 +132,24 @@ Bitte prüfen, ob der Computer auf die deutsche Zeitzone eingestellt ist. Die Um
 
 ## Ereignisse und E-Mail-Erinnerungen
 
-Bearbeiter und Administratoren öffnen **Ereignisse** im Menü. Beim Anlegen ist **Jährliche Wiederholung** vorausgewählt; alternativ kann ein konkretes einmaliges Datum gewählt werden. Jahresereignisse werden über Tag und Monat wiederholt; am 29. Februar wird nur in Schaltjahren versendet. Einmalige Ereignisse werden am eingetragenen Datum versendet. Der Versand ist jeweils für 06:00 Uhr deutscher Zeit vorgesehen. Empfänger erhalten separate Nachrichten, damit ihre Adressen einander nicht offengelegt werden. Zustellversuche werden pro Empfänger und Ereignisdatum protokolliert; fehlgeschlagene Versuche können im nächsten Workflow-Lauf erneut versucht werden. Einmalige Ereignisse werden durch den GitHub-Workflow **Ereignisdaten nach drei Jahren bereinigen** nach Ablauf von drei Jahren samt zugehörigen Dateien gelöscht. Bei Jahresereignissen werden nur Durchläufe, Testanfragen und Versandprotokolle gelöscht, die älter als drei Jahre sind; die Wiederholungsregel und zukünftigen Versandtermine bleiben bestehen. Die Protokollbereinigung läuft über Supabase Cron; einmalige Ereignisse und Dateien über GitHub Actions, daher kann der Zeitplan etwas verzögert ausgeführt werden.
+Bearbeiter und Administratoren öffnen **Ereignisse** im Menü. Beim Anlegen ist **Jährliche Wiederholung** vorausgewählt; alternativ kann ein konkretes einmaliges Datum gewählt werden. Jahresereignisse werden über Tag und Monat wiederholt; am 29. Februar wird nur in Schaltjahren versendet. Einmalige Ereignisse werden am eingetragenen Datum versendet. Der Versand ist jeweils für 06:00 Uhr deutscher Zeit vorgesehen. Empfänger erhalten separate Nachrichten, damit ihre Adressen einander nicht offengelegt werden. Zustellversuche werden pro Empfänger und Ereignisdatum protokolliert; fehlgeschlagene Versuche können im nächsten Workflow-Lauf erneut versucht werden. Einmalige Ereignisse werden durch den GitHub-Workflow **Ereignisdaten nach drei Jahren bereinigen** nach Ablauf von drei Jahren samt ereignisspezifischen Dateien gelöscht; Originale aus der zentralen Dokumentenablage bleiben bestehen. Bei Jahresereignissen werden nur Durchläufe, Testanfragen und Versandprotokolle gelöscht, die älter als drei Jahre sind; die Wiederholungsregel und zukünftigen Versandtermine bleiben bestehen. Die Protokollbereinigung läuft über Supabase Cron; einmalige Ereignisse und Dateien über GitHub Actions, daher kann der Zeitplan etwas verzögert ausgeführt werden.
 
-Bilder und Dateien werden in einem privaten Supabase-Storage-Bucket gespeichert. Eingebettete Bilder werden beim Hochladen auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen dürfen 5 MB nicht überschreiten. Beim Löschen eines Ereignisses werden auch seine Dateien entfernt.
+Bilder und PDFs werden in der privaten Dokumentenablage gespeichert. Bilder werden auf höchstens 1600 Pixel verkleinert. Einzeldateien und die Summe aller Ereignis-Anhänge bleiben auf 5 MB begrenzt. Wird ein Ereignis gelöscht, wird nur dessen Dokumentauswahl entfernt; die Originale bleiben in der Ablage. Ein Dokument, das noch einem Ereignis zugeordnet ist, lässt sich nicht endgültig löschen; es kann archiviert werden.
 
-Der Versand läuft serverseitig über GitHub Actions und Strato SMTP. In einem Ereignis kann unter „Testmail versenden“ eine Adresse eingetragen werden. Der Testauftrag wird in eine geschützte Warteschlange gestellt und üblicherweise innerhalb weniger Minuten verarbeitet. Das Versandprotokoll am Seitenende zeigt SMTP-Ablehnungen und Verarbeitungsfehler. Jeder Eintrag nennt Ereignisname, betroffenes Ereignisdatum und Empfängeradresse; das Ereignisprotokoll enthält zusätzlich den Status je Empfänger und den Fehlertext. Führe nach `migration-annual-email-log-context.sql` auch `migration-event-recurrence-retention-3-years.sql` aus und prüfe den neuen Cron-Job unter **Integrations > Cron** sowie den Bereinigungs-Workflow unter **GitHub > Actions**. Hinterlege `SUPABASE_SERVICE_ROLE_KEY`, `STRATO_SMTP_USER` und `STRATO_SMTP_PASSWORD` unter **GitHub > Settings > Secrets and variables > Actions**. Für `SUPABASE_SERVICE_ROLE_KEY` nimm den Supabase-Secret-API-Key (`sb_secret_…`); falls dein Projekt noch keine neuen Keys hat, den Legacy-Key `service_role`. Verwende dafür das Strato-Postfach des Vereins; schreibe Zugangsdaten niemals in Projektdateien. Den Workflow **Jährliche Ereignis-E-Mails** regelmäßig unter **Actions** auf erfolgreiche Läufe prüfen. Geplante GitHub-Läufe können verspätet sein oder nach längerer Inaktivität deaktiviert werden. Ein SMTP-Erfolg bedeutet, dass Strato die Nachricht angenommen hat; ein späterer Bounce des Empfänger-Mailservers wird über SMTP nicht zuverlässig an die Seite zurückgemeldet.
+## Buchungsnachrichten und Erinnerungen
+
+Beim Anlegen oder Bearbeiten eines Termins kann eine Kontakt-E-Mail-Adresse hinterlegt werden. Die automatische Erinnerung ist standardmäßig ausgeschaltet und kann auf 1, 2 oder 7 Tage vor dem Termin gestellt werden. Bestätigungen, Änderungen und Absagen werden an die Kontaktadresse gesendet; Erinnerungen werden durch den Workflow etwa alle fünf Minuten aus der geschützten Outbox verarbeitet. Der Versandstatus ist unter **GitHub > Actions > Buchungsnachrichten und Erinnerungen** zu prüfen. Ohne Kontaktadresse wird keine Buchungsnachricht versendet.
+
+## Administration und Texte
+
+Administratoren verwalten Mitglieder und Einladungen, Räume und Plätze, Änderungsprotokolle, Mailprofile, Vorlagen, Besuchertexte, Rechtstexte, Dokumente und die Navigationsreihenfolge unter **Administration**. Die Navigationspflege und der Weg zur Konfiguration bleiben immer sichtbar. Rechtstexte werden als Klartext angezeigt; vor Veröffentlichung müssen die Vorlagen vollständig angepasst und fachlich geprüft werden.
+
+## Kalender abonnieren
+
+Die öffentliche Seite **Kalender abonnieren** bietet einen schreibgeschützten iCalendar-Link für alle aktiven Ressourcen oder einen einzelnen Platz/Raum. Zum Bereitstellen der Supabase-Funktion siehe `docs/EINRICHTUNG.md`. Der Feed enthält keine internen Notizen oder Kontaktdaten; Kalenderprogramme rufen ihn regelmäßig ab.
+
+
+Der Versand läuft serverseitig über GitHub Actions und Strato SMTP. Der technische Absender ist immer `vfb-app@vfb-groetzingen.de`; konfigurierbare Mailprofile setzen Anzeigename und Antwortadresse (`Reply-To`). In einem Ereignis kann unter „Testmail versenden“ eine Adresse eingetragen werden. Der Testauftrag wird in eine geschützte Warteschlange gestellt und üblicherweise innerhalb weniger Minuten verarbeitet. Das Versandprotokoll am Seitenende zeigt SMTP-Ablehnungen und Verarbeitungsfehler. Jeder Eintrag nennt Ereignisname, betroffenes Ereignisdatum und Empfängeradresse; das Ereignisprotokoll enthält zusätzlich den Status je Empfänger und den Fehlertext. Führe nach `migration-annual-email-log-context.sql` auch `migration-event-recurrence-retention-3-years.sql` aus und prüfe den neuen Cron-Job unter **Integrations > Cron** sowie den Bereinigungs-Workflow unter **GitHub > Actions**. Hinterlege `SUPABASE_SERVICE_ROLE_KEY`, `STRATO_SMTP_USER` und `STRATO_SMTP_PASSWORD` unter **GitHub > Settings > Secrets and variables > Actions**. Für `SUPABASE_SERVICE_ROLE_KEY` nimm den Supabase-Secret-API-Key (`sb_secret_…`); falls dein Projekt noch keine neuen Keys hat, den Legacy-Key `service_role`. Verwende dafür das Strato-Postfach des Vereins; schreibe Zugangsdaten niemals in Projektdateien. Den Workflow **Jährliche Ereignis-E-Mails** regelmäßig unter **Actions** auf erfolgreiche Läufe prüfen. Geplante GitHub-Läufe können verspätet sein oder nach längerer Inaktivität deaktiviert werden. Ein SMTP-Erfolg bedeutet, dass Strato die Nachricht angenommen hat; ein späterer Bounce des Empfänger-Mailservers wird über SMTP nicht zuverlässig an die Seite zurückgemeldet.
 
 ## Mehrere Ressourcen pro Termin
 
