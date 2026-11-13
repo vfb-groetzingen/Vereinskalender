@@ -35,6 +35,8 @@ SUPABASE_URL = required_env("SUPABASE_URL").rstrip("/")
 SERVICE_KEY = required_env("SUPABASE_SERVICE_ROLE_KEY")
 SMTP_USER = required_env("STRATO_SMTP_USER")
 SMTP_PASSWORD = required_env("STRATO_SMTP_PASSWORD")
+if SMTP_USER.casefold() != FROM_EMAIL.casefold():
+    raise RuntimeError(f"STRATO_SMTP_USER muss das authentifizierte Postfach {FROM_EMAIL} sein.")
 
 
 def api_headers():
@@ -79,6 +81,35 @@ def download_asset(path, event_id):
     if len(data) > MAX_BYTES:
         raise RuntimeError("Ein Anhang überschreitet 5 MB")
     return data
+
+
+def download_library_asset(path, document_id):
+    if not isinstance(path, str) or not path.startswith(f"{document_id}/") or ".." in path.split("/"):
+        raise RuntimeError("Ungültiger Dokumentenpfad in der Ablage")
+    encoded = quote(path, safe="/")
+    request = Request(
+        f"{SUPABASE_URL}/storage/v1/object/event-documents/{encoded}",
+        headers=api_headers(),
+    )
+    try:
+        with urlopen(request, timeout=40) as response:
+            data = response.read(MAX_BYTES + 1)
+    except (HTTPError, URLError) as exc:
+        raise RuntimeError(f"Dokument konnte nicht geladen werden: {path}") from exc
+    if len(data) > MAX_BYTES:
+        raise RuntimeError("Ein Dokument überschreitet 5 MB")
+    return data
+
+
+def load_event_documents(event):
+    ids = [value for value in (event.get("document_ids") or []) if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", str(value))]
+    if not ids:
+        return []
+    filter_ids = ",".join(ids)
+    documents = api("GET", f"event_documents?select=id,file_name,storage_path,mime_type,file_size&id=in.({filter_ids})") or []
+    if len(documents) != len(set(ids)):
+        raise RuntimeError("Mindestens ein ausgewähltes Dokument fehlt in der Ablage.")
+    return documents
 
 
 class SafeHTML(HTMLParser):
@@ -168,26 +199,36 @@ def parse_mime(content_type):
     return main, sub.split(";", 1)[0] or "octet-stream"
 
 
-def build_message(event, recipient):
+def build_message(event, recipient, documents=None):
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient or ""):
         raise RuntimeError("Ungültige Empfängeradresse")
     subject = event.get("subject", "")
     if not subject.strip() or "\r" in subject or "\n" in subject:
         raise RuntimeError("Ungültige Betreffzeile")
     assets = event.get("assets") or []
-    total = sum(int(asset.get("size") or 0) for asset in assets)
+    documents = documents or []
+    total = sum(int(asset.get("size") or 0) for asset in assets) + sum(int(document.get("file_size") or 0) for document in documents)
     if total > MAX_BYTES:
         raise RuntimeError("Die Gesamtgröße der Anhänge überschreitet 5 MB")
     body_html = sanitize_html(event.get("body_html", ""))
+    sender_name = (event.get("sender_display_name") or FROM_NAME).strip()[:100]
+    reply_to = (event.get("reply_to_email") or FROM_EMAIL).strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", reply_to):
+        raise RuntimeError("Ungültige Antwortadresse im Mailprofil")
     message = EmailMessage(policy=email.policy.SMTP)
-    message["From"] = formataddr((FROM_NAME, FROM_EMAIL))
+    message["From"] = formataddr((sender_name, FROM_EMAIL))
+    message["Reply-To"] = formataddr((sender_name, reply_to))
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(plain_text(body_html))
     message.add_alternative(body_html, subtype="html")
     html_part = message.get_body(preferencelist=("html",))
+    actual_total = 0
     for asset in assets:
         content = download_asset(asset.get("path"), event["id"])
+        actual_total += len(content)
+        if actual_total > MAX_BYTES:
+            raise RuntimeError("Die tatsächliche Gesamtgröße der Anhänge überschreitet 5 MB")
         maintype, subtype = parse_mime(asset.get("content_type"))
         filename = os.path.basename(asset.get("filename") or "Anhang")
         if asset.get("inline") and asset.get("cid"):
@@ -197,6 +238,14 @@ def build_message(event, recipient):
                                   cid=f"<{asset['cid']}>", filename=filename, disposition="inline")
         else:
             message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    for document in documents:
+        content = download_library_asset(document.get("storage_path"), document.get("id"))
+        actual_total += len(content)
+        if actual_total > MAX_BYTES:
+            raise RuntimeError("Die tatsächliche Gesamtgröße der Anhänge überschreitet 5 MB")
+        maintype, subtype = parse_mime(document.get("mime_type"))
+        filename = os.path.basename(document.get("file_name") or "Dokument")
+        message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
     return message
 
 
@@ -283,7 +332,7 @@ def process_test_requests():
             try:
                 events = api(
                     "GET",
-                    "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,subject,body_html,assets"
+                    "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id"
                     f"&id=eq.{request['event_id']}&limit=1",
                 ) or []
                 if not events:
@@ -295,7 +344,8 @@ def process_test_requests():
                     '<p><strong>Dies ist eine Testmail. Es wurde noch keine reguläre Ereignis-E-Mail versendet.</strong></p>'
                     + event.get("body_html", "")
                 )
-                message = build_message(event, request["recipient"])
+                documents = load_event_documents(event)
+                message = build_message(event, request["recipient"], documents)
                 send_checked(smtp, message, request["recipient"])
                 update_test_request(request_id, "sent", event=event)
                 print(f"Testmail vom SMTP-Server angenommen: {request['recipient']}")
@@ -340,7 +390,7 @@ def main():
         print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
         return
     query = (
-        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets"
+        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id"
         "&active=eq.true"
     )
     events = [event for event in (api("GET", query) or []) if event_occurs_on(event, now.date())]
@@ -356,6 +406,7 @@ def main():
         error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
         for event in events:
             try:
+                documents = load_event_documents(event)
                 previous = previous_delivery_statuses(event["id"], year)
                 handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
                 for recipient in event.get("recipients") or []:
@@ -378,7 +429,7 @@ def main():
                     handled.add(recipient.lower())
                     try:
                         upsert_delivery(event, event_date, recipient, "sending")
-                        message = build_message(event, recipient)
+                        message = build_message(event, recipient, documents)
                         send_checked(smtp, message, recipient)
                         upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
                         print(f"Versendet: Ereignis {event['id']} an {recipient}")
