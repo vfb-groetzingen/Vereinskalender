@@ -6,6 +6,9 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Serientermine** können ab einem ausgewählten Termin einzeln oder zusammen mit allen folgenden Vorkommen bearbeitet bzw. gelöscht werden.
+- **Buchungsnachrichten:** optionale Kontaktadresse für Bestätigungen, Änderungen und Absagen; Erinnerungen sind mit 1, 2 oder 7 Tagen Vorlauf wählbar.
+- **Administration:** Benutzer, Ressourcen, filterbares Änderungsprotokoll, Texte, Mailprofile, Dokumente und Navigation werden in Admin-Unterseiten gepflegt.
+- **Kalender-Abo:** öffentliche, schreibgeschützte iCalendar-Feeds für alle Ressourcen oder einzelne Räume/Plätze.
 - **Ereignisse und E-Mail-Erinnerungen:** Bearbeiter können einmalige oder jährlich wiederkehrende Ereignisse anlegen; jährliche Wiederholung ist der Standard.
 - **Aufbewahrung:** Buchungen und einmalige Ereignisse werden nach drei Jahren gelöscht. Bei Jahresereignissen werden nur alte Durchläufe und Protokolle bereinigt; die Wiederholungsregel und Zukunft bleiben erhalten.
 - **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
@@ -17,8 +20,8 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 | Webseite | HTML, CSS, JavaScript (ohne Build-Schritt) | 0 € |
 | Hosting | GitHub Pages (öffentliches Repository) | 0 € |
 | Datenbank, Anmeldung | Supabase (Free-Tarif, Region Frankfurt) | 0 € |
-| E-Mail (Anmeldelinks und Ereignis-Erinnerungen) | Strato-SMTP (vorhandenes Vereins-Postfach) | bestehender Tarif |
-| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung, Ereignis-Erinnerungen und Ereignisbereinigung) sowie Supabase Cron (Protokollaufbewahrung) | 0 € zusätzlich |
+| E-Mail (Anmeldelinks, Buchungsnachrichten und Ereignis-E-Mails) | Strato-SMTP (authentifiziert als `vfb-app@vfb-groetzingen.de`) | bestehender Tarif |
+| Automatisierung | GitHub Actions (QR-Codes, Keepalive, Sicherung, Buchungs- und Ereignis-E-Mails, Bereinigung) sowie Supabase Cron (Protokollaufbewahrung) | 0 € zusätzlich |
 
 Die Architektur und die Begründungen stehen im Konzept (`Konzept_Vereinswebseite_Raumverwaltung.md`).
 
@@ -27,8 +30,8 @@ Die Architektur und die Begründungen stehen im Konzept (`Konzept_Vereinswebseit
 ```
 index.html              Startseite (Raumverwaltung, Belegungsplan)
 404.html                Weiterleitung für Direktlinks wie /raeume/trainingsplatz-a
-datenschutz.html        Vorlage, muss ergänzt werden
-impressum.html          Vorlage, muss ergänzt werden
+datenschutz.html        konfigurierbarer Klartext, muss geprüft und ergänzt werden
+impressum.html          konfigurierbarer Klartext, muss geprüft und ergänzt werden
 assets/css/style.css    Gestaltung
 assets/js/app.js        Oberfläche
 assets/js/annual-events.js  Ereigniskalender und Ereignis-E-Mail-Formular
@@ -47,13 +50,18 @@ supabase/migration-multi-resource-annual-events.sql  Mehrfachressourcen und jäh
 supabase/migration-annual-email-test-requests.sql  Testmail-Warteschlange und Fehlerstatus
 supabase/migration-annual-email-log-context.sql  Ereignisdatum und Empfänger im Protokoll
 supabase/migration-event-recurrence-retention-3-years.sql  Einmalige Ereignisse und 3-Jahres-Aufbewahrung
+supabase/migration-admin-configuration-communications.sql  Admin-Konfiguration, Buchungsnachrichten und Dokumentablage
+supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
-scripts/send_annual_event_emails.py  Versendet einmalige und jährliche Erinnerungen über Strato
+scripts/send_annual_event_emails.py  Versendet Ereignis-E-Mails über Strato
+scripts/send_booking_notifications.py  Versendet Buchungsnachrichten und Erinnerungen über Strato
 scripts/cleanup_annual_event_data.py  Löscht abgelaufene Einmalereignisse und Dateien
 tests/                  Automatisierte Tests (npm test)
-.github/workflows/      QR-Codes, Keepalive, Sicherung, Ereignismails und Ereignisbereinigung
+.github/workflows/      QR-Codes, Keepalive, Sicherung, Buchungs-/Ereignismails und Bereinigung
+assets/js/admin-config.js  Mailprofile, Vorlagen, Texte, Dokumente und Navigation
+assets/js/public-pages.js  Öffentliche Klartexte für Impressum/Datenschutz
 docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 ```
 
@@ -61,7 +69,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
 2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Für bestehende und neue Supabase-Projekte die erforderlichen Dateien `supabase/migration-booking-retention-3-years.sql`, `supabase/migration-multi-resource-annual-events.sql`, `supabase/migration-annual-email-test-requests.sql`, `supabase/migration-annual-email-log-context.sql` und `supabase/migration-event-recurrence-retention-3-years.sql` der Reihe nach im SQL Editor ausführen.
+3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen; `supabase/migration-admin-configuration-communications.sql` kommt zuletzt, nach der Ereignis-Rekurrenzmigration.
 4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
 5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
@@ -73,7 +81,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 npm test
 ```
 
-Die Tests prüfen Datumsangaben, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen und die Regeln des Datenspeichers. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
+Die Tests prüfen Datumsangaben, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, Datenspeicher sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
 
 ## Sicherheit in Kürze
 
