@@ -1,0 +1,27 @@
+name: Buchungsnachrichten und Erinnerungen
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-notifications
+  cancel-in-progress: false
+
+jobs:
+  send-booking-notifications:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Buchungsnachrichten und fällige Erinnerungen verarbeiten
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STRATO_SMTP_USER: ${{ secrets.STRATO_SMTP_USER }}
+          STRATO_SMTP_PASSWORD: ${{ secrets.STRATO_SMTP_PASSWORD }}
+        run: python3 scripts/send_booking_notifications.py
