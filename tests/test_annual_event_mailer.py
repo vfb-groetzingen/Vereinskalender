@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.update({
     "SUPABASE_URL": "https://example.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_test_only",
-    "STRATO_SMTP_USER": "test@example.org",
+    "STRATO_SMTP_USER": "vfb-app@vfb-groetzingen.de",
     "STRATO_SMTP_PASSWORD": "test-only",
 })
 
@@ -38,6 +38,20 @@ class AnnualEventMailerTests(unittest.TestCase):
         event = {"recurrence": "annual", "event_month": 2, "event_day": 29}
         self.assertTrue(mailer.event_occurs_on(event, dt.date(2028, 2, 29)))
         self.assertFalse(mailer.event_occurs_on(event, dt.date(2028, 2, 28)))
+
+    def test_selected_profile_sets_reply_to_without_changing_authenticated_sender(self):
+        event = {
+            "id": "event-1",
+            "title": "Sommerfest",
+            "subject": "Einladung",
+            "body_html": "<p>Willkommen</p>",
+            "sender_display_name": "VfB Grötzingen",
+            "reply_to_email": "vorstand@example.org",
+            "assets": [],
+        }
+        message = mailer.build_message(event, "person@example.org")
+        self.assertIn("vfb-app@vfb-groetzingen.de", message["From"])
+        self.assertIn("vorstand@example.org", message["Reply-To"])
 
     def test_smtp_recipient_rejection_is_reported(self):
         class RejectedSMTP:
