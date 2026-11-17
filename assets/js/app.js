@@ -868,8 +868,7 @@ function makeDialog(title, bodyHtml, cls = '') {
 
 function seriesMark(booking) {
   if (!booking?.series_id) return '';
-  const color = resById(booking.resource_id)?.color || '#4a5568';
-  return `<span class="series-mark" role="img" aria-label="Wiederkehrender Termin" title="Wiederkehrender Termin" style="color:${esc(color)}">↻</span>`;
+  return `<span class="series-mark" role="img" aria-label="Wiederkehrender Termin" title="Wiederkehrender Termin">↻</span>`;
 }
 
 function openDetail(id, editFirst = false) {
