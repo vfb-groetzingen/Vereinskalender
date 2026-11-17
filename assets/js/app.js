@@ -51,6 +51,7 @@ function parseRoute() {
   const p = relPath();
   if (p === '/') return { name: 'home' };
   if (p === '/belegungsplan') return { name: 'plan' };
+  if (p === '/belegungsplan/gesamt') return { name: 'combinedPlan' };
   if (p === '/admin') return { name: 'admin', section: new URLSearchParams(location.search).get('section') || 'overview', config: new URLSearchParams(location.search).get('config') || 'general' };
   if (p === '/ereignisse') return { name: 'annualEvents' };
   if (p === '/kalender-abonnieren') return { name: 'calendarSubscription' };
@@ -638,6 +639,85 @@ function planWeekBoard(range, groups) {
   </div>`;
 }
 
+function combinedPlanGrid(range, resources) {
+  const groups = [['Räume', resources.filter((r) => r.type === 'raum')], ['Plätze', resources.filter((r) => r.type === 'platz')]];
+  const headings = `<div class="combined-board-header" role="row"><div class="combined-resource-head" role="columnheader">Ressource</div>${range.days.map((day) => `<div class="combined-day-head" role="columnheader"><span>${esc(dayName(day))}</span><time datetime="${L.ymd(day)}">${day.getDate()}.${day.getMonth() + 1}.</time></div>`).join('')}</div>`;
+  const groupRows = groups.map(([title, list]) => {
+    if (!list.length) return '';
+    const rows = list.map((resource) => {
+      const segments = S.bookings
+        .filter((booking) => booking.resource_id === resource.id)
+        .flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
+      const cells = range.days.map((day, dayIndex) => {
+        const events = segments.filter((segment) => segment.dayIndex === dayIndex)
+          .sort((a, b) => a.start - b.start)
+          .map((segment) => {
+            const booking = segment.booking;
+            const category = catById(booking.category_id)?.name || 'Sonstige';
+            const time = `${hhmm(segment.start)}–${hhmm(segment.end)}`;
+            return `<button type="button" class="combined-booking" data-id="${esc(booking.id)}" style="--resource-color:${esc(resource.color || '#4a5568')}" title="${esc(resource.name)}: ${esc(booking.title)} · ${esc(category)} · ${esc(time)}" aria-label="${esc(resource.name)}, ${esc(dayLong(day))}: ${esc(booking.title)}, ${esc(time)}">
+              <span class="combined-booking-time">${time}</span><span class="combined-booking-title">${seriesMark(booking)}${esc(booking.title)}</span>
+            </button>`;
+          }).join('');
+        return `<div class="combined-day-cell" role="cell" aria-label="${esc(dayLong(day))}">${events || '<span class="combined-free">Frei</span>'}</div>`;
+      }).join('');
+      return `<div class="combined-resource-row" role="row"><div class="combined-resource-name" role="rowheader"><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>${cells}</div>`;
+    }).join('');
+    return `<div class="combined-group" role="rowgroup"><div class="combined-group-label" role="row"><div class="combined-group-heading" role="rowheader" aria-colspan="8">${title}</div></div>${rows}</div>`;
+  }).join('');
+  return `<div class="combined-board-wrap"><div class="combined-board" role="table" aria-label="Kombinierter Wochenbelegungsplan">${headings}${groupRows || '<p class="empty combined-empty">Keine Rubriken ausgewählt. Bitte links mindestens einen Raum oder Platz einblenden.</p>'}</div></div>`;
+}
+
+async function renderCombinedPlan() {
+  const firstDay = L.weekStart(S.planAnchor);
+  const range = { from: firstDay, to: L.addDays(firstDay, 7), days: [...Array(7)].map((_, i) => L.addDays(firstDay, i)) };
+  S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
+  const visible = S.resources.filter((resource) => !S.hiddenRes.has(resource.id));
+  const dateLabel = `${range.days[0].toLocaleDateString('de-DE')} – ${range.days[6].toLocaleDateString('de-DE')}`;
+  const resourceGroups = [['Räume', S.resources.filter((r) => r.type === 'raum')], ['Plätze', S.resources.filter((r) => r.type === 'platz')]];
+  const filters = resourceGroups.map(([title, list]) => list.length ? `<fieldset class="combined-filter-group"><legend>${title}</legend><ul class="check-list">${list.map((resource) => `<li><label class="check"><input type="checkbox" data-combined-resource="${esc(resource.id)}" ${S.hiddenRes.has(resource.id) ? '' : 'checked'}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label></li>`).join('')}</ul></fieldset>` : '').join('');
+  const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
+  app.innerHTML = `
+    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam in einer Wochenansicht. Die Farbe kennzeichnet die Ressource.</p></div>
+      <div class="page-actions combined-actions"><a class="btn" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zurück zum Belegungsplan</a><button type="button" class="btn btn-primary" id="combined-print">Drucken / als PDF speichern</button></div>
+    </header>
+    <div class="combined-layout">
+      <aside class="sidebar combined-filter" aria-label="Angezeigte Rubriken">
+        <section class="filter-box"><h2>Rubriken auswählen</h2><div class="filter-actions"><button type="button" class="link-btn" id="combined-show-all">Alle einblenden</button><button type="button" class="link-btn" id="combined-hide-all">Alle ausblenden</button></div>${filters || '<p class="muted">Keine Ressourcen vorhanden.</p>'}</section>
+      </aside>
+      <section class="combined-main">
+        <div class="toolbar combined-toolbar" role="toolbar" aria-label="Woche auswählen">
+          <div class="btn-group"><button type="button" class="btn" id="combined-prev" aria-label="Vorherige Woche">‹</button><button type="button" class="btn" id="combined-today">Heute</button><button type="button" class="btn" id="combined-next" aria-label="Nächste Woche">›</button></div>
+          <label class="date-pick"><span class="sr-only">Datum in der Woche wählen</span><input type="date" id="combined-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
+          <p class="range-label" aria-live="polite">${esc(dateLabel)}</p>
+        </div>
+        <p class="combined-print-period">Woche: ${esc(dateLabel)}</p>
+        <section class="combined-legend" aria-label="Farblegende"><h2>Farblegende</h2><ul>${legend || '<li>Keine Rubriken ausgewählt</li>'}</ul></section>
+        ${combinedPlanGrid(range, visible)}
+      </section>
+    </div>`;
+
+  $('#combined-print').onclick = () => window.print();
+  const move = (days) => { S.planAnchor = L.addDays(S.planAnchor, days); render(); };
+  $('#combined-prev').onclick = () => move(-7);
+  $('#combined-next').onclick = () => move(7);
+  $('#combined-today').onclick = () => { S.planAnchor = new Date(); render(); };
+  $('#combined-date').onchange = (event) => {
+    if (!event.target.value) return;
+    const [year, month, day] = event.target.value.split('-').map(Number);
+    S.planAnchor = new Date(year, month - 1, day);
+    render();
+  };
+  document.querySelectorAll('[data-combined-resource]').forEach((checkbox) => checkbox.onchange = () => {
+    if (checkbox.checked) S.hiddenRes.delete(checkbox.dataset.combinedResource);
+    else S.hiddenRes.add(checkbox.dataset.combinedResource);
+    render();
+  });
+  $('#combined-show-all').onclick = () => { S.hiddenRes.clear(); render(); };
+  $('#combined-hide-all').onclick = () => { S.resources.forEach((resource) => S.hiddenRes.add(resource.id)); render(); };
+  document.querySelectorAll('.combined-booking').forEach((button) => button.onclick = () => openDetail(button.dataset.id));
+}
+
 // ---------- Belegungsplan ----------
 async function renderPlan() {
   const range = planRange();
@@ -648,6 +728,7 @@ async function renderPlan() {
     app.innerHTML = `
       <header class="page-head"><div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Monatsübersicht aller Räume und Plätze.')}</p></div>
         <div class="page-actions">
+          <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
@@ -676,6 +757,7 @@ async function renderPlan() {
       <header class="page-head">
         <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.')}</p></div>
         <div class="page-actions">
+          <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
@@ -754,7 +836,8 @@ async function renderPlan() {
     <header class="page-head">
       <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.')}</p></div>
       <div class="page-actions">
-        <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+        <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
+          <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
         ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
         ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -1761,6 +1844,7 @@ async function render() {
     if (route.name === 'home') renderHome();
     else if (route.name === 'room') await renderRoom(route.res);
     else if (route.name === 'plan') await renderPlan();
+    else if (route.name === 'combinedPlan') await renderCombinedPlan();
     else if (route.name === 'admin') await renderAdmin();
     else if (route.name === 'annualEvents') await renderAnnualEvents(app, S.store, setNotice);
     else if (route.name === 'calendarSubscription') renderCalendarSubscription();
@@ -1769,7 +1853,7 @@ async function render() {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : route.name === 'calendarSubscription' ? 'Kalender abonnieren · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'combinedPlan' ? 'Gesamtbelegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : route.name === 'calendarSubscription' ? 'Kalender abonnieren · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {
