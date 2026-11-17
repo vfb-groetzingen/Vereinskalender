@@ -2,7 +2,7 @@
 
 Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 
-- **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan, den kombinierbaren druckbaren Gesamtbelegungsplan und QR-Codes. Der Gesamtbelegungsplan zeigt die ausgewählten Ressourcen als gemeinsame Wochen-Zeitleiste mit Tagen als Spalten und Ressourcenfarben. Der Menüpunkt **Belegungsplan** öffnet diese Gesamtansicht; von dort führt ein Link zum bisherigen Belegungsplan.
+- **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan, den kombinierbaren druckbaren Gesamtbelegungsplan und QR-Codes. Der Gesamtbelegungsplan zeigt die ausgewählten Ressourcen als gemeinsame Wochen-Zeitleiste mit Tagen als Spalten und Ressourcenfarben. Der Menüpunkt **Belegungsplan** öffnet diese Gesamtansicht; von dort führt ein Link zum bisherigen Belegungsplan. Beide Planansichten bieten Drucken/PDF; berechtigte Mitglieder können dort exportieren, importieren und Termine verwalten.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Terminserien** unterstützen wöchentliche, zweiwöchentliche, monatliche und jährliche Wiederholungen: als begrenzte Serie mit bis zu 52 Terminen oder fortlaufend mit automatischer Ergänzung im rollierenden Sechsmonatszeitraum. Einzelne Vorkommen lassen sich ausnehmen; fortlaufende Serien können ab einem Termin beendet werden.
@@ -51,6 +51,7 @@ supabase/migration-annual-email-test-requests.sql  Testmail-Warteschlange und Fe
 supabase/migration-annual-email-log-context.sql  Ereignisdatum und Empfänger im Protokoll
 supabase/migration-event-recurrence-retention-3-years.sql  Einmalige Ereignisse und 3-Jahres-Aufbewahrung
 supabase/migration-admin-configuration-communications.sql  Admin-Konfiguration, Buchungsnachrichten und Dokumentablage
+supabase/migration-admin-config-audit-fix.sql  Audit-Triggerkorrektur und atomare Einzelvorlagenspeicherung
 supabase/migration-continuous-booking-series.sql  Fortlaufende Buchungsserien und tägliche Ergänzung
 supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
 supabase/seed.sql       Startdaten für die Datenbank
@@ -70,7 +71,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
 2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Serienmigration kommt nach `supabase/migration-admin-configuration-communications.sql`.
+3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Audit-Korrektur kommt direkt nach `supabase/migration-admin-configuration-communications.sql`; Bestandsinstallationen müssen sie ausführen. Die Serienmigration kommt danach.
 4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
 5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
