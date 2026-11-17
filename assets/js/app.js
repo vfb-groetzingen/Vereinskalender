@@ -129,7 +129,7 @@ function renderHeader() {
       <a class="brand" href="${HOME}" data-link="/" aria-label="Zur Startseite"><img class="brand-logo" src="${esc(LOGO_URL)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim"></a>
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
-        <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
+        <a href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Belegungsplan</a>
         <a href="${BASE}/kalender-abonnieren" data-link="/kalender-abonnieren">Kalender abonnieren</a>
         ${eventsLink}
         ${adminLink}
@@ -693,7 +693,7 @@ function combinedTimeGrid(range, resources) {
     const isToday = day.toDateString() === new Date().toDateString();
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(day))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(day))}</span><span class="tg-date">${day.getDate()}. ${esc(day.toLocaleDateString('de-DE', { month: 'short' }))}</span></div>
-      <div class="tg-body" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
+      <div class="tg-body" data-date="${L.ymd(day)}" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
     </div>`;
   }).join('');
   return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
@@ -713,7 +713,7 @@ async function renderCombinedPlan() {
   const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
   app.innerHTML = `
     <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster: Tage als Spalten, Uhrzeiten links. Die Farbe kennzeichnet die Ressource.</p></div>
-      <div class="page-actions combined-actions"><a class="btn" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zurück zum Belegungsplan</a><button type="button" class="btn btn-primary" id="combined-print">Drucken / als PDF speichern</button></div>
+      <div class="page-actions combined-actions"><a class="btn" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a>${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" id="combined-print">Drucken / als PDF speichern</button></div>
     </header>
     <div class="combined-layout">
       <aside class="sidebar combined-filter" aria-label="Angezeigte Rubriken">
@@ -731,7 +731,18 @@ async function renderCombinedPlan() {
       </section>
     </div>`;
 
+  const defaultResourceId = () => visible[0]?.id || S.resources[0]?.id;
+  const newButton = $('#combined-new');
+  if (newButton) newButton.onclick = () => {
+    const resource_id = defaultResourceId();
+    if (!resource_id) return setNotice('error', 'Bitte zuerst eine Ressource anlegen.');
+    openBookingForm({ resource_id, date: S.planAnchor, startTime: '17:00' });
+  };
   $('#combined-print').onclick = () => window.print();
+  bindCalendarCreate('.combined-time-grid .tg-body[data-date]', (event, body) => ({
+    resource_id: defaultResourceId(), date: L.parseISODate(body.dataset.date),
+    startTime: snappedTimeFromY(event, body, HOUR_PX)
+  }));
   const move = (days) => { S.planAnchor = L.addDays(S.planAnchor, days); render(); };
   $('#combined-prev').onclick = () => move(-7);
   $('#combined-next').onclick = () => move(7);
