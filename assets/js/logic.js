@@ -128,7 +128,7 @@ function dateOrdinal(dateStr) {
   return Date.UTC(year, month - 1, day);
 }
 
-function shiftDateString(dateStr, days) {
+export function shiftDateString(dateStr, days) {
   return new Date(dateOrdinal(dateStr) + days * 86400000).toISOString().slice(0, 10);
 }
 

@@ -3,8 +3,6 @@ import * as L from './logic.js';
 import * as LY from './layout.js';
 import { ROOT, loadSeed, createStore, friendlyError } from './data.js';
 import { createQrMatrix, qrMatrixToSvgDataUrl, qrMatrixToPngDataUrl } from './qr-generator.js';
-import { renderAnnualEvents } from './annual-events.js';
-import { DEFAULT_ADMIN_NAV, DEFAULT_CONFIG_NAV, normaliseMenu, mountConfiguration } from './admin-config.js';
 
 const HOUR_PX = 48;          // Kalender: Pixel je Stunde
 const TL_HOUR_PX = 40;       // Belegungsplan: Pixel je Stunde
@@ -36,8 +34,7 @@ const S = {
   planAnchor: new Date(),
   hiddenRes: new Set(),
   catFilter: '',
-  notice: null,
-  publicContent: null
+  notice: null
 };
 
 // ---------- Routing ----------
@@ -51,9 +48,7 @@ function parseRoute() {
   const p = relPath();
   if (p === '/') return { name: 'home' };
   if (p === '/belegungsplan') return { name: 'plan' };
-  if (p === '/admin') return { name: 'admin', section: new URLSearchParams(location.search).get('section') || 'overview', config: new URLSearchParams(location.search).get('config') || 'general' };
-  if (p === '/ereignisse') return { name: 'annualEvents' };
-  if (p === '/kalender-abonnieren') return { name: 'calendarSubscription' };
+  if (p === '/admin') return { name: 'admin' };
   const m = p.match(/^\/raeume\/([a-z0-9-]+)$/);
   if (m) {
     const res = S.resources.find((r) => r.slug === m[1]);
@@ -121,7 +116,6 @@ function renderHeader() {
     ? '<button type="button" class="btn btn-ghost" id="btn-logout">Abmelden</button>'
     : '<button type="button" class="btn btn-ghost" id="btn-login">Anmelden</button>';
   const adminLink = s.mode === 'supabase' && s.isAdmin() ? `<a href="${BASE}/admin" data-link="/admin">Administration</a>` : '';
-  const eventsLink = s.mode === 'supabase' && s.isEditor() ? `<a href="${BASE}/ereignisse" data-link="/ereignisse">Ereignisse</a>` : '';
   const passwordBtn = s.mode === 'supabase' && s.session ? '<button type="button" class="btn btn-ghost" id="btn-password">Passwort</button>' : '';
   $('#header').innerHTML = `
     <div class="wrap topbar">
@@ -129,8 +123,6 @@ function renderHeader() {
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
         <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
-        <a href="${BASE}/kalender-abonnieren" data-link="/kalender-abonnieren">Kalender abonnieren</a>
-        ${eventsLink}
         ${adminLink}
       </nav>
       <div class="auth">${demo}${who}${passwordBtn}${authBtn}</div>
@@ -151,21 +143,21 @@ function renderHome() {
       <span class="room-actions">
         <span class="qr-downloads" data-qr-downloads="${esc(r.slug)}"><a class="btn btn-small" data-qr-svg href="#" download="qr-${esc(r.slug)}.svg">QR SVG</a><a class="btn btn-small" data-qr-png href="#" download="qr-${esc(r.slug)}.png">QR PNG</a><span class="hint" data-qr-error role="status" hidden></span></span>
         <button type="button" class="btn btn-small btn-ghost" data-poster-slug="${esc(r.slug)}" disabled aria-label="QR-Plakat für ${esc(r.name)} drucken">Plakat drucken</button>
-        <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomAbsoluteUrl(r.slug))}">Link kopieren</button>
+        <button type="button" class="btn btn-small btn-ghost" data-copy="${esc(roomUrl(r.slug))}">Link kopieren</button>
       </span>
     </li>`).join('');
   app.innerHTML = `
     <section class="hero">
-      <h1>${esc(S.publicContent?.home_title || 'Räume und Plätze auf einen Blick')}</h1>
-      <p>${esc(S.publicContent?.home_intro || 'Alle Termine sind ohne Anmeldung einsehbar. Änderungen sind nur für berechtigte Mitglieder möglich.')}</p>
+      <h1>Räume und Plätze auf einen Blick</h1>
+      <p>Alle Termine sind ohne Anmeldung einsehbar. Änderungen sind nur für berechtigte Mitglieder möglich.</p>
     </section>
     <div class="cards">
       <a class="card" href="#raeume"><h2>Raumverwaltung</h2><p>Eigener Kalender für jeden Raum, mit Tages-, Wochen- und Monatsansicht.</p><span class="card-link">Zu den Raumkalendern</span></a>
       <a class="card" href="${BASE}/belegungsplan" data-link="/belegungsplan"><h2>Belegungsplan</h2><p>Plätze und Räume im Zeitstrahl. Mit Filter nach Datum, Platz und Kategorie.</p><span class="card-link">Zum Belegungsplan</span></a>
     </div>
     <section id="raeume" class="section">
-      <h2>${esc(S.publicContent?.rooms_title || 'Raumkalender')}</h2>
-      <p class="muted">${esc(S.publicContent?.rooms_intro || 'Jeder Raum hat einen dauerhaften Link und einen QR-Code, der direkt zum Kalender führt.')}</p>
+      <h2>Raumkalender</h2>
+      <p class="muted">Jeder Raum hat einen dauerhaften Link und einen QR-Code, der direkt zum Kalender führt.</p>
       <h3>Räume</h3>
       <ul class="room-list">${list(rooms)}</ul>
       <h3>Plätze</h3>
@@ -176,40 +168,11 @@ function renderHome() {
   bindPosterButtons();
 }
 
-function fallbackCopyText(text) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '0';
-  textarea.style.top = '0';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  textarea.setSelectionRange(0, textarea.value.length);
-  const copied = document.execCommand('copy');
-  textarea.remove();
-  return copied;
-}
-
 function bindCopy() {
-  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const url = button.dataset.copy;
-    try {
-      try {
-        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API nicht verfügbar');
-        await navigator.clipboard.writeText(url);
-      } catch {
-        if (!fallbackCopyText(url)) throw new Error('Kopieren durch Browser- oder Iframe-Berechtigungen blockiert');
-      }
-      setNotice('ok', 'Direktlink zum Kalender wurde kopiert.');
-    } catch {
-      setNotice('error', 'Der Direktlink konnte nicht automatisch kopiert werden: ' + url);
-    }
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    const url = new URL(b.getAttribute('data-copy'), location.origin).href;
+    try { await navigator.clipboard.writeText(url); setNotice('ok', 'Link wurde kopiert.'); }
+    catch { setNotice('error', 'Der Link konnte nicht kopiert werden: ' + url); }
   }));
 }
 
@@ -412,12 +375,11 @@ async function renderRoom(res) {
         <p class="muted">${res.type === 'raum' ? 'Raum' : 'Platz'} · Direktlink: <a href="${roomUrl(res.slug)}" data-link="/raeume/${esc(res.slug)}">${esc(roomUrl(res.slug))}</a></p>
       </div>
       <div class="page-actions">
+        <button type="button" class="btn btn-ghost" data-export-target="${esc(res.id)}">Exportieren</button>
         <button type="button" class="btn btn-ghost" data-poster-slug="${esc(res.slug)}" disabled aria-label="QR-Plakat für ${esc(res.name)} drucken">QR-Plakat drucken</button>
         <span class="qr-downloads" data-qr-downloads="${esc(res.slug)}"><a class="btn btn-ghost" data-qr-svg href="#" download="qr-${esc(res.slug)}.svg">QR SVG laden</a><a class="btn btn-ghost" data-qr-png href="#" download="qr-${esc(res.slug)}.png">QR PNG laden</a><span class="hint" data-qr-error role="status" hidden></span></span>
-        <button type="button" class="btn btn-ghost" data-copy="${esc(roomAbsoluteUrl(res.slug))}">Link kopieren</button>
-        ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button>` : ''}
-        <button type="button" class="btn btn-ghost" data-export-target="${esc(res.id)}">Exportieren</button>
-        ${isEditor() ? `<button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
+        <button type="button" class="btn btn-ghost" data-copy="${esc(roomUrl(res.slug))}">Link kopieren</button>
+        ${isEditor() ? `<button type="button" class="btn" id="btn-import-room" data-res="${esc(res.id)}">Spiele importieren</button><button type="button" class="btn btn-primary" id="btn-new" data-res="${esc(res.id)}">Neuer Termin</button>` : ''}
       </div>
     </header>
     <div class="toolbar" role="toolbar" aria-label="Kalender steuern">
@@ -434,7 +396,6 @@ async function renderRoom(res) {
     <div class="cal-wrap">
       ${S.roomView === 'month' ? monthGrid(range, mine) : timeGrid(range, mine)}
     </div>
-    ${isEditor() ? '<p class="hint calendar-create-hint">Tipp: Doppelklick oder Rechtsklick auf eine freie Kalenderfläche legt einen Termin an. Im Zeitraster wird die angeklickte Uhrzeit übernommen.</p>' : ''}
     <section class="section">
       <h2>Aktuelle und kommende Termine</h2>
       ${futureTable(S.futureList)}
@@ -460,9 +421,9 @@ function timeGrid(range, bookings) {
         style="top:${bl.top}px;height:${bl.height}px;left:${bl.left}%;width:calc(${bl.width}% - 4px);background:${catColor(b.category_id)}"
         aria-label="${esc(b.title)}, ${hhmm(new Date(b.starts_at))} bis ${hhmm(new Date(b.ends_at))}${note}">
         <span class="ev-time">${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</span>
-        <span class="ev-title">${esc(b.title)}</span></button>`;
+        <span class="ev-title">${seriesMark(b)}${esc(b.title)}</span></button>`;
     }).join('');
-    return `<div class="tg-col ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}" role="group" aria-label="${esc(dayLong(d))}">
+    return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(d))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(d))}</span><span class="tg-date">${d.getDate()}.${d.getMonth() + 1}.</span></div>
       <div class="tg-body" style="height:${height}px">${hours.map((h) => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${evs}</div>
     </div>`;
@@ -481,10 +442,10 @@ function monthGrid(range, bookings) {
     const dayEnd = L.addDays(dayStart, 1);
     const list = bookings.filter((b) => new Date(b.ends_at) > dayStart && new Date(b.starts_at) < dayEnd)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${esc(b.title)}</button>`).join('');
+    const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</button>`).join('');
     const more = list.length > 3 ? `<button type="button" class="link-btn" data-goto="${L.ymd(d)}">+${list.length - 3} weitere</button>` : '';
     const isToday = d.toDateString() === new Date().toDateString();
-    return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}">
+    return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}">
       <button type="button" class="mg-date" data-goto="${L.ymd(d)}" aria-label="${esc(dayLong(d))} in Tagesansicht öffnen">${d.getDate()}</button>
       ${shown}${more}</div>`;
   }).join('');
@@ -496,7 +457,7 @@ function futureTable(list) {
   const rows = list.map((b) => `<tr>
       <td>${esc(new Date(b.starts_at).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }))}</td>
       <td>${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</td>
-      <td><span class="chip" style="background:${catColor(b.category_id)}" aria-hidden="true"></span>${esc(b.title)}</td>
+      <td><span class="chip" style="background:${catColor(b.category_id)}" aria-hidden="true"></span>${seriesMark(b)}${esc(b.title)}</td>
       <td>${esc(catById(b.category_id)?.name || '')}</td>
       ${isEditor() ? `<td>${esc(b.notes || '')}</td>` : ''}
       ${isEditor() ? `<td><button type="button" class="btn btn-small btn-ghost" data-id="${esc(b.id)}">Bearbeiten</button></td>` : ''}
@@ -504,42 +465,6 @@ function futureTable(list) {
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th scope="col">Datum</th><th scope="col">Zeit</th><th scope="col">Titel</th><th scope="col">Kategorie</th>${isEditor() ? '<th scope="col">Notiz</th><th scope="col"><span class="sr-only">Aktion</span></th>' : ''}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
-}
-
-function formatClock(totalMinutes) {
-  const safe = Math.max(0, Math.min(23 * 60 + 59, totalMinutes));
-  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
-}
-
-function defaultEndClock(startTime) {
-  const [hours, minutes] = startTime.split(':').map(Number);
-  return formatClock(Math.min(hours * 60 + minutes + 60, DE * 60));
-}
-
-function snappedTimeFromY(event, element, pixelsPerHour) {
-  const rect = element.getBoundingClientRect();
-  const rawMinutes = ((event.clientY - rect.top) / pixelsPerHour) * 60;
-  const visibleMinutes = (DE - DS - 1) * 60;
-  const minutes = Math.max(0, Math.min(visibleMinutes, Math.round(rawMinutes / 15) * 15));
-  return formatClock(DS * 60 + minutes);
-}
-
-function bindCalendarCreate(selector, resolveOptions) {
-  if (!isEditor()) return;
-  const ignored = 'button, a, .event, .chip-ev, .plan-month-event, .week-booking, .bar, .plan-month-more';
-  document.querySelectorAll(selector).forEach((surface) => {
-    const openFromGesture = (event) => {
-      if (event.type === 'dblclick' && event.button !== 0) return;
-      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-      if (!target || target.closest(ignored)) return;
-      const options = resolveOptions(event, surface);
-      if (!options?.resource_id || !options.date) return;
-      event.preventDefault();
-      openBookingForm({ ...options, startTime: options.startTime || '17:00', endTime: options.endTime || defaultEndClock(options.startTime || '17:00') });
-    };
-    surface.addEventListener('dblclick', openFromGesture);
-    surface.addEventListener('contextmenu', openFromGesture);
-  });
 }
 
 function bindRoomControls(res) {
@@ -560,14 +485,6 @@ function bindRoomControls(res) {
   });
   document.querySelectorAll('.event, .chip-ev').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('.table button[data-id]').forEach((b) => b.onclick = () => openDetail(b.dataset.id, true));
-  bindCalendarCreate('.tg-body', (event, surface) => {
-    const col = surface.closest('.tg-col');
-    const startTime = snappedTimeFromY(event, surface, HOUR_PX);
-    return { resource_id: res.id, date: L.parseISODate(col.dataset.date), startTime };
-  });
-  bindCalendarCreate('.mg-cell', (event, cell) => ({
-    resource_id: res.id, date: L.parseISODate(cell.dataset.date), startTime: '17:00'
-  }));
   const nb = $('#btn-new'); if (nb) nb.onclick = () => openBookingForm({ resource_id: res.id, date: S.roomAnchor });
   const ib = $('#btn-import-room'); if (ib) ib.onclick = () => openImport(res);
 }
@@ -582,12 +499,12 @@ function planMonthGrid(range, bookings) {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     const shown = rows.slice(0, 4).map((b) => {
       const resource = resById(b.resource_id);
-      return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${esc(b.title)}</button>`;
+      return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${seriesMark(b)}${esc(b.title)}</button>`;
     }).join('');
     const more = rows.length > 4 ? `<span class="plan-month-more">+${rows.length - 4} weitere</span>` : '';
     const out = day.getMonth() !== range.month;
     const today = day.toDateString() === new Date().toDateString();
-    return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}" data-date="${L.ymd(day)}">
+    return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}">
       <button type="button" class="mg-date" data-plan-goto="${L.ymd(day)}" aria-label="${esc(dayLong(day))} in Tagesansicht öffnen">${day.getDate()}</button>${shown}${more}</div>`;
   }).join('');
   return `<div class="mg plan-month-grid"><div class="mg-head">${weekdays}</div><div class="mg-grid">${cells}</div></div>`;
@@ -619,10 +536,10 @@ function planWeekBoard(range, groups) {
             title="${esc(booking.title)} · ${esc(category)} · ${esc(time)}"
             aria-label="${esc(resource.name)}, ${esc(dayLong(day))}: ${esc(booking.title)}, ${esc(category)}, ${esc(time)}">
             <span class="week-booking-time">${time}</span>
-            <span class="week-booking-title">${esc(booking.title)}</span>
+            <span class="week-booking-title">${seriesMark(booking)}${esc(booking.title)}</span>
           </button>`;
         }).join('');
-        return `<div class="week-day-cell" data-date="${L.ymd(day)}" data-resource-id="${esc(resource.id)}" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
+        return `<div class="week-day-cell" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
       }).join('');
       return `<div class="week-resource-row" role="row">
         <div class="week-resource-label" role="rowheader"><span class="chip" style="background:${esc(resource.color)}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>
@@ -646,10 +563,9 @@ async function renderPlan() {
     const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
     const rubriken = S.resources.map((r) => `<li><label class="check"><input type="checkbox" data-res-toggle="${esc(r.id)}" ${S.hiddenRes.has(r.id) ? '' : 'checked'}><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></label></li>`).join('');
     app.innerHTML = `
-      <header class="page-head"><div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Monatsübersicht aller Räume und Plätze.')}</p></div>
+      <header class="page-head"><div><h1>Belegungsplan</h1><p class="muted">Monatsübersicht aller Räume und Plätze.</p></div>
         <div class="page-actions">
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
-          ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
         </div>
@@ -674,10 +590,9 @@ async function renderPlan() {
         <span>${esc(r.name)}</span></label></li>`).join('');
     app.innerHTML = `
       <header class="page-head">
-        <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.')}</p></div>
+        <div><h1>Belegungsplan</h1><p class="muted">Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.</p></div>
         <div class="page-actions">
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
-          ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
         </div>
@@ -730,12 +645,12 @@ async function renderPlan() {
           style="left:${bar.x}px;width:${bar.width}px;top:${bar.lane * TL_ROW_LANE + 5}px;background:${esc(r.color)};border-left-color:${catColor(b.category_id)}"
           title="${esc(b.title)} · ${esc(cat)} · ${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}"
           aria-label="${esc(r.name)}: ${esc(b.title)}, ${esc(cat)}, ${L.fmtDateDE(new Date(b.starts_at))} ${hhmm(new Date(b.starts_at))} bis ${hhmm(new Date(b.ends_at))}">
-          <span class="bar-text">${hhmm(new Date(b.starts_at))} ${esc(b.title)}</span></button>`;
+          <span class="bar-text">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</span></button>`;
       }).join('');
       const grid = range.days.map((_, i) => `<span class="tl-daysep" style="left:${i * dayW}px"></span>`).join('');
       return `<div class="tl-row" role="row">
         <div class="tl-label" role="rowheader"><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></div>
-        <div class="tl-track" data-resource-id="${esc(r.id)}" data-first-date="${L.ymd(range.days[0])}" data-days="${range.days.length}" style="width:${tl.width}px;height:${h}px" role="cell">${grid}${bars}${tl.bars.length ? '' : '<span class="tl-empty">Keine Belegung</span>'}</div>
+        <div class="tl-track" style="width:${tl.width}px;height:${h}px" role="cell">${grid}${bars}${tl.bars.length ? '' : '<span class="tl-empty">Keine Belegung</span>'}</div>
       </div>`;
     }).join('');
     return `<div class="tl-group" role="rowgroup"><div class="tl-group-title">${title}</div>${rows}</div>`;
@@ -752,10 +667,9 @@ async function renderPlan() {
 
   app.innerHTML = `
     <header class="page-head">
-      <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.')}</p></div>
+      <div><h1>Belegungsplan</h1><p class="muted">Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.</p></div>
       <div class="page-actions">
         <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
-        ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
         ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
       </div>
@@ -822,29 +736,6 @@ function bindPlan() {
   $('#cat-filter').onchange = (e) => { S.catFilter = e.target.value; render(); };
   document.querySelectorAll('.bar, .plan-month-event, .week-booking').forEach((b) => b.onclick = () => openDetail(b.dataset.id));
   document.querySelectorAll('[data-plan-goto]').forEach((b) => b.onclick = () => { const [y, m, d] = b.dataset.planGoto.split('-').map(Number); S.planAnchor = new Date(y, m - 1, d); S.planRange = 'day'; render(); });
-  bindCalendarCreate('.week-day-cell', (event, cell) => ({
-    resource_id: cell.dataset.resourceId, date: L.parseISODate(cell.dataset.date), startTime: '17:00'
-  }));
-  bindCalendarCreate('.tl-track', (event, track) => {
-    const days = Number(track.dataset.days);
-    const dayWidth = (DE - DS) * TL_HOUR_PX;
-    const rect = track.getBoundingClientRect();
-    const x = Math.max(0, Math.min(track.clientWidth, event.clientX - rect.left));
-    const dayIndex = Math.min(days - 1, Math.floor(x / dayWidth));
-    const withinDay = x - dayIndex * dayWidth;
-    const visibleMinutes = (DE - DS - 1) * 60;
-    const minuteOfDay = Math.max(0, Math.min(visibleMinutes, Math.round((withinDay / TL_HOUR_PX * 60) / 15) * 15));
-    return {
-      resource_id: track.dataset.resourceId,
-      date: L.addDays(L.parseISODate(track.dataset.firstDate), dayIndex),
-      startTime: formatClock(DS * 60 + minuteOfDay)
-    };
-  });
-  bindCalendarCreate('.plan-month-grid .mg-cell', (event, cell) => ({
-    resource_id: S.resources.find((resource) => !S.hiddenRes.has(resource.id))?.id,
-    date: L.parseISODate(cell.dataset.date), startTime: '17:00'
-  }));
-  const ib = $('#btn-import-plan'); if (ib) ib.onclick = () => openImport(null);
   const nb = $('#btn-new-plan'); if (nb) nb.onclick = () => openBookingForm({ resource_id: S.resources[0]?.id, date: S.planAnchor });
 }
 
@@ -866,21 +757,26 @@ function makeDialog(title, bodyHtml, cls = '') {
   return d;
 }
 
+function seriesMark(booking) {
+  if (!booking?.series_id) return '';
+  const color = resById(booking.resource_id)?.color || '#4a5568';
+  return `<span class="series-mark" role="img" aria-label="Wiederkehrender Termin" title="Wiederkehrender Termin" style="color:${esc(color)}">↻</span>`;
+}
+
 function openDetail(id, editFirst = false) {
   const b = S.bookings.find((x) => x.id === id) || S.futureList.find((x) => x.id === id);
   if (!b) return;
-  const resourceIds = b.resource_ids?.length ? b.resource_ids : [b.resource_id];
-  const resourceNames = resourceIds.map((id) => resById(id)?.name).filter(Boolean).join(', ');
+  const res = resById(b.resource_id);
   const cat = catById(b.category_id);
   const start = new Date(b.starts_at), end = new Date(b.ends_at);
   const d = makeDialog(b.title, `
     <dl class="details">
-      <dt>Ressourcen</dt><dd>${esc(resourceNames)}</dd>
+      <dt>Ressource</dt><dd>${esc(res?.name || '')}</dd>
       <dt>Kategorie</dt><dd><span class="chip" style="background:${catColor(b.category_id)}"></span>${esc(cat?.name || '')}</dd>
       <dt>Datum</dt><dd>${esc(dayLong(start))}</dd>
       <dt>Zeit</dt><dd>${hhmm(start)} – ${hhmm(end)} Uhr</dd>
       ${isEditor() && b.notes ? `<dt>Notiz</dt><dd>${esc(b.notes)}</dd>` : ''}
-      ${b.series_id ? '<dt>Serie</dt><dd>Teil einer Terminserie</dd>' : ''}
+      ${b.series_id ? `<dt>Serie</dt><dd>${seriesMark(b)} Teil einer Terminserie</dd>` : ''}
     </dl>
     ${isEditor() ? `<div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="d-del">Löschen</button>
@@ -911,21 +807,23 @@ function openDetail(id, editFirst = false) {
 
 function openSeriesScopeDialog(booking, action) {
   const isEdit = action === 'edit';
+  const isContinuous = booking.series_id && booking.series_occurrence !== null && booking.series_occurrence !== undefined;
   const dateLabel = L.fmtDateDE(new Date(booking.starts_at));
   const d = makeDialog(
     isEdit ? 'Wiederholung bearbeiten' : 'Wiederholung löschen',
     `
       <p>Dieser Termin gehört zu einer Terminserie. Ausgewählter Termin: <strong>${esc(dateLabel)}</strong>.</p>
-      <p>${isEdit ? 'Welche Termine sollen geändert werden?' : 'Welche Termine sollen endgültig gelöscht werden?'}</p>
+      <p>${isEdit ? 'Welche Termine sollen geändert werden?' : 'Wie soll mit der Serie weiter verfahren werden?'}</p>
       <div class="dialog-actions series-scope-actions">
         <button type="button" class="btn ${isEdit ? '' : 'btn-danger'}" id="series-only">Nur diesen Termin ${isEdit ? 'bearbeiten' : 'löschen'}</button>
-        <button type="button" class="btn ${isEdit ? 'btn-primary' : 'btn-danger'}" id="series-following">Diesen und alle folgenden ${isEdit ? 'bearbeiten' : 'löschen'}</button>
+        <button type="button" class="btn ${isEdit ? 'btn-primary' : 'btn-danger'}" id="series-following">${isEdit ? 'Diesen und folgende bearbeiten' : (isContinuous ? 'Ab diesem Termin beenden' : 'Diesen und alle folgenden löschen')}</button>
+        ${isEdit && isContinuous ? '<button type="button" class="btn" id="series-all">Gesamte Serie bearbeiten</button>' : ''}
         <button type="button" class="btn" data-close>Abbrechen</button>
       </div>
       <p class="msg" id="series-scope-msg" role="alert"></p>`, 'dialog-narrow'
   );
   const msg = (text) => { $('#series-scope-msg', d).textContent = text; };
-  const buttons = [$('#series-only', d), $('#series-following', d)];
+  const buttons = [...d.querySelectorAll('.series-scope-actions .btn:not([data-close])')];
   const editScope = (scope) => {
     d.addEventListener('close', () => openBookingForm({ booking, seriesScope: scope }), { once: true });
     d.close();
@@ -934,6 +832,20 @@ function openSeriesScopeDialog(booking, action) {
     buttons.forEach((button) => { button.disabled = true; });
     msg(scope === 'following' ? 'Folgende Termine werden ermittelt …' : 'Termin wird gelöscht …');
     try {
+      if (isContinuous && scope === 'single') {
+        await S.store.deleteRecurringOccurrence(booking.series_id, Number(booking.series_occurrence), booking.id);
+        d.close();
+        setNotice('ok', 'Der Einzeltermin wurde gelöscht und wird nicht erneut angelegt.');
+        render();
+        return;
+      }
+      if (isContinuous && scope === 'following') {
+        await S.store.endRecurringSeries(booking.series_id, Number(booking.series_occurrence));
+        d.close();
+        setNotice('ok', 'Die Serie wurde ab diesem Datum beendet; vorgemerkte Folgetermine wurden entfernt.');
+        render();
+        return;
+      }
       let targets = [booking];
       if (scope === 'following') {
         const series = await S.store.getSeriesBookings(booking.series_id);
@@ -957,37 +869,35 @@ function openSeriesScopeDialog(booking, action) {
   if (isEdit) {
     $('#series-only', d).onclick = () => editScope('single');
     $('#series-following', d).onclick = () => editScope('following');
+    const allButton = $('#series-all', d);
+    if (allButton) allButton.onclick = () => editScope('all');
   } else {
     $('#series-only', d).onclick = () => deleteScope('single');
     $('#series-following', d).onclick = () => deleteScope('following');
   }
 }
 
-function resOptions(selectedIds) {
-  const selected = new Set(Array.isArray(selectedIds) ? selectedIds : selectedIds ? [selectedIds] : []);
-  return S.resources.map((r) => `<label class="check resource-check"><input type="checkbox" name="bf-res" value="${esc(r.id)}" ${selected.has(r.id) ? 'checked' : ''}><span>${esc(r.name)}</span></label>`).join('');
+function resOptions(selected) {
+  return S.resources.map((r) => `<option value="${esc(r.id)}" ${r.id === selected ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 }
 function catOptions(selected) {
   return S.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 }
 
-function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single', startTime = null, endTime = null } = {}) {
+function openBookingForm({ booking = null, resource_id = null, date = new Date(), seriesScope = 'single' } = {}) {
   const isEdit = !!booking;
-  const selectedResourceIds = booking?.resource_ids?.length ? booking.resource_ids : [booking?.resource_id || resource_id].filter(Boolean);
   const start = booking ? new Date(booking.starts_at) : null;
   const end = booking ? new Date(booking.ends_at) : null;
   const dateVal = booking ? L.ymd(start) : L.ymd(date);
-  const initialStartTime = start ? hhmm(start) : (startTime || '17:00');
-  const initialEndTime = end ? hhmm(end) : (endTime || defaultEndClock(initialStartTime));
   const d = makeDialog(isEdit ? 'Termin bearbeiten' : 'Neuer Termin', `
     <form id="bf" class="form" novalidate>
-      ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten für diesen Termin und alle folgenden Termine der Serie.</p>' : ''}
+      ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten ab diesem Termin. Künftige Wiederholungen werden automatisch angepasst.</p>' : ''}${isEdit && booking.series_id && seriesScope === 'all' ? '<p class="notice notice-warn">Die Änderungen gelten für die gesamte Serie, auch für bereits vergangene Termine.</p>' : ''}
       <div class="field"><label for="bf-title">Titel <span class="req">*</span></label>
         <input id="bf-title" class="input" required maxlength="120" value="${esc(booking?.title || '')}" autocomplete="off">
         <p class="hint">Öffentlich sichtbar. Bitte allgemein formulieren.</p></div>
       <div class="field-row">
-        <fieldset class="field resource-picker"><legend>Kalender / Plätze / Räume <span class="req">*</span></legend>
-          <div class="resource-checkboxes">${resOptions(selectedResourceIds)}</div><p class="hint">Mehrere Ressourcen auswählen; der Termin erscheint in jedem ausgewählten Kalender.</p></fieldset>
+        <div class="field"><label for="bf-res">Kalender / Platz / Raum <span class="req">*</span></label>
+          <select id="bf-res" class="input">${resOptions(booking?.resource_id || resource_id)}</select></div>
         <div class="field"><label for="bf-cat">Kategorie <span class="req">*</span></label>
           <select id="bf-cat" class="input">${catOptions(booking?.category_id)}</select></div>
       </div>
@@ -995,19 +905,15 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <div class="field"><label for="bf-date">Datum <span class="req">*</span></label>
           <input id="bf-date" type="date" class="input" value="${dateVal}" required></div>
         <div class="field"><label for="bf-start">Startzeit <span class="req">*</span></label>
-          <input id="bf-start" type="time" class="input" value="${initialStartTime}" required></div>
+          <input id="bf-start" type="time" class="input" value="${start ? hhmm(start) : '17:00'}" required></div>
         <div class="field"><label for="bf-end">Endzeit <span class="req">*</span></label>
-          <input id="bf-end" type="time" class="input" value="${initialEndTime}" required></div>
+          <input id="bf-end" type="time" class="input" value="${end ? hhmm(end) : '18:00'}" required></div>
       </div>
       ${isEdit ? '' : `<div class="field-row recurrence-row">
         <div class="field"><label for="bf-repeat">Wiederholung</label>
-          <select id="bf-repeat" class="input"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="biweekly">Alle 2 Wochen</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div>
+          <select id="bf-repeat" class="input"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich (begrenzt)</option><option value="weekly-continuous">Wöchentlich (fortlaufend)</option><option value="biweekly">Alle 2 Wochen</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div>
         <div class="field"><label for="bf-count">Anzahl Termine insgesamt</label>
-          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div></div>`}
-      <div class="field-row booking-notification-fields">
-        <div class="field"><label for="bf-contact-email">Kontakt-E-Mail für Buchungsnachrichten</label><input id="bf-contact-email" type="email" class="input" maxlength="254" autocomplete="email" value="${esc(booking?.contact_email || '')}"><p class="hint">Optional. Bestätigung, Änderungen, Absage und Erinnerung gehen an diese Adresse.</p></div>
-        <div class="field"><label for="bf-reminder-days">Erinnerung</label><select id="bf-reminder-days" class="input"><option value="0" ${Number(booking?.reminder_days || 0) === 0 ? 'selected' : ''}>Keine Erinnerung</option><option value="1" ${Number(booking?.reminder_days || 0) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(booking?.reminder_days || 0) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(booking?.reminder_days || 0) === 7 ? 'selected' : ''}>7 Tage vorher</option></select><p class="hint">Wird nur mit Kontakt-E-Mail eingereiht.</p></div>
-      </div>
+          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint" id="bf-count-hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div></div>`}
       <div class="field"><label for="bf-note">Notiz (nur für Mitglieder sichtbar)</label>
         <textarea id="bf-note" class="input" rows="3" maxlength="1000">${esc(booking?.notes || '')}</textarea></div>
       <p class="msg" id="bf-msg" role="alert"></p>
@@ -1021,57 +927,63 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   const saveButton = form.querySelector('button[type="submit"]');
   const msg = (t) => { $('#bf-msg', d).textContent = t; };
   const repeat = $('#bf-repeat', d);
-  if (repeat) repeat.onchange = () => { $('#bf-count', d).disabled = repeat.value === 'none'; };
+  if (repeat) repeat.onchange = () => {
+    const ongoing = repeat.value === 'weekly-continuous';
+    $('#bf-count', d).disabled = repeat.value === 'none' || ongoing;
+    $('#bf-count-hint', d).textContent = ongoing ? 'Die nächsten sechs Monate werden vorgemerkt und automatisch verlängert.' : 'Der erste Termin zählt mit; höchstens 52 Termine.';
+    $('#bf-count', d).parentElement.querySelector('label').textContent = ongoing ? 'Vorschauzeitraum' : 'Anzahl Termine insgesamt';
+  };
 
   form.onsubmit = async (e) => {
     e.preventDefault();
     msg('');
     const title = $('#bf-title', d).value.trim();
-    const resourceIds = [...d.querySelectorAll('[name="bf-res"]:checked')].map((input) => input.value);
-    const resId = resourceIds[0];
+    const resId = $('#bf-res', d).value;
     const catId = $('#bf-cat', d).value;
     const dateStr = $('#bf-date', d).value;
     const s = $('#bf-start', d).value;
     const en = $('#bf-end', d).value;
     const notes = $('#bf-note', d).value.trim() || null;
-    const contactEmail = $('#bf-contact-email', d).value.trim() || null;
-    const reminderDays = Number($('#bf-reminder-days', d).value);
-    if (contactEmail && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) || contactEmail.length > 254)) return msg('Bitte eine gültige Kontakt-E-Mail-Adresse eingeben.');
-    if (![0, 1, 2, 7].includes(reminderDays)) return msg('Bitte eine gültige Erinnerungsfrist auswählen.');
-    if (reminderDays && !contactEmail) return msg('Für eine Erinnerung bitte eine Kontakt-E-Mail-Adresse eingeben.');
     if (!title) return msg('Bitte einen Titel eingeben.');
-    if (!resourceIds.length) return msg('Bitte mindestens einen Kalender, Platz oder Raum auswählen.');
     if (!dateStr || !s || !en) return msg('Bitte Datum, Start- und Endzeit eingeben.');
     const parsedS = L.combine(dateStr, s), parsedE = L.combine(dateStr, en);
     if (parsedE <= parsedS) return msg('Die Endzeit muss nach der Startzeit liegen.');
     const frequency = repeat?.value || 'none';
+    const continuous = frequency === 'weekly-continuous';
     const countInput = Number($('#bf-count', d)?.value);
-    if (frequency !== 'none' && (!Number.isInteger(countInput) || countInput < 2 || countInput > 52)) return msg('Für eine Wiederholung bitte 2 bis 52 Termine angeben.');
-    const count = frequency === 'none' ? 1 : countInput;
-    const dates = count > 1 ? L.seriesDates(dateStr, count, frequency) : [dateStr];
+    if (frequency !== 'none' && !continuous && (!Number.isInteger(countInput) || countInput < 2 || countInput > 52)) return msg('Für eine Wiederholung bitte 2 bis 52 Termine angeben.');
+    const count = frequency === 'none' ? 1 : (continuous ? 0 : countInput);
+    const dates = continuous ? [] : (count > 1 ? L.seriesDates(dateStr, count, frequency) : [dateStr]);
     const seriesId = count > 1 ? newUuid() : null;
     const rows = dates.map((ds) => ({
       resource_id: resId,
-      resource_ids: resourceIds,
       category_id: catId,
       title,
       starts_at: L.combine(ds, s).toISOString(),
       ends_at: L.combine(ds, en).toISOString(),
       notes,
-      contact_email: contactEmail,
-      reminder_days: reminderDays,
       series_id: seriesId
     }));
     saveButton.disabled = true;
     try {
       let successMessage;
-      if (isEdit && booking.series_id && seriesScope === 'following') {
+      if (isEdit && booking.series_id && (seriesScope === 'following' || seriesScope === 'all')
+          && booking.series_occurrence !== null && booking.series_occurrence !== undefined) {
+        const selectedIndex = Number(booking.series_occurrence);
+        const occurrenceIndex = seriesScope === 'all' ? 0 : selectedIndex;
+        const seriesStartDate = seriesScope === 'all' ? L.shiftDateString(dateStr, -selectedIndex * 7) : dateStr;
+        await S.store.updateRecurringSeries(booking.series_id, occurrenceIndex, {
+          starts_on: seriesStartDate, start_time: s, end_time: en,
+          title, resource_id: resId, category_id: catId, notes
+        });
+        successMessage = seriesScope === 'all' ? 'Die gesamte Serie wurde angepasst.' : 'Die Serie wurde ab diesem Termin angepasst.';
+      } else if (isEdit && booking.series_id && seriesScope === 'following') {
         const series = await S.store.getSeriesBookings(booking.series_id);
         const updates = L.buildFollowingSeriesUpdates(series, booking, {
           dateStr,
           startTime: s,
           endTime: en,
-          fields: { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, notes, contact_email: contactEmail, reminder_days: reminderDays }
+          fields: { title, resource_id: resId, category_id: catId, notes }
         });
         if (!updates.length) { saveButton.disabled = false; return msg('Ab diesem Termin wurden keine weiteren Serien-Termine gefunden.'); }
         const results = await Promise.allSettled(updates.map((update) => S.store.updateBooking(update.id, update.patch)));
@@ -1079,8 +991,14 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         if (savedCount !== updates.length) throw new Error(`${savedCount} von ${updates.length} Terminen wurden gespeichert. Bitte die Seite neu laden und den Serienstand prüfen.`);
         successMessage = `${updates.length} Termine ab diesem Datum wurden angepasst.`;
       } else if (isEdit) {
-        await S.store.updateBooking(booking.id, { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes, contact_email: contactEmail, reminder_days: reminderDays });
+        await S.store.updateBooking(booking.id, { title, resource_id: resId, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes });
         successMessage = 'Termin wurde gespeichert.';
+      } else if (continuous) {
+        await S.store.createRecurringSeries({
+          resource_id: resId, category_id: catId, title, notes,
+          starts_on: dateStr, start_time: s, end_time: en, interval_weeks: 1, timezone: 'Europe/Berlin'
+        });
+        successMessage = 'Fortlaufende Wochenserie wurde angelegt und wird automatisch verlängert.';
       } else {
         await S.store.createBookings(rows);
         successMessage = count > 1 ? `${count} Termine wurden angelegt.` : 'Termin wurde angelegt.';
@@ -1096,49 +1014,15 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   $('#bf-title', d).focus();
 }
 
-function renderCalendarSubscription() {
-  if (S.store.mode !== 'supabase') {
-    app.innerHTML = '<section class="hero"><h1>Kalender abonnieren</h1><p>Ein öffentlicher iCalendar-Feed ist im Demo-Modus nicht verfügbar.</p></section>';
-    return;
-  }
-  const options = ['<option value="">Alle Räume und Plätze</option>', ...S.resources.map((resource) => `<option value="${esc(resource.id)}">${esc(resource.name)}</option>`)].join('');
-  app.innerHTML = `<header class="page-head"><div><h1>Kalender abonnieren</h1><p class="muted">Schreibgeschützte Kalenderfeeds für Kalenderprogramme.</p></div></header>
-    <section class="section"><p>${esc(S.publicContent?.calendar_help || 'Kopiere den Link und füge ihn in deinem Kalenderprogramm unter „Kalender abonnieren“ oder „Kalender aus URL“ ein. Der Kalender wird regelmäßig aktualisiert.')}</p>
-      <div class="field"><label for="calendar-feed-resource">Kalender auswählen</label><select class="input" id="calendar-feed-resource">${options}</select></div>
-      <div class="calendar-feed-link"><code id="calendar-feed-url"></code><button type="button" class="btn btn-primary" id="calendar-feed-copy">Link kopieren</button></div>
-      <p class="hint">Der Feed ist nur zum Lesen. Er enthält öffentliche Termindaten, aber keine internen Notizen, E-Mail-Adressen oder Kontaktdaten. Änderungen erscheinen nach einer Aktualisierung deines Kalenderprogramms.</p>
-      <h2>So fügst du den Kalender hinzu</h2><ol><li>Wähle oben einen einzelnen Raum/Platz oder alle Kalender aus.</li><li>Kopiere den iCalendar-Link.</li><li>Füge ihn in deinem Kalenderprogramm über „Kalender abonnieren“, „Kalender aus URL“ oder eine vergleichbare Funktion ein.</li><li>Der Kalender wird vom Programm regelmäßig aktualisiert; die Aktualisierung kann etwas dauern.</li></ol>
-      <p id="calendar-feed-error" class="notice notice-warn" hidden>Der Link konnte nicht in die Zwischenablage kopiert werden. Bitte markiere den angezeigten Link und kopiere ihn manuell.</p>
-    </section>`;
-  const select = $('#calendar-feed-resource');
-  const urlEl = $('#calendar-feed-url');
-  const copyButton = $('#calendar-feed-copy');
-  const error = $('#calendar-feed-error');
-  const update = () => {
-    const url = `${S.store.url}/functions/v1/calendar-feed${select.value ? `?resource_id=${encodeURIComponent(select.value)}` : ''}`;
-    urlEl.textContent = url;
-    copyButton.dataset.copy = url;
-  };
-  update();
-  select.onchange = update;
-  copyButton.onclick = async () => {
-    try { await navigator.clipboard.writeText(copyButton.dataset.copy); copyButton.textContent = 'Kopiert'; }
-    catch { error.hidden = false; }
-  };
-}
-
 // ---------- Import ----------
-function openImport(selectedResource = null) {
+function openImport(selectedResource) {
+  if (!selectedResource) { setNotice('error', 'Bitte zuerst den Raum- oder Platzkalender öffnen.'); return; }
   const defaultCategory = S.categories.find((c) => c.name.toLowerCase() === 'spiel') || S.categories[0];
   const categoryOptions = S.categories.map((c) => `<option value="${esc(c.id)}" ${defaultCategory?.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  const resourceOptions = `<option value="">Kein Standardkalender ausgewählt</option>` +
-    S.resources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
-  const resourceField = selectedResource
-    ? `<p class="notice notice-ok">Standardkalender: <strong>${esc(selectedResource.name)}</strong>. Eine gefüllte Spalte „Calendar Name“ kann den Zielkalender pro Zeile überschreiben.</p>`
-    : `<div class="field"><label for="imp-resource">Zielkalender für Zeilen ohne gültigen Calendar Name</label><select id="imp-resource" class="input">${resourceOptions}</select><p class="hint">Wenn in der Datei kein Kalendername oder Slug steht, wähle hier den Kalender, in den diese Termine importiert werden sollen. Ein gültiger Calendar Name in der Datei hat Vorrang.</p></div>`;
+  const resourceField = `<p class="notice notice-ok">Standardkalender: <strong>${esc(selectedResource.name)}</strong>. Eine gefüllte Spalte „Calendar Name“ kann den Zielkalender pro Zeile ändern.</p>`;
   const d = makeDialog('Spielplan importieren', `
     <p>Pflichtspalten: <strong>Start Date</strong>, <strong>Start Time</strong> und <strong>Subject</strong>. Optional: <strong>End Date</strong>, <strong>End Time</strong> und <strong>Calendar Name</strong>.</p>
-    <p class="hint">Wenn End Date oder End Time fehlt, werden 90 Minuten ab Startzeit angenommen. Calendar Name kann ein Kalendername oder Slug sein. Bei einem Import aus dem Belegungsplan musst du einen Zielkalender wählen, wenn Calendar Name fehlt oder unbekannt ist. Überschneidungen sind erlaubt. Unterstützt: Excel (.xlsx) und CSV.</p>
+    <p class="hint">Wenn End Date oder End Time fehlt, werden 90 Minuten ab Startzeit angenommen. Calendar Name kann ein Kalendername oder Slug sein; bei fehlendem oder unbekanntem Wert gilt der aktuelle Kalender. Überschneidungen sind erlaubt. Unterstützt: Excel (.xlsx) und CSV.</p>
     <div class="page-actions">
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.xlsx', ROOT).href}" download>Beispiel herunterladen (.xlsx)</a>
       <a class="btn btn-small" href="${new URL('assets/templates/vorlage-spielplan.csv', ROOT).href}" download>Beispiel herunterladen (.csv)</a>
@@ -1154,7 +1038,7 @@ function openImport(selectedResource = null) {
   const out = $('#imp-result', d);
   const go = $('#imp-go', d);
   const getSelection = () => ({
-    resource: selectedResource || S.resources.find((r) => r.id === $('#imp-resource', d)?.value) || null,
+    resource: selectedResource,
     resources: S.resources,
     category: S.categories.find((c) => c.id === $('#imp-category', d)?.value)
   });
@@ -1166,14 +1050,10 @@ function openImport(selectedResource = null) {
     const result = L.validateMatchTable(sourceTable, { resource, resources, category, durationMinutes: 90 });
     prepared = result;
     out.innerHTML = renderImportResult(result);
-    const needsDefault = !resource && result.errors.some((error) => /Calendar Name|Kalender/i.test(error.message));
-    if (needsDefault) out.insertAdjacentHTML('afterbegin', '<p class="notice notice-warn">Für mindestens einen Termin fehlt eine gültige Kalenderzuordnung. Bitte oben den Zielkalender auswählen oder Calendar Name in der Datei ergänzen.</p>');
     go.disabled = !!(result.errors.length || !result.bookings.length);
     if (!go.disabled) out.insertAdjacentHTML('afterbegin', `<p class="notice notice-ok">${result.bookings.length} Termine sind gültig. Fehlende Endangaben erhalten 90 Minuten Dauer; Überschneidungen sind erlaubt.</p>`);
   };
   $('#imp-category', d).addEventListener('change', validate);
-  const resourceSelect = $('#imp-resource', d);
-  if (resourceSelect) resourceSelect.addEventListener('change', validate);
   $('#imp-file', d).onchange = async (e) => {
     const file = e.target.files[0];
     sourceTable = null;
@@ -1485,36 +1365,13 @@ async function renderAdmin() {
     return;
   }
   app.innerHTML = '<p class="notice">Admin-Daten werden geladen …</p>';
-  const params = new URLSearchParams(location.search);
-  let section = params.get('section') || 'overview';
-  let configSection = params.get('config') || 'general';
-  const results = await Promise.allSettled([
-    S.store.getAllResources(), S.store.listMembers(), S.store.getAuditLog(),
-    S.store.getSiteConfiguration(), S.store.getPublicSiteContent()
-  ]);
-  const failures = [];
-  const resources = results[0].status === 'fulfilled' ? results[0].value || [] : (failures.push('Räume/Plätze: ' + friendlyError(results[0].reason)), []);
-  const users = results[1].status === 'fulfilled' ? results[1].value?.users || [] : (failures.push('Benutzerverwaltung: ' + friendlyError(results[1].reason)), []);
-  const audit = results[2].status === 'fulfilled' ? results[2].value || [] : (failures.push('Änderungsprotokoll: ' + friendlyError(results[2].reason)), []);
-  const config = results[3].status === 'fulfilled' ? results[3].value : null;
-  const publicContent = results[4].status === 'fulfilled' ? results[4].value : null;
-  S.publicContent = publicContent;
-  if (!config) failures.push('Konfiguration: Die Migration für Administration und Benachrichtigungen fehlt oder konnte nicht geladen werden.');
+  let resources = [], users = [], audit = [], failures = [];
+  const results = await Promise.allSettled([S.store.getAllResources(), S.store.listMembers(), S.store.getAuditLog()]);
+  if (results[0].status === 'fulfilled') resources = results[0].value; else failures.push('Räume/Plätze: ' + friendlyError(results[0].reason));
+  if (results[1].status === 'fulfilled') users = results[1].value.users || []; else failures.push('Benutzerverwaltung: ' + friendlyError(results[1].reason));
+  if (results[2].status === 'fulfilled') audit = results[2].value || []; else failures.push('Änderungsprotokoll: ' + friendlyError(results[2].reason));
   S.allResources = resources;
-  S.resources = resources.filter((resource) => resource.is_active !== false);
-  const adminMenu = normaliseMenu(config?.admin_navigation, DEFAULT_ADMIN_NAV);
-  const configMenu = normaliseMenu(config?.configuration_navigation, DEFAULT_CONFIG_NAV);
-  const activeAdminSections = adminMenu.filter((item) => item.enabled).map((item) => item.id);
-  if (section !== 'overview' && !activeAdminSections.includes(section)) section = 'overview';
-  const activeConfigSections = configMenu.filter((item) => item.enabled).map((item) => item.id);
-  if (!activeConfigSections.includes(configSection)) configSection = activeConfigSections.includes('navigation') ? 'navigation' : (activeConfigSections[0] || 'general');
-  const adminLabel = (id) => adminMenu.find((item) => item.id === id)?.label || id;
-  const configLabel = (id) => configMenu.find((item) => item.id === id)?.label || id;
-  const sectionUrl = (id) => `${BASE}/admin?section=${encodeURIComponent(id)}`;
-  const configUrl = (id) => `${BASE}/admin?section=config&config=${encodeURIComponent(id)}`;
-  const adminNav = `<a href="${BASE}/admin" data-link="/admin" class="${section === 'overview' ? 'is-active' : ''}">Übersicht</a>${adminMenu.filter((item) => item.enabled).map((item) => `<a href="${sectionUrl(item.id)}" data-link="/admin?section=${encodeURIComponent(item.id)}" class="${section === item.id ? 'is-active' : ''}">${esc(item.label)}</a>`).join('')}`;
-  const failuresHtml = failures.length ? `<div class="notice notice-warn"><strong>Einrichtung noch nicht vollständig:</strong><ul>${failures.map((message) => `<li>${esc(message)}</li>`).join('')}</ul><p>Bitte Datenbankmigrationen und die Supabase-Funktion gemäß Einrichtungsanleitung bereitstellen.</p></div>` : '';
-
+  S.resources = resources.filter((r) => r.is_active !== false);
   const resourceRows = resources.map((r) => `<tr>
     <td><input class="input" data-resource-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name von ${esc(r.name)}"></td>
     <td><input class="input slug-input" data-resource-slug="${esc(r.id)}" value="${esc(r.slug)}" maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-label="Dauerhafter Slug von ${esc(r.name)}" title="Nur Kleinbuchstaben, Ziffern und Bindestriche; ohne Bindestrich am Anfang oder Ende."></td>
@@ -1529,91 +1386,35 @@ async function renderAdmin() {
     <td><select class="input" data-member-role="${esc(u.id)}"><option value="bearbeiter" ${u.role === 'bearbeiter' ? 'selected' : ''}>Bearbeiter</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option></select></td>
     <td class="admin-actions"><button type="button" class="btn btn-small" data-member-save="${esc(u.id)}">Rolle speichern</button><button type="button" class="btn btn-small btn-danger" data-member-remove="${esc(u.id)}">Zugang entziehen</button></td>
   </tr>`).join('');
-  const auditEntities = [...new Set(audit.map((entry) => entry.entity_type).filter(Boolean))].sort();
-  const auditActions = [...new Set(audit.map((entry) => entry.action).filter(Boolean))].sort();
-  const auditUsers = [...new Set(audit.map((entry) => entry.actor_email).filter(Boolean))].sort();
-  const auditRows = audit.map((entry) => {
+  const logRows = audit.map((entry) => {
     const snapshot = entry.after_data || entry.before_data || {};
-    const ids = snapshot.resource_ids || (snapshot.resource_id ? [snapshot.resource_id] : []);
-    const resource = ids.map((id) => S.allResources.find((r) => r.id === id)?.name || id).join(', ') || snapshot.resource_name || '—';
-    const label = entry.entity_type === 'booking' ? (snapshot.title || 'Termin') : entry.entity_type === 'site_configuration' ? 'Konfiguration' : entry.entity_type === 'public_site_content' ? 'Besucher-/Rechtstext' : entry.entity_type === 'event_documents' ? (snapshot.title || snapshot.file_name || 'Dokument') : entry.entity_type || 'Eintrag';
-    const actionLabel = ({ created: 'Erstellt', updated: 'Geändert', deleted: 'Gelöscht' })[entry.action] || entry.action;
+    const resource = S.allResources.find((r) => r.id === snapshot.resource_id)?.name || snapshot.resource_name || snapshot.resource_id || '—';
+    const action = ({ created: 'Eingetragen', updated: 'Geändert', deleted: 'Gelöscht' })[entry.action] || entry.action;
     const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
-    return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(entry.entity_type)}</td><td>${esc(label)}<br><span class="muted">${esc(resource)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
+    return `<tr><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'Unbekannter Benutzer')}</td><td>${esc(action)}</td><td>${esc(snapshot.title || '—')}<br><span class="muted">${esc(resource)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
   }).join('');
-
-  let content = '';
-  if (section === 'overview') {
-    const cards = adminMenu.filter((item) => item.enabled).map((item) => `<a class="admin-subpage-card" href="${sectionUrl(item.id)}" data-link="/admin?section=${encodeURIComponent(item.id)}"><h2>${esc(item.label)}</h2><span>Öffnen →</span></a>`).join('');
-    content = `<section class="admin-subpage-grid">${cards}</section>`;
-  } else if (section === 'resources') {
-    content = `<section class="section admin-section"><h2>${esc(adminLabel('resources'))}</h2><form id="resource-form" class="form admin-resource-form">
+  app.innerHTML = `
+    <header class="page-head"><div><h1>Administration</h1><p class="muted">Ressourcen, Benutzer und Terminänderungen verwalten.</p></div></header>
+    ${failures.length ? `<div class="notice notice-warn"><strong>Einrichtung noch nicht vollständig:</strong><ul>${failures.map((m) => `<li>${esc(m)}</li>`).join('')}</ul><p>Bitte die Datenbankmigration und die Supabase-Funktion gemäß der mitgelieferten Einrichtungsanleitung bereitstellen.</p></div>` : ''}
+    <section class="section admin-section"><h2>Räume und Plätze</h2><form id="resource-form" class="form admin-resource-form">
       <div class="field"><label for="resource-name">Name</label><input id="resource-name" class="input" required maxlength="80"></div>
       <div class="field"><label for="resource-type">Typ</label><select id="resource-type" class="input"><option value="raum">Raum</option><option value="platz">Platz</option></select></div>
       <div class="field"><label for="resource-color">Farbe</label><input id="resource-color" type="color" class="input color-input" value="#1f5fa8"></div>
       <button type="submit" class="btn btn-primary">Hinzufügen</button><p class="msg" id="resource-msg" role="alert"></p></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Dauerhafter Slug (Link)</th><th>Typ</th><th>Reihenfolge</th><th>Farbe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${resourceRows || '<tr><td colspan="7">Keine Ressourcen vorhanden.</td></tr>'}</tbody></table></div>
       <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
-      <p class="hint">Der Name kann ohne Änderung des Links angepasst werden. Administratoren können auch den Slug bearbeiten. Eine Slug-Änderung ändert den Kalenderlink und bereits verteilte QR-Codes.</p></section>`;
-  } else if (section === 'users') {
-    content = `<section class="section admin-section"><h2>${esc(adminLabel('users'))}</h2><form id="invite-form" class="form admin-invite-form">
+      <p class="hint">Der Name kann ohne Änderung des Links angepasst werden. Administratoren können auch den Slug bearbeiten. Vor dem Speichern erscheint eine Warnung: Eine Slug-Änderung ändert den Kalenderlink; bereits verteilte Links, Lesezeichen und gedruckte QR-Codes führen dann nicht mehr zum Raum. Ein neuer QR-Code wird automatisch aus dem aktuellen Link erzeugt.</p>
+    </section>
+    <section class="section admin-section"><h2>Benutzer und Einladungen</h2><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
       <div class="field"><label for="invite-role">Rolle</label><select id="invite-role" class="input"><option value="bearbeiter">Bearbeiter</option><option value="admin">Administrator</option></select></div>
       <button type="submit" class="btn btn-primary">Einladung senden</button><p class="msg" id="invite-msg" role="alert"></p></form>
-      <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
-  } else if (section === 'audit') {
-    content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
-      <div class="audit-filters"><label>Von <input class="input" id="audit-from" type="date"></label><label>Bis <input class="input" id="audit-to" type="date"></label><label>Aktion <select class="input" id="audit-action-filter"><option value="">Alle</option>${auditActions.map((a) => `<option value="${esc(a)}">${esc(({created:'Erstellt',updated:'Geändert',deleted:'Gelöscht'})[a] || a)}</option>`).join('')}</select></label><label>Bereich <select class="input" id="audit-entity-filter"><option value="">Alle</option>${auditEntities.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Benutzer <select class="input" id="audit-user-filter"><option value="">Alle</option>${auditUsers.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Raum/Platz <select class="input" id="audit-resource-filter"><option value="">Alle</option>${S.allResources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label></div>
-      <p id="audit-count" class="hint"></p><div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Eintrag</th><th>Änderungen</th></tr></thead><tbody id="audit-results">${auditRows || '<tr><td colspan="5">Noch keine Protokolleinträge.</td></tr>'}</tbody></table></div></section>`;
-  } else if (section === 'config') {
-    const configLinks = configMenu.filter((item) => item.enabled).map((item) => `<a href="${configUrl(item.id)}" data-link="/admin?section=config&config=${encodeURIComponent(item.id)}" class="${configSection === item.id ? 'is-active' : ''}">${esc(item.label)}</a>`).join('');
-    let docs = [], events = [];
-    if (configSection === 'documents') {
-      const [docsResult, eventsResult] = await Promise.allSettled([S.store.getEventDocuments({ activeOnly: false }), S.store.getAnnualEvents()]);
-      if (docsResult.status === 'fulfilled') docs = docsResult.value || []; else failures.push('Dokumentenablage: ' + friendlyError(docsResult.reason));
-      if (eventsResult.status === 'fulfilled') events = eventsResult.value || []; else failures.push('Ereignisse: ' + friendlyError(eventsResult.reason));
-    }
-    content = `<div class="admin-config-layout"><nav class="admin-config-nav" aria-label="Konfiguration">${configLinks}</nav><div class="admin-config-content" id="admin-config-content"></div></div>`;
-    app.innerHTML = `<header class="page-head"><div><h1>Administration</h1><p class="muted">${esc(adminLabel('config'))}</p></div></header><nav class="admin-subnav" aria-label="Administrations-Unterseiten">${adminNav}</nav>${failuresHtml}<div id="admin-config-shell">${content}</div>`;
-    const target = $('#admin-config-content');
-    await mountConfiguration(target, {
-      subpage: configSection, config, publicContent, documents: docs, events, store: S.store, setNotice,
-      refresh: () => renderAdmin()
-    });
-    return;
-  } else {
-    content = '<section class="section"><p class="notice notice-warn">Diese Administrationsseite ist nicht verfügbar.</p></section>';
-  }
-
-  app.innerHTML = `<header class="page-head"><div><h1>Administration</h1><p class="muted">Verwaltung des Vereinskalenders.</p></div></header><nav class="admin-subnav" aria-label="Administrations-Unterseiten">${adminNav}</nav>${failuresHtml}${content}`;
-  if (section === 'resources' || section === 'users') bindAdmin(resources);
-  if (section === 'audit') bindAuditFilters();
-}
-
-function bindAuditFilters() {
-  const table = $('#audit-results');
-  if (!table) return;
-  const rows = [...table.querySelectorAll('[data-audit-row]')];
-  const inputs = ['audit-from', 'audit-to', 'audit-action-filter', 'audit-entity-filter', 'audit-user-filter', 'audit-resource-filter'].map((id) => $('#' + id));
-  const update = () => {
-    const from = $('#audit-from').value ? new Date($('#audit-from').value + 'T00:00:00') : null;
-    const to = $('#audit-to').value ? new Date($('#audit-to').value + 'T23:59:59') : null;
-    let count = 0;
-    rows.forEach((row) => {
-      const date = new Date(row.dataset.date);
-      const resourceIds = row.dataset.resources.split(',').filter(Boolean);
-      const visible = (!from || date >= from) && (!to || date <= to)
-        && (!$('#audit-action-filter').value || row.dataset.action === $('#audit-action-filter').value)
-        && (!$('#audit-entity-filter').value || row.dataset.entity === $('#audit-entity-filter').value)
-        && (!$('#audit-user-filter').value || row.dataset.user === $('#audit-user-filter').value)
-        && (!$('#audit-resource-filter').value || resourceIds.includes($('#audit-resource-filter').value));
-      row.hidden = !visible;
-      if (visible) count++;
-    });
-    $('#audit-count').textContent = `${count} von ${rows.length} Einträgen angezeigt.`;
-  };
-  inputs.forEach((input) => input?.addEventListener('change', update));
-  update();
+      <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div>
+    </section>
+    <section class="section admin-section"><h2>Termin-Änderungsprotokoll</h2><p class="hint">Letzte 200 Einträge. Protokolleinträge sind unveränderlich.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Termin/Ressource</th><th>Änderungen</th></tr></thead><tbody>${logRows || '<tr><td colspan="5">Noch keine Protokolleinträge oder die Migration fehlt.</td></tr>'}</tbody></table></div>
+    </section>`;
+  bindAdmin(resources);
 }
 
 function slugifyResource(value) {
@@ -1710,14 +1511,12 @@ async function render() {
     else if (route.name === 'room') await renderRoom(route.res);
     else if (route.name === 'plan') await renderPlan();
     else if (route.name === 'admin') await renderAdmin();
-    else if (route.name === 'annualEvents') await renderAnnualEvents(app, S.store, setNotice);
-    else if (route.name === 'calendarSubscription') renderCalendarSubscription();
     else renderNotFound();
   } catch (err) {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : route.name === 'calendarSubscription' ? 'Kalender abonnieren · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {
@@ -1726,7 +1525,6 @@ async function boot() {
     S.store = await createStore(S.seed);
     await S.store.init();
     if (S.store.mode === 'supabase') {
-      try { S.publicContent = await S.store.getPublicSiteContent(); } catch { S.publicContent = null; }
       S.resources = await S.store.getResources();
       S.allResources = S.resources;
       S.categories = await S.store.getCategories();
