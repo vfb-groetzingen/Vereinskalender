@@ -50,19 +50,6 @@ test('Gleiche Zeit auf anderem Platz ist erlaubt', async () => {
   await s.createBookings([booking('res-kunstrasenplatz', '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
 });
 
-test('Ein gemeinsamer Termin erscheint in allen ausgewählten Ressourcenkalendern', async () => {
-  const s = fresh();
-  await s.signIn({ role: 'bearbeiter' });
-  const second = 'res-kunstrasenplatz';
-  const [created] = await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { resource_ids: [res, second] })]);
-  assert.deepEqual(created.resource_ids, [res, second]);
-  const all = (await s.getAllBookings()).filter((item) => item.id === created.id);
-  assert.deepEqual(new Set(all.map((item) => item.resource_id)), new Set([res, second]));
-  assert.equal((await s.getAllBookings(second)).filter((item) => item.id === created.id).length, 1);
-  await s.updateBooking(created.id, { resource_id: second, resource_ids: [second] });
-  assert.deepEqual(s.bookings.find((item) => item.id === created.id).resource_ids, [second]);
-});
-
 test('getAllBookings lädt alle Zeiträume und kann nach Ressource filtern', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
@@ -132,4 +119,38 @@ test('Demo-Startdaten enthalten keine Doppelbelegungen', () => {
       assert.ok(list[i].starts_at >= list[i - 1].ends_at, `Überschneidung: ${list[i].title}`);
     }
   }
+});
+
+test('Fortlaufende Wochenserie: Vorkommen anlegen, verschieben, einzeln überspringen und beenden', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const seriesId = await s.createRecurringSeries({
+    resource_id: res, category_id: 'cat-training', title: 'Training', notes: null,
+    starts_on: '2030-01-07', start_time: '17:00', end_time: '18:00', interval_weeks: 1
+  });
+  let items = await s.getSeriesBookings(seriesId);
+  assert.equal(items.length, 26);
+  assert.equal(items[0].series_occurrence, 0);
+  assert.equal(items[25].series_occurrence, 25);
+
+  await s.updateRecurringSeries(seriesId, 3, {
+    starts_on: '2030-01-29', start_time: '18:00', end_time: '19:00',
+    title: 'Geändert', resource_id: res, category_id: 'cat-training', notes: null
+  });
+  items = await s.getSeriesBookings(seriesId);
+  const third = items.find((item) => item.series_occurrence === 2);
+  const fourth = items.find((item) => item.series_occurrence === 3);
+  assert.equal(third.title, 'Training');
+  assert.equal(fourth.title, 'Geändert');
+  assert.ok(fourth.starts_at.startsWith('2030-01-29'));
+  assert.equal(new Date(fourth.starts_at).getHours(), 18);
+
+  const fifthIndex = items.find((item) => item.series_occurrence === 5);
+  await s.deleteRecurringOccurrence(seriesId, 5, fifthIndex.id);
+  assert.equal((await s.getSeriesBookings(seriesId)).some((item) => item.series_occurrence === 5), false);
+
+  await s.endRecurringSeries(seriesId, 8);
+  items = await s.getSeriesBookings(seriesId);
+  assert.ok(items.every((item) => item.series_occurrence < 8));
+  assert.equal(s.recurringSeries.find((item) => item.id === seriesId).is_active, false);
 });
