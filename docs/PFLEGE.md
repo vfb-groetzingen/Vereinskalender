@@ -91,7 +91,7 @@ Die vereinbarte Regel löscht keine jüngeren Termine, um Speicher freizumachen.
 
 Im **Belegungsplan** links können Sie Rubriken ein- und ausblenden. Die Farbe jeder Rubrik entspricht dem Balken im Zeitstrahl. Der linke Rand der Balken zeigt die Kategorie. Die Einstellung betrifft nur Ihre Ansicht und ändert keine Daten.
 
-Mit **Kategorie** lassen sich Termine einer Art filtern. Mit den Pfeilen und dem Datumsfeld wechseln Sie den Zeitraum. Über **Gesamtplan** öffnen Sie eine zusätzliche Wochenübersicht: Wählen Sie links die gewünschten Räume und Plätze aus; sie erscheinen gemeinsam und die Ressourcenfarben werden in einer Legende erklärt. Mit **Drucken / als PDF speichern** erhalten Sie eine druckbare Querformatansicht der ausgewählten Rubriken und Woche.
+Mit **Kategorie** lassen sich Termine einer Art filtern. Mit den Pfeilen und dem Datumsfeld wechseln Sie den Zeitraum. Über **Gesamtplan** öffnen Sie eine zusätzliche Wochen-Zeitleiste: Wählen Sie links die gewünschten Räume und Plätze aus; alle ausgewählten Ressourcen erscheinen gemeinsam, die Tage stehen in Spalten und die Uhrzeiten auf der senkrechten Achse. Termine liegen entsprechend ihrer Uhrzeit im Raster, überlappende Termine werden nebeneinander angeordnet. Die Ressourcenfarben werden in einer Legende erklärt. Mit **Drucken / als PDF speichern** erhalten Sie eine druckbare Querformatansicht der ausgewählten Rubriken und Woche.
 
 ## QR-Code und Link
 

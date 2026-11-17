@@ -115,7 +115,7 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Tagesansicht, Wochenansicht und Monatsansicht wechseln korrekt, „Heute“ und Pfeile funktionieren
 - [ ] Belegungsplan: Rubriken lassen sich einzeln ein- und ausblenden, „Alle ausblenden“ zeigt Hinweis
 - [ ] Filter nach Kategorie reduziert die Anzeige
-- [ ] Gesamtplan zeigt ausgewählte Räume und Plätze gemeinsam, mit Ressourcenfarben und Legende; Auswahl und Wochenwechsel funktionieren
+- [ ] Gesamtplan zeigt ausgewählte Räume und Plätze gemeinsam als Wochen-Zeitleiste mit Tagen als Spalten, korrekten Uhrzeitpositionen, Ressourcenfarben, Überlappungsspur und Legende; Auswahl und Wochenwechsel funktionieren
 - [ ] Gesamtplan über Browserdruck als Querformat-PDF ausgeben und prüfen
 - [ ] Datum im Belegungsplan wählbar, Tag und Woche umschaltbar
 - [ ] Besucher (ohne Anmeldung) sehen keine Schaltfläche zum Bearbeiten
