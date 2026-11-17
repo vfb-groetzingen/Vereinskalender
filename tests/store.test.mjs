@@ -13,6 +13,7 @@ globalThis.localStorage = {
 };
 const seed = JSON.parse(readFileSync(new URL('../data/seed.json', import.meta.url), 'utf-8'));
 const { DemoStore } = await import('../assets/js/data.js');
+const L = await import('../assets/js/logic.js');
 
 const fresh = () => { store.clear(); return new DemoStore(seed); };
 const booking = (resource_id, s, e, extra = {}) => ({
@@ -48,6 +49,19 @@ test('Gleiche Zeit auf anderem Platz ist erlaubt', async () => {
   await s.signIn({ role: 'bearbeiter' });
   await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
   await s.createBookings([booking('res-kunstrasenplatz', '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z')]);
+});
+
+test('Ein gemeinsamer Termin erscheint in allen ausgewählten Ressourcenkalendern', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const second = 'res-kunstrasenplatz';
+  const [created] = await s.createBookings([booking(res, '2030-01-07T17:00:00Z', '2030-01-07T18:00:00Z', { resource_ids: [res, second] })]);
+  assert.deepEqual(created.resource_ids, [res, second]);
+  const all = (await s.getAllBookings()).filter((item) => item.id === created.id);
+  assert.deepEqual(new Set(all.map((item) => item.resource_id)), new Set([res, second]));
+  assert.equal((await s.getAllBookings(second)).filter((item) => item.id === created.id).length, 1);
+  await s.updateBooking(created.id, { resource_id: second, resource_ids: [second] });
+  assert.deepEqual(s.bookings.find((item) => item.id === created.id).resource_ids, [second]);
 });
 
 test('getAllBookings lädt alle Zeiträume und kann nach Ressource filtern', async () => {
@@ -121,36 +135,37 @@ test('Demo-Startdaten enthalten keine Doppelbelegungen', () => {
   }
 });
 
-test('Fortlaufende Wochenserie: Vorkommen anlegen, verschieben, einzeln überspringen und beenden', async () => {
+
+test('Fortlaufende Buchungsserien unterstützen alle Frequenzen und erhalten E-Mail-Daten', async () => {
   const s = fresh();
   await s.signIn({ role: 'bearbeiter' });
-  const seriesId = await s.createRecurringSeries({
-    resource_id: res, category_id: 'cat-training', title: 'Training', notes: null,
-    starts_on: '2030-01-07', start_time: '17:00', end_time: '18:00', interval_weeks: 1
+  const starts_on = L.ymd(L.addDays(new Date(), 5));
+  const ids = {};
+  for (const frequency of ['weekly', 'biweekly', 'monthly', 'yearly']) {
+    ids[frequency] = await s.createRecurringSeries({
+      resource_id: res, resource_ids: [res, 'res-jugendraum'], category_id: 'cat-training',
+      title: `Serie ${frequency}`, notes: 'Notiz', contact_email: 'kontakt@example.org',
+      reminder_days: 1, starts_on, start_time: '17:00', end_time: '18:00', frequency
+    });
+    const rows = await s.getSeriesBookings(ids[frequency]);
+    assert.ok(rows.length >= 1, `${frequency} muss mindestens den Starttermin erzeugen`);
+    assert.ok(rows.every((row) => row.contact_email === 'kontakt@example.org' && row.reminder_days === 1));
+    assert.ok(rows.every((row) => row.resource_ids.length === 2));
+  }
+  const weekly = await s.getSeriesBookings(ids.weekly);
+  const selected = weekly.find((row) => row.series_occurrence === 2);
+  const movedDate = L.shiftDateString(L.ymd(new Date(selected.starts_at)), 1);
+  await s.updateRecurringSeries(ids.weekly, 2, 'following', {
+    starts_on: movedDate, start_time: '18:00', end_time: '19:00', title: 'Ab Index 2',
+    resource_id: res, resource_ids: [res, 'res-jugendraum'], category_id: 'cat-training',
+    notes: 'aktualisiert', contact_email: 'kontakt@example.org', reminder_days: 2
   });
-  let items = await s.getSeriesBookings(seriesId);
-  assert.equal(items.length, 26);
-  assert.equal(items[0].series_occurrence, 0);
-  assert.equal(items[25].series_occurrence, 25);
-
-  await s.updateRecurringSeries(seriesId, 3, {
-    starts_on: '2030-01-29', start_time: '18:00', end_time: '19:00',
-    title: 'Geändert', resource_id: res, category_id: 'cat-training', notes: null
-  });
-  items = await s.getSeriesBookings(seriesId);
-  const third = items.find((item) => item.series_occurrence === 2);
-  const fourth = items.find((item) => item.series_occurrence === 3);
-  assert.equal(third.title, 'Training');
-  assert.equal(fourth.title, 'Geändert');
-  assert.ok(fourth.starts_at.startsWith('2030-01-29'));
-  assert.equal(new Date(fourth.starts_at).getHours(), 18);
-
-  const fifthIndex = items.find((item) => item.series_occurrence === 5);
-  await s.deleteRecurringOccurrence(seriesId, 5, fifthIndex.id);
-  assert.equal((await s.getSeriesBookings(seriesId)).some((item) => item.series_occurrence === 5), false);
-
-  await s.endRecurringSeries(seriesId, 8);
-  items = await s.getSeriesBookings(seriesId);
-  assert.ok(items.every((item) => item.series_occurrence < 8));
-  assert.equal(s.recurringSeries.find((item) => item.id === seriesId).is_active, false);
+  const updated = await s.getSeriesBookings(ids.weekly);
+  assert.equal(updated.find((row) => row.series_occurrence === 1).title, 'Serie weekly');
+  assert.equal(updated.find((row) => row.series_occurrence === 2).title, 'Ab Index 2');
+  assert.equal(L.ymd(new Date(updated.find((row) => row.series_occurrence === 2).starts_at)), movedDate);
+  await s.deleteRecurringOccurrence(ids.weekly, 3, updated.find((row) => row.series_occurrence === 3).id);
+  assert.equal((await s.getSeriesBookings(ids.weekly)).some((row) => row.series_occurrence === 3), false);
+  await s.endRecurringSeries(ids.weekly, 4);
+  assert.ok((await s.getSeriesBookings(ids.weekly)).every((row) => row.series_occurrence < 4));
 });

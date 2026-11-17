@@ -129,6 +129,26 @@ test('Spielplanimport: optionale Enddaten, Kalendername, 90-Minuten-Fallback und
   assert.equal(r.warnings.length, 1);
 });
 
+test('Belegungsplanimport: Calendar Name reicht ohne Standardkalender; fehlende Zuordnung verlangt Auswahl', () => {
+  const mapped = [
+    ['Start Date', 'Start Time', 'Subject', 'Calendar Name'],
+    ['2026-10-26', '17:00', 'Training', 'trainingsplatz-a']
+  ];
+  const mappedResult = L.validateMatchTable(mapped, { resource: null, resources, category: categories[0] });
+  assert.equal(mappedResult.errors.length, 0);
+  assert.equal(mappedResult.bookings[0].resource_id, 'r1');
+
+  const unmapped = [
+    ['Start Date', 'Start Time', 'Subject'],
+    ['2026-10-26', '17:00', 'Training']
+  ];
+  const needsSelection = L.validateMatchTable(unmapped, { resource: null, resources, category: categories[0] });
+  assert.match(needsSelection.errors[0].message, /auswählen/);
+  const selectedDefault = L.validateMatchTable(unmapped, { resource: resources[1], resources, category: categories[0] });
+  assert.equal(selectedDefault.errors.length, 0);
+  assert.equal(selectedDefault.bookings[0].resource_id, 'r2');
+});
+
 test('Import: fehlende Pflichtspalte wird benannt', () => {
   const r = L.validateTable([['Titel', 'Ressource', 'Datum', 'Start', 'Ende'], ['X', 'Jugendraum', '01.11.2026', '10:00', '11:00']], ctx);
   assert.match(r.errors[0].message, /Kategorie/);
@@ -185,4 +205,17 @@ test('Zeitumstellung am 25.10.2026: Uhrzeit bleibt lokal korrekt', () => {
   const d = L.combine('2026-10-25', '18:00');
   assert.equal(d.getHours(), 18);
   assert.equal(d.getMinutes(), 0);
+});
+
+test('Serien: fortlaufende Frequenzen verankern Monatsende und Schalttag korrekt', () => {
+  assert.deepEqual(L.seriesDates('2026-01-31', 4, 'monthly'), [
+    '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'
+  ]);
+  assert.deepEqual(L.seriesDates('2024-02-29', 5, 'yearly'), [
+    '2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28', '2028-02-29'
+  ]);
+  assert.deepEqual(L.seriesDates('2026-04-06', 3, 'biweekly'), [
+    '2026-04-06', '2026-04-20', '2026-05-04'
+  ]);
+  assert.equal(L.recurrenceDate('2026-03-31', -1, 'monthly'), '2026-02-28');
 });
