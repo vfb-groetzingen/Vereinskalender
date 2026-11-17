@@ -30,6 +30,79 @@ create table if not exists public.booking_series (
   constraint booking_series_resources_valid check (cardinality(resource_ids) > 0 and resource_ids[1] = resource_id)
 );
 
+
+-- Upgrade the earlier weekly-only booking_series table if that patch was applied.
+-- CREATE TABLE IF NOT EXISTS does not add columns to an existing relation.
+alter table public.booking_series
+  add column if not exists resource_ids uuid[],
+  add column if not exists contact_email text,
+  add column if not exists reminder_days smallint not null default 0,
+  add column if not exists frequency text,
+  add column if not exists date_offset_days integer not null default 0,
+  add column if not exists anchor_occurrence_index integer not null default 0;
+
+do $compat$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'booking_series' and column_name = 'interval_weeks'
+  ) then
+    execute $sql$
+      update public.booking_series
+      set frequency = case when interval_weeks = 2 then 'biweekly' else 'weekly' end
+      where frequency is null
+    $sql$;
+  else
+    update public.booking_series set frequency = 'weekly' where frequency is null;
+  end if;
+end;
+$compat$;
+
+update public.booking_series
+set resource_ids = array[resource_id]::uuid[]
+where resource_ids is null;
+
+alter table public.booking_series
+  alter column resource_ids set not null,
+  alter column frequency set not null;
+
+do $constraints$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.booking_series'::regclass and conname = 'booking_series_resources_valid'
+  ) then
+    alter table public.booking_series
+      add constraint booking_series_resources_valid
+      check (cardinality(resource_ids) > 0 and resource_ids[1] = resource_id);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.booking_series'::regclass and conname = 'booking_series_frequency_check'
+  ) then
+    alter table public.booking_series
+      add constraint booking_series_frequency_check
+      check (frequency in ('weekly', 'biweekly', 'monthly', 'yearly'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.booking_series'::regclass and conname = 'booking_series_contact_email_check'
+  ) then
+    alter table public.booking_series
+      add constraint booking_series_contact_email_check
+      check (contact_email is null or char_length(contact_email) between 3 and 254);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.booking_series'::regclass and conname = 'booking_series_reminder_days_check'
+  ) then
+    alter table public.booking_series
+      add constraint booking_series_reminder_days_check
+      check (reminder_days in (0, 1, 2, 7));
+  end if;
+end;
+$constraints$;
+
 alter table public.bookings add column if not exists series_occurrence integer;
 create unique index if not exists bookings_series_occurrence_unique
   on public.bookings (series_id, series_occurrence)
