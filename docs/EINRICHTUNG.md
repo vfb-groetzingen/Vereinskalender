@@ -1,8 +1,8 @@
 # Einrichtung: Vereinskalender (Schritt für Schritt)
 
-Diese Anleitung richtet die Webseite vollständig ein: Datenbank, Anmeldung, Administration, Buchungs-/Ereignis-E-Mails, Kalenderfeeds, Veröffentlichung, Sicherung und Keepalive. Sie benötigt etwa 1 bis 2 Stunden. Die Schritte bauen aufeinander auf.
+Diese Anleitung richtet die Webseite vollständig ein: Datenbank, Anmeldung, Veröffentlichung, Sicherung und Keepalive. Sie benötigt etwa 1 bis 2 Stunden. Die Schritte bauen aufeinander auf.
 
-Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzingen.de`.
+Vorhandene Konten: GitHub, Supabase, Brevo.
 
 ---
 
@@ -19,14 +19,11 @@ Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzi
 
 1. Im Dashboard **SQL Editor** öffnen, **New query**.
 2. Den Inhalt von `supabase/schema.sql` einfügen und **Run** ausführen.
-3. Die Datei `supabase/migration-booking-retention-3-years.sql` im SQL Editor ausführen. Sie aktiviert Cron und plant die tägliche Löschung von Terminen ein, deren Start mehr als drei Jahre zurückliegt. Falls die Erweiterung `pg_cron` nicht verfügbar ist, zuerst im Supabase-Dashboard unter **Integrations > Cron** aktivieren und die Migration erneut ausführen.
-4. Die Datei `supabase/migration-multi-resource-annual-events.sql` im SQL Editor ausführen. Sie aktiviert Mehrfachzuordnungen von Ressourcen, den Ereigniskalender, private Dateiablage und Versandprotokoll.
-5. Danach `supabase/migration-annual-email-test-requests.sql` im SQL Editor ausführen. Sie richtet die geschützte Warteschlange für Testmails ein.
-6. Danach `supabase/migration-annual-email-log-context.sql` ausführen. Damit speichert das Protokoll Ereignisname und betroffenes Datum direkt am Versandversuch.
-7. Danach `supabase/migration-event-recurrence-retention-3-years.sql` ausführen. Sie ergänzt einmalige Ereignisse und richtet die automatische Bereinigung nach drei Jahren ein. Die Jahresregel bleibt bestehen; nur alte Durchläufe und Protokolle werden entfernt.
-8. Als letzte Erweiterungsmigration `supabase/migration-admin-configuration-communications.sql` ausführen. Sie ergänzt Admin-Konfiguration, Buchungskontakt und Erinnerungen, Dokumentablage, Auditlog, Mail-Outbox und die dafür nötigen RLS-Regeln.
-9. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
-10. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `memberships`, `annual_email_events`, `annual_email_test_requests`, `site_configuration`, `public_site_content`, `event_documents` und `booking_email_outbox` sind vorhanden; unter **Integrations > Cron** auch die bestehenden Aufbewahrungsjobs prüfen.
+3. Danach den Inhalt von `supabase/seed.sql` einfügen und ausführen.
+4. Danach im SQL Editor `supabase/migration-continuous-weekly-series.sql` ausführen. Die Migration legt Serienregeln und den täglichen Verlängerungsjob an.
+5. Unter **Table Editor** prüfen: Die Tabellen `resources`, `categories`, `bookings`, `booking_series` und `memberships` sind vorhanden.
+
+> Bei einer bereits laufenden Installation **nicht** das Basisschema erneut ausführen. Stattdessen die nötigen Update-Migrationen einmal im SQL Editor anwenden, insbesondere `migration-continuous-weekly-series.sql`. Die Migration installiert `pg_cron`; der Job `vk-extend-weekly-series` ergänzt täglich fehlende Termine bis sechs Monate im Voraus.
 
 ## Schritt 3: Anmeldung konfigurieren
 
@@ -34,11 +31,11 @@ Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzi
 2. **Authentication > URL Configuration**:
    - **Site URL**: `https://DEIN-GITHUB-NAME.github.io/vereinskalender/`
    - **Redirect URLs**: dieselbe Adresse eintragen.
-3. **Authentication > Emails > SMTP Settings**: **Enable Custom SMTP** ist für den Anmeldelink-Versand eingeschaltet. Laut derzeitiger Konfiguration:
-   - Host: `smtp.strato.de`, Port: `465`
-   - Benutzername/Absender: `vfb-app@vfb-groetzingen.de`
-   - Passwort: das Kennwort des Strato-Postfachs (niemals in GitHub committen oder im Chat teilen)
-   Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen.
+3. **Authentication > Emails > SMTP Settings** (Tab „SMTP Settings“, Schalter **Enable Custom SMTP** einschalten; Versand über Brevo, da der Standardversand stark begrenzt ist). Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen. Ältere Anleitungen nennen noch „Project Settings > Auth“.
+   - Host: `smtp-relay.brevo.com`, Port: `587`
+   - Benutzername und Passwort: die SMTP-Zugangsdaten aus dem Brevo-Konto (SMTP & API)
+   - Absenderadresse: eine in Brevo verifizierte Adresse des Vereins
+   - Mit Custom SMTP steigt das Limit für Anmelde-E-Mails von 2 auf 30 pro Stunde (anpassbar unter **Authentication > Rate Limits**).
 4. **Authentication > Emails > Magic Link** (Vorlage): Der Text sollte erklären, dass es sich um einen Anmeldelink für den Vereinskalender handelt.
 
 ## Schritt 4: Ersten Administrator anlegen
@@ -83,44 +80,25 @@ Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die
 | `SUPABASE_URL` | Project URL (wie in Schritt 5) |
 | `SUPABASE_ANON_KEY` | Schlüssel anon public |
 | `SUPABASE_DB_URL` | Verbindungs-URI für Datenbankzugriff (siehe unten) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Wert des Supabase-Secret-API-Keys (`sb_secret_…`); falls noch kein neuer Key existiert, Legacy-`service_role`-Key. Nur als GitHub Secret speichern. |
-| `STRATO_SMTP_USER` | `vfb-app@vfb-groetzingen.de` |
-| `STRATO_SMTP_PASSWORD` | Kennwort dieses Strato-Postfachs (nicht in Projektdateien oder Chat eintragen) |
 | `BACKUP_PASSPHRASE` | Langes Zufallspasswort für verschlüsselte Sicherungen (mindestens 24 Zeichen) |
 
 **Verbindungs-URI** (für `SUPABASE_DB_URL`): Im Dashboard auf **Connect** klicken. Die Variante **Session pooler** wählen (Port 5432). Das Datenbankpasswort aus Schritt 1 eintragen. Die direkte Verbindung funktioniert auf GitHub-Servern oft nicht, da sie IPv6 benötigt.
 
 Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlüsseln. **Ohne dieses Passwort sind die Sicherungen unbrauchbar.** Es muss an mindestens zwei Stellen gespeichert werden (z. B. im Vereins-Passwortmanager).
 
-## Schritt 8: iCalendar-Feed bereitstellen
+## Schritt 8: Automatisierung prüfen
 
-Der öffentliche Feed ist nur lesend und liest Buchungen aus `public_bookings`; Notizen, Kontakt-E-Mail-Adressen und andere interne Felder werden nicht ausgegeben. Nach der Datenbankmigration die Supabase CLI für das Projekt anmelden und im Projektordner verknüpfen (`supabase login`, `supabase link --project-ref DEINE_PROJECT_REF`). Danach die öffentliche Funktion bereitstellen:
-
-```sh
-supabase functions deploy calendar-feed --no-verify-jwt
-```
-
-`--no-verify-jwt` ist erforderlich, damit Kalenderprogramme den Feed ohne Anmeldung abrufen können. Die Funktion verwendet ausschließlich den öffentlichen anon-Schlüssel und die Datenbankrechte der öffentlichen Views. Keine Service-Role-Zugangsdaten in die Funktion oder Webseite eintragen. Anschließend auf der öffentlichen Seite **Kalender abonnieren** den Link kopieren und mit einem Kalenderprogramm testen.
-
-## Schritt 9: Automatisierung prüfen
-
-Unter **Actions** die Workflows prüfen:
+Unter **Actions** die drei Workflows prüfen:
 
 1. **QR-Codes aktualisieren**: Läuft automatisch nach Änderungen an `data/seed.json`. Manuell mit **Run workflow** starten. Ergebnis: Im Ordner `qr/` liegen die SVG-Dateien mit der richtigen Adresse.
 2. **Supabase Keepalive**: Mit **Run workflow** starten. Erwartet: `Antwort HTTP 200`.
 3. **Datenbank-Sicherung**: Mit **Run workflow** starten. Erwartet: Ein Artefakt `vereinskalender-backup-…` mit der Datei `backup.sql.gpg`.
-4. **Jährliche Ereignis-E-Mails**: Der Workflow prüft täglich fällige einmalige und jährliche Ereignisse und versendet ab 06:00 Uhr Europe/Berlin.
-5. **Buchungsnachrichten und Erinnerungen**: Der Workflow läuft etwa alle fünf Minuten. Er verarbeitet Bestätigungen, Änderungen, Absagen und fällige Erinnerungen aus der Outbox. Der authentifizierte Strato-Absender ist immer `vfb-app@vfb-groetzingen.de`; die konfigurierten Profile bestimmen Anzeigename und `Reply-To`.
-6. **Testmails für Ereignisse**: Ein weiterer Workflow prüft etwa alle fünf Minuten die Testmail-Warteschlange. In der Ereignisbearbeitung kann eine Testadresse eingegeben werden; der Status erscheint im Versandprotokoll und im Fehlerbereich unten auf der Seite.
-7. **Ereignisdaten nach drei Jahren bereinigen**: Ein täglicher Workflow löscht abgelaufene einmalige Ereignisse einschließlich ihrer Dateien über die Supabase-Storage-API. Jährliche Wiederholungsregeln bleiben bestehen; alte Durchläufe und Protokolle werden über Supabase Cron entfernt.
-
-Geplante GitHub-Läufe können verzögert sein; bei öffentlichen Repositories können Zeitpläne nach längerer Inaktivität deaktiviert werden. Unter **Actions** regelmäßig prüfen, dass der Buchungsversand-, Jahresversand-, Testmail- und Bereinigungs-Workflow aktiv sind und erfolgreich laufen.
 
 **Keepalive und Pausierung:** Der Free-Tarif von Supabase pausiert Projekte nach 7 Tagen ohne Aktivität. Der Keepalive verhindert das nach bisherigem Kenntnisstand, ist aber nicht zugesichert. Deshalb unbedingt prüfen, ob das Projekt nach 2 bis 3 Wochen noch läuft. Wenn nicht, auf Supabase Pro umstellen (ca. 25 US-Dollar im Monat).
 
 **Hinweis GitHub:** Geplante Workflows werden in öffentlichen Repositories nach 60 Tagen ohne Aktivität automatisch deaktiviert. Ein Commit oder ein manueller Start reaktiviert sie.
 
-## Schritt 10: Sicherung wiederherstellen (Probe durchführen)
+## Schritt 9: Sicherung wiederherstellen (Probe durchführen)
 
 Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor sie im Ernstfall nötig ist.
 
@@ -128,11 +106,11 @@ Die Wiederherstellung sollte einmal auf einem Testprojekt geübt werden, bevor s
 2. Entschlüsseln: `gpg --batch --passphrase "PASSPHRASE" -o backup.sql -d backup.sql.gpg`
 3. Einspielen in ein Testprojekt mit `psql` (Verbindungs-URI wie oben) oder über den SQL Editor.
 
-## Schritt 11: Rechtliche Seiten vervollständigen
+## Schritt 10: Rechtliche Seiten vervollständigen
 
-Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Strato müssen die jeweils erforderlichen Datenschutz- und Auftragsverarbeitungsvereinbarungen geprüft werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
+Die Dateien `impressum.html` und `datenschutz.html` sind Vorlagen. Alle Angaben in eckigen Klammern müssen ergänzt werden. Für Supabase, GitHub und Brevo müssen Auftragsverarbeitungsverträge abgeschlossen werden. Diese Verträge stellen die Anbieter bereit (Stand der Verfügbarkeit bitte prüfen).
 
-## Schritt 12: Eigene Domain (optional)
+## Schritt 11: Eigene Domain (optional)
 
 Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain** eingetragen. Danach die Site URL in Supabase (Schritt 3) und `public_base_url` in `data/seed.json` (Schritt 5) anpassen. Die QR-Codes werden danach automatisch neu erzeugt.
 
@@ -140,16 +118,14 @@ Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain*
 
 ## Checkliste vor dem Start
 
-- [ ] Schema und alle Migrationen in der dokumentierten Reihenfolge eingespielt
+- [ ] Schema und Startdaten eingespielt
 - [ ] Öffentliche Registrierung in Supabase deaktiviert
 - [ ] Site URL und Redirect URL korrekt
-- [ ] Strato-SMTP funktioniert (Testanmeldung über Supabase Auth)
+- [ ] SMTP über Brevo funktioniert (Testanmeldung)
 - [ ] Administrator eingeladen und in `memberships` eingetragen
 - [ ] `config.js` mit URL und anon-Schlüssel gefüllt
 - [ ] `public_base_url` gesetzt, QR-Codes neu erzeugt
-- [ ] GitHub Actions Secrets für Datenbank, Strato-Versand und Sicherung hinterlegt
-- [ ] `calendar-feed` mit `--no-verify-jwt` bereitgestellt und öffentlichen iCalendar-Link getestet
-- [ ] Buchungsnachrichten-Workflow manuell gestartet und Strato-Versand mit kontrollierter Adresse geprüft
-- [ ] Keepalive, Sicherung, Wiederherstellung sowie Buchungs- und Ereignis-E-Mail-Workflows geprüft
+- [ ] Geheimnisse (vier Stück) hinterlegt
+- [ ] Keepalive, Sicherung und Wiederherstellung geprüft
 - [ ] Impressum und Datenschutzerklärung vervollständigt
 - [ ] Testprotokoll (`docs/TESTPROTOKOLL.md`) durchgeführt
