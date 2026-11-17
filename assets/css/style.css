@@ -436,5 +436,5 @@ textarea.input { resize: vertical; }
   .annual-assets li { align-items: flex-start; flex-direction: column; gap: .2rem; }
 }
 
-/* Wiederholungsmarkierung in der Farbe des jeweiligen Raum-/Platzkalenders. */
-.series-mark { display: inline-block; margin-right: .18em; font-size: .95em; font-weight: 900; line-height: 1; vertical-align: baseline; }
+/* Wiederholungsmarkierung übernimmt die Textfarbe der jeweiligen Ansicht. */
+.series-mark { display: inline-block; margin-right: .18em; color: inherit; font-size: .95em; font-weight: 900; line-height: 1; vertical-align: baseline; }
