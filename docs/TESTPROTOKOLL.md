@@ -26,7 +26,7 @@ Zusätzlich geprüft:
 - CSV- und Excel-Beispielvorlagen wurden über die Importlogik geprüft; Exceldatei lädt korrekt und die fehlende Endzeit ergibt 90 Minuten.
 - Die sieben GitHub-Workflows sind strukturell geprüft.
 - Mailer und Bereinigungsskript wurden mit synthetischen Daten geprüft; es fand kein echter SMTP-Versand und kein echter Storage-/Datenbankzugriff statt.
-- Die SQL-Migration `migration-continuous-booking-series.sql` wurde statisch auf Abhängigkeiten, RLS, Berechtigungen, Idempotenz und Cron-Aufruf geprüft, aber mangels PostgreSQL/Supabase nicht ausgeführt.
+- Die SQL-Migration `migration-continuous-booking-series.sql` wurde statisch auf Abhängigkeiten, RLS, Berechtigungen, die Aufrüstung der älteren Wochenserientabelle, Idempotenz und Cron-Aufruf geprüft, aber mangels PostgreSQL/Supabase nicht ausgeführt.
 - Die QR-Codes wurden für alle sieben Ressourcen als SVG erzeugt.
 
 ## 2. Nicht ausgeführt (noch offen)
