@@ -223,28 +223,148 @@ export async function mountConfiguration(target, { subpage, config, publicConten
   }
 
   if (subpage === 'documents') {
+    const canManageDocs = Boolean(store.isAdmin?.());
     const docRows = activeDocs.map((doc) => {
       const usedBy = eventRows.filter((event) => (event.document_ids || []).includes(doc.id));
-      return `<tr><td>${esc(doc.title)}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
+      const titleEditButton = canManageDocs ? `<button class="btn btn-small" type="button" data-doc-title-edit="${esc(doc.id)}" aria-label="Titel von ${esc(doc.title)} bearbeiten">Titel ändern</button>` : '';
+      const titleEditForm = canManageDocs ? `<form class="doc-title-editor" data-doc-title-form="${esc(doc.id)}" hidden>
+        <label class="sr-only" for="doc-title-edit-${esc(doc.id)}">Titel für ${esc(doc.file_name)}</label>
+        <input id="doc-title-edit-${esc(doc.id)}" class="input" maxlength="160" required value="${esc(doc.title)}">
+        <div class="doc-title-editor-actions"><button class="btn btn-primary btn-small" type="submit">Speichern</button><button class="btn btn-small" type="button" data-doc-title-cancel>Abbrechen</button></div>
+        <p class="msg" data-doc-title-msg role="alert"></p>
+      </form>` : '';
+      return `<tr><td class="doc-title-cell"><div class="doc-title-display-row"><span data-doc-title-display>${esc(doc.title)}</span>${titleEditButton}</div>${titleEditForm}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
     }).join('');
     target.innerHTML = `<section class="section admin-section"><h2>Dokumentenablage</h2><p>Bilder und PDFs können bei Ereignissen ausgewählt und als E-Mail-Anhang versendet werden. Bilder werden auf höchstens 1600 Pixel verkleinert und als WebP komprimiert. Das Gesamtlimit pro E-Mail bleibt 5 MB. Wird ein Ereignis gelöscht, wird nur seine Auswahl entfernt; das Original in der Ablage bleibt erhalten.</p>
-      <form id="document-upload-form" class="form"><div class="field"><label for="doc-title">Anzeigename</label><input id="doc-title" class="input" maxlength="160" required></div><div class="field"><label for="doc-file">Bild oder PDF</label><input id="doc-file" class="input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div><button class="btn btn-primary" type="submit">Dokument hochladen</button><p class="hint">Einzeldatei höchstens 5 MB. Unterstützt: JPEG, PNG, WebP und PDF.</p><p class="msg" id="doc-msg" role="alert"></p></form>
+      <form id="document-upload-form" class="form"><div class="field"><label for="doc-title">Anzeigename</label><input id="doc-title" class="input" maxlength="160" required placeholder="Titel des Dokuments"></div><div class="field"><label for="doc-file">Bild oder PDF</label><div id="doc-drop-zone" class="doc-drop-zone" tabindex="0" role="button" aria-label="Datei hier ablegen oder auswählen" aria-describedby="doc-drop-help"><span class="doc-drop-icon" aria-hidden="true">⇧</span><span class="doc-drop-copy"><strong>Datei hier ablegen</strong><br><span>oder per Klick auswählen</span></span><span class="btn btn-small" aria-hidden="true">Datei auswählen</span><input id="doc-file" class="doc-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" aria-hidden="true" tabindex="-1"></div><p class="hint" id="doc-drop-help">Eine Datei pro Upload, höchstens 5 MB. Unterstützt: JPEG, PNG, WebP und PDF.</p><p class="doc-selected-file" id="doc-selected-file" aria-live="polite">Noch keine Datei ausgewählt.</p></div><button class="btn btn-primary" type="submit">Dokument hochladen</button><p class="msg" id="doc-msg" role="alert"></p></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Datei</th><th>Größe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${docRows || '<tr><td colspan="5">Noch keine Dokumente abgelegt.</td></tr>'}</tbody></table></div></section>`;
-    target.querySelector('#document-upload-form').onsubmit = async (event) => {
+
+    const form = target.querySelector('#document-upload-form');
+    const input = target.querySelector('#doc-file');
+    const zone = target.querySelector('#doc-drop-zone');
+    const titleInput = target.querySelector('#doc-title');
+    const selectedFileText = target.querySelector('#doc-selected-file');
+    const uploadMessage = target.querySelector('#doc-msg');
+    const uploadButton = form.querySelector('button[type="submit"]');
+    let pendingFile = null;
+    let dragDepth = 0;
+
+    const chooseFile = (file) => {
+      pendingFile = file || null;
+      zone.classList.remove('is-invalid');
+      uploadMessage.textContent = '';
+      if (!file) {
+        selectedFileText.textContent = 'Noch keine Datei ausgewählt.';
+        return;
+      }
+      selectedFileText.textContent = `${file.name} (${Math.max(1, Math.ceil(file.size / 1024))} KB) ausgewählt.`;
+      const suggested = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 160);
+      if (!titleInput.value.trim() || titleInput.value === titleInput.dataset.autoTitle) {
+        titleInput.value = suggested;
+        titleInput.dataset.autoTitle = suggested;
+      }
+    };
+
+    input.addEventListener('change', () => chooseFile(input.files?.[0] || null));
+    zone.addEventListener('click', (event) => {
+      if (event.target !== input) input.click();
+    });
+    zone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    zone.addEventListener('dragenter', (event) => {
       event.preventDefault();
-      const input = target.querySelector('#doc-file');
-      const file = input.files?.[0];
-      const msg = target.querySelector('#doc-msg');
-      if (!file) return;
-      const button = target.querySelector('button[type="submit"]'); button.disabled = true;
+      dragDepth += 1;
+      zone.classList.add('is-dragover');
+    });
+    zone.addEventListener('dragover', (event) => event.preventDefault());
+    zone.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) zone.classList.remove('is-dragover');
+    });
+    zone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      zone.classList.remove('is-dragover');
+      const files = [...(event.dataTransfer?.files || [])];
+      if (!files.length) return;
+      chooseFile(files[0]);
+      if (files.length > 1) selectedFileText.textContent += ' Es wird jeweils eine Datei hochgeladen.';
+    });
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      uploadMessage.textContent = '';
+      const file = pendingFile || input.files?.[0];
+      if (!file) {
+        uploadMessage.textContent = 'Bitte eine Datei auswählen oder in das Feld ziehen.';
+        zone.classList.add('is-invalid');
+        zone.focus();
+        return;
+      }
+      const title = titleInput.value.trim();
+      if (!title) {
+        uploadMessage.textContent = 'Bitte einen Titel eingeben.';
+        titleInput.focus();
+        return;
+      }
+      uploadButton.disabled = true;
+      uploadButton.textContent = 'Wird hochgeladen …';
       try {
         const prepared = await prepareDocument(file);
         if (prepared.size > 5 * 1024 * 1024) throw new Error('Die Datei überschreitet nach der Bildkomprimierung 5 MB.');
-        await store.uploadEventDocument(prepared, target.querySelector('#doc-title').value.trim());
+        await store.uploadEventDocument(prepared, title);
         setNotice('ok', 'Dokument wurde in der Ablage gespeichert.');
         await refresh();
-      } catch (error) { msg.textContent = error.message || 'Dokument konnte nicht hochgeladen werden.'; button.disabled = false; }
+      } catch (error) {
+        uploadMessage.textContent = error.message || 'Dokument konnte nicht hochgeladen werden.';
+        uploadButton.disabled = false;
+        uploadButton.textContent = 'Dokument hochladen';
+      }
     };
+
+    target.querySelectorAll('[data-doc-title-edit]').forEach((button) => button.onclick = () => {
+      const row = button.closest('tr');
+      row.querySelector('[data-doc-title-display]').hidden = true;
+      button.hidden = true;
+      const editor = row.querySelector('[data-doc-title-form]');
+      editor.hidden = false;
+      editor.querySelector('input').focus();
+      editor.querySelector('input').select();
+    });
+    target.querySelectorAll('[data-doc-title-cancel]').forEach((button) => button.onclick = () => {
+      const row = button.closest('tr');
+      const editor = row.querySelector('[data-doc-title-form]');
+      editor.reset();
+      editor.hidden = true;
+      editor.querySelector('[data-doc-title-msg]').textContent = '';
+      row.querySelector('[data-doc-title-display]').hidden = false;
+      row.querySelector('[data-doc-title-edit]').hidden = false;
+    });
+    target.querySelectorAll('[data-doc-title-form]').forEach((editor) => editor.onsubmit = async (event) => {
+      event.preventDefault();
+      const row = editor.closest('tr');
+      const title = editor.querySelector('input').value.trim();
+      const msg = editor.querySelector('[data-doc-title-msg]');
+      const saveButton = editor.querySelector('button[type="submit"]');
+      if (!title) { msg.textContent = 'Bitte einen Titel eingeben.'; editor.querySelector('input').focus(); return; }
+      const doc = activeDocs.find((item) => item.id === editor.dataset.docTitleForm);
+      if (!doc) { msg.textContent = 'Dokument wurde nicht gefunden. Bitte die Seite neu laden.'; return; }
+      saveButton.disabled = true;
+      msg.textContent = '';
+      try {
+        await store.updateEventDocumentTitle(doc.id, title);
+        setNotice('ok', 'Dokumenttitel wurde geändert.');
+        await refresh();
+      } catch (error) {
+        msg.textContent = error.message || 'Dokumenttitel konnte nicht geändert werden.';
+        saveButton.disabled = false;
+      }
+    });
     target.querySelectorAll('[data-doc-archive]').forEach((button) => button.onclick = async () => {
       try { await store.archiveEventDocument(button.dataset.docArchive); setNotice('ok', 'Dokument wurde archiviert. Bestehende Ereignisse können es weiterhin versenden.'); await refresh(); }
       catch (error) { setNotice('error', error.message || 'Dokument konnte nicht archiviert werden.'); }
