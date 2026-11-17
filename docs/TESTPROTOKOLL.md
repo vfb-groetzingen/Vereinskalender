@@ -117,6 +117,8 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Filter nach Kategorie reduziert die Anzeige
 - [ ] Gesamtplan zeigt ausgewählte Räume und Plätze gemeinsam als Wochen-Zeitleiste mit Tagen als Spalten, korrekten Uhrzeitpositionen, Ressourcenfarben, Überlappungsspur und Legende; Auswahl und Wochenwechsel funktionieren
 - [ ] Gesamtplan über Browserdruck als Querformat-PDF ausgeben und prüfen
+- [ ] Menüpunkt **Belegungsplan** öffnet den Gesamtplan; der Link **Zum Belegungsplan** führt zur bisherigen Ansicht
+- [ ] Im Gesamtplan als Bearbeiter per **Neuer Termin** sowie per Doppelklick/Rechtsklick auf freie Zeitfläche Termin anlegen; Datum/Uhrzeit und Ressourcenauswahl prüfen
 - [ ] Datum im Belegungsplan wählbar, Tag und Woche umschaltbar
 - [ ] Besucher (ohne Anmeldung) sehen keine Schaltfläche zum Bearbeiten
 - [ ] Anmeldelink wird per E-Mail zugestellt und öffnet die Seite angemeldet
