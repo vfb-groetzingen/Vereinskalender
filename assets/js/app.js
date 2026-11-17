@@ -639,33 +639,67 @@ function planWeekBoard(range, groups) {
   </div>`;
 }
 
-function combinedPlanGrid(range, resources) {
-  const groups = [['Räume', resources.filter((r) => r.type === 'raum')], ['Plätze', resources.filter((r) => r.type === 'platz')]];
-  const headings = `<div class="combined-board-header" role="row"><div class="combined-resource-head" role="columnheader">Ressource</div>${range.days.map((day) => `<div class="combined-day-head" role="columnheader"><span>${esc(dayName(day))}</span><time datetime="${L.ymd(day)}">${day.getDate()}.${day.getMonth() + 1}.</time></div>`).join('')}</div>`;
-  const groupRows = groups.map(([title, list]) => {
-    if (!list.length) return '';
-    const rows = list.map((resource) => {
-      const segments = S.bookings
-        .filter((booking) => booking.resource_id === resource.id)
-        .flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
-      const cells = range.days.map((day, dayIndex) => {
-        const events = segments.filter((segment) => segment.dayIndex === dayIndex)
-          .sort((a, b) => a.start - b.start)
-          .map((segment) => {
-            const booking = segment.booking;
-            const category = catById(booking.category_id)?.name || 'Sonstige';
-            const time = `${hhmm(segment.start)}–${hhmm(segment.end)}`;
-            return `<button type="button" class="combined-booking" data-id="${esc(booking.id)}" style="--resource-color:${esc(resource.color || '#4a5568')}" title="${esc(resource.name)}: ${esc(booking.title)} · ${esc(category)} · ${esc(time)}" aria-label="${esc(resource.name)}, ${esc(dayLong(day))}: ${esc(booking.title)}, ${esc(time)}">
-              <span class="combined-booking-time">${time}</span><span class="combined-booking-title">${seriesMark(booking)}${esc(booking.title)}</span>
-            </button>`;
-          }).join('');
-        return `<div class="combined-day-cell" role="cell" aria-label="${esc(dayLong(day))}">${events || '<span class="combined-free">Frei</span>'}</div>`;
-      }).join('');
-      return `<div class="combined-resource-row" role="row"><div class="combined-resource-name" role="rowheader"><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>${cells}</div>`;
+function isoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function combinedRangeLabel(days) {
+  const first = days[0], last = days[6];
+  if (first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear()) {
+    return `${first.getDate()}. – ${last.getDate()}. ${last.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}`;
+  }
+  return `${first.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })} – ${last.toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
+function combinedTimeGrid(range, resources) {
+  const selectedIds = new Set(resources.map((resource) => resource.id));
+  const bookingsById = new Map();
+  for (const booking of S.bookings) {
+    if (!selectedIds.has(booking.resource_id)) continue;
+    let combined = bookingsById.get(booking.id);
+    if (!combined) {
+      combined = { ...booking, _selectedResourceIds: new Set() };
+      bookingsById.set(booking.id, combined);
+    }
+    combined._selectedResourceIds.add(booking.resource_id);
+  }
+  const bookings = [...bookingsById.values()].map((booking) => ({
+    ...booking,
+    _selectedResources: [...booking._selectedResourceIds].map(resById).filter(Boolean)
+  }));
+  const segments = bookings.flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
+  const blocks = LY.timeGridBlocks(segments, DS, HOUR_PX);
+  const hours = [...Array(DE - DS + 1)].map((_, i) => DS + i);
+  const height = (DE - DS) * HOUR_PX;
+  const byDay = range.days.map((_, dayIndex) => blocks.filter((block) => block.dayIndex === dayIndex));
+  const cols = range.days.map((day, dayIndex) => {
+    const events = byDay[dayIndex].map((block) => {
+      const booking = block.booking;
+      const colors = booking._selectedResources.map((resource) => resource.color || '#4a5568');
+      const gradient = colors.length > 1
+        ? `repeating-linear-gradient(135deg, ${colors.map((color, i) => `${color} ${i * 18}px ${(i + 1) * 18}px`).join(', ')})`
+        : (colors[0] || '#4a5568');
+      const resourceNames = booking._selectedResources.map((resource) => resource.name).join(', ');
+      const start = new Date(booking.starts_at), end = new Date(booking.ends_at);
+      return `<button type="button" class="event combined-event" data-id="${esc(booking.id)}"
+        style="top:${block.top}px;height:${block.height}px;left:${block.left}%;width:calc(${block.width}% - 4px);background:${esc(gradient)};border-left-color:${esc(colors[0] || '#4a5568')}"
+        title="${esc(resourceNames)} · ${esc(booking.title)} · ${hhmm(start)}–${hhmm(end)}"
+        aria-label="${esc(resourceNames)}: ${esc(booking.title)}, ${hhmm(start)} bis ${hhmm(end)}">
+        <span class="ev-time">${hhmm(start)}</span><span class="ev-title">${seriesMark(booking)}${esc(booking.title)}</span></button>`;
     }).join('');
-    return `<div class="combined-group" role="rowgroup"><div class="combined-group-label" role="row"><div class="combined-group-heading" role="rowheader" aria-colspan="8">${title}</div></div>${rows}</div>`;
+    const isToday = day.toDateString() === new Date().toDateString();
+    return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(day))}">
+      <div class="tg-head"><span class="tg-dow">${esc(dayName(day))}</span><span class="tg-date">${day.getDate()}. ${esc(day.toLocaleDateString('de-DE', { month: 'short' }))}</span></div>
+      <div class="tg-body" style="height:${height}px">${hours.map(() => '<div class="tg-hour"></div>').join('')}${events}</div>
+    </div>`;
   }).join('');
-  return `<div class="combined-board-wrap"><div class="combined-board" role="table" aria-label="Kombinierter Wochenbelegungsplan">${headings}${groupRows || '<p class="empty combined-empty">Keine Rubriken ausgewählt. Bitte links mindestens einen Raum oder Platz einblenden.</p>'}</div></div>`;
+  return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
+    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
+    <div class="tg-cols">${cols}</div>
+  </div>${bookings.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
 }
 
 async function renderCombinedPlan() {
@@ -673,12 +707,12 @@ async function renderCombinedPlan() {
   const range = { from: firstDay, to: L.addDays(firstDay, 7), days: [...Array(7)].map((_, i) => L.addDays(firstDay, i)) };
   S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
   const visible = S.resources.filter((resource) => !S.hiddenRes.has(resource.id));
-  const dateLabel = `${range.days[0].toLocaleDateString('de-DE')} – ${range.days[6].toLocaleDateString('de-DE')}`;
+  const dateLabel = combinedRangeLabel(range.days);
   const resourceGroups = [['Räume', S.resources.filter((r) => r.type === 'raum')], ['Plätze', S.resources.filter((r) => r.type === 'platz')]];
   const filters = resourceGroups.map(([title, list]) => list.length ? `<fieldset class="combined-filter-group"><legend>${title}</legend><ul class="check-list">${list.map((resource) => `<li><label class="check"><input type="checkbox" data-combined-resource="${esc(resource.id)}" ${S.hiddenRes.has(resource.id) ? '' : 'checked'}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label></li>`).join('')}</ul></fieldset>` : '').join('');
   const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
   app.innerHTML = `
-    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam in einer Wochenansicht. Die Farbe kennzeichnet die Ressource.</p></div>
+    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster: Tage als Spalten, Uhrzeiten links. Die Farbe kennzeichnet die Ressource.</p></div>
       <div class="page-actions combined-actions"><a class="btn" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zurück zum Belegungsplan</a><button type="button" class="btn btn-primary" id="combined-print">Drucken / als PDF speichern</button></div>
     </header>
     <div class="combined-layout">
@@ -691,9 +725,9 @@ async function renderCombinedPlan() {
           <label class="date-pick"><span class="sr-only">Datum in der Woche wählen</span><input type="date" id="combined-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
           <p class="range-label" aria-live="polite">${esc(dateLabel)}</p>
         </div>
-        <p class="combined-print-period">Woche: ${esc(dateLabel)}</p>
+        <p class="combined-print-period">Woche ${String(isoWeekNumber(range.days[0])).padStart(2, '0')}: ${esc(dateLabel)}</p>
         <section class="combined-legend" aria-label="Farblegende"><h2>Farblegende</h2><ul>${legend || '<li>Keine Rubriken ausgewählt</li>'}</ul></section>
-        ${combinedPlanGrid(range, visible)}
+        ${combinedTimeGrid(range, visible)}
       </section>
     </div>`;
 
@@ -1840,6 +1874,7 @@ function renderNotFound() {
 async function render() {
   renderHeader();
   const route = parseRoute();
+  document.body.classList.toggle('combined-plan-active', route.name === 'combinedPlan');
   try {
     if (route.name === 'home') renderHome();
     else if (route.name === 'room') await renderRoom(route.res);
