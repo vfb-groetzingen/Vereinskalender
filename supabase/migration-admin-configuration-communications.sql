@@ -134,7 +134,7 @@ create index if not exists admin_audit_log_occurred_idx on public.admin_audit_lo
 create index if not exists admin_audit_log_entity_idx on public.admin_audit_log (entity_type, action, occurred_at desc);
 alter table public.admin_audit_log enable row level security;
 revoke all on public.admin_audit_log from anon;
-grant select on public.admin_audit_log to authenticated, service_role;
+grant select on public.admin_audit_log to authenticated;
 drop policy if exists admin_audit_admin_read on public.admin_audit_log;
 create policy admin_audit_admin_read on public.admin_audit_log for select to authenticated using (public.is_admin());
 
@@ -253,10 +253,6 @@ begin
   elsif tg_op = 'UPDATE' then
     v_before := to_jsonb(old);
     v_after := to_jsonb(new);
-    if (new.title, new.resource_ids, new.category_id, new.starts_at, new.ends_at, new.contact_email, new.reminder_days)
-       is distinct from (old.title, old.resource_ids, old.category_id, old.starts_at, old.ends_at, old.contact_email, old.reminder_days) then
-      delete from public.booking_email_outbox where booking_id = old.id and status = 'pending';
-    end if;
     v_id := coalesce(v_after->>'id', v_after->>'singleton', 'true');
     v_action := 'updated';
   else
@@ -300,6 +296,10 @@ begin
       insert into public.admin_audit_log(actor_id, actor_email, action, entity_type, entity_id, before_data, after_data)
       values (v_actor, v_email, 'updated', 'booking', new.id::text, v_before, v_after);
     end if;
+    if (new.title, new.resource_ids, new.category_id, new.starts_at, new.ends_at, new.contact_email, new.reminder_days)
+       is distinct from (old.title, old.resource_ids, old.category_id, old.starts_at, old.ends_at, old.contact_email, old.reminder_days) then
+      delete from public.booking_email_outbox where booking_id = old.id and status = 'pending';
+    end if;
     if (new.title, new.resource_ids, new.category_id, new.starts_at, new.ends_at, new.contact_email)
        is distinct from (old.title, old.resource_ids, old.category_id, old.starts_at, old.ends_at, old.contact_email)
        and new.contact_email is not null then
@@ -327,6 +327,7 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists bookings_change_log_notify_trg on public.bookings;
 create trigger bookings_change_log_notify_trg after insert or update or delete on public.bookings
 for each row execute function public.booking_change_log_and_notify();
@@ -355,6 +356,32 @@ for each row execute function public.record_admin_change();
 drop trigger if exists event_documents_audit_trg on public.event_documents;
 create trigger event_documents_audit_trg after insert or update or delete on public.event_documents
 for each row execute function public.record_admin_change();
+
+create or replace function public.admin_update_mail_template(p_template_key text, p_template jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Nur Administratoren können Mailvorlagen ändern.' using errcode = '42501';
+  end if;
+  if p_template_key is null or p_template_key not in ('booking_confirmation', 'booking_changed', 'booking_cancelled', 'booking_reminder') then
+    raise exception 'Unbekannte Buchungs-E-Mail-Vorlage.' using errcode = '22023';
+  end if;
+  if p_template is null or jsonb_typeof(p_template) is distinct from 'object'
+     or jsonb_typeof(p_template->'subject') is distinct from 'string'
+     or jsonb_typeof(p_template->'body') is distinct from 'string' then
+    raise exception 'Die Vorlage muss Betreff und Nachrichtentext enthalten.' using errcode = '22023';
+  end if;
+  update public.site_configuration
+     set mail_templates = jsonb_set(coalesce(mail_templates, '{}'::jsonb), array[p_template_key],
+       jsonb_build_object('subject', p_template->'subject', 'body', p_template->'body'), true)
+   where singleton = true;
+  if not found then
+    raise exception 'Die Mailkonfiguration wurde nicht gefunden.' using errcode = 'P0002';
+  end if;
+end;
+$$;
+revoke all on function public.admin_update_mail_template(text, jsonb) from public, anon;
+grant execute on function public.admin_update_mail_template(text, jsonb) to authenticated;
 
 create or replace function public.admin_delete_event_document(p_document_id uuid)
 returns text language plpgsql security definer set search_path = public as $$
