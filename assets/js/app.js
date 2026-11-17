@@ -693,11 +693,11 @@ function combinedTimeGrid(range, resources) {
     const isToday = day.toDateString() === new Date().toDateString();
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(day))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(day))}</span><span class="tg-date">${day.getDate()}. ${esc(day.toLocaleDateString('de-DE', { month: 'short' }))}</span></div>
-      <div class="tg-body" style="height:${height}px">${hours.map(() => '<div class="tg-hour"></div>').join('')}${events}</div>
+      <div class="tg-body" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
     </div>`;
   }).join('');
   return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
-    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
+    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
     <div class="tg-cols">${cols}</div>
   </div>${bookings.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
 }
