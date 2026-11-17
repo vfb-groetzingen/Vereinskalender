@@ -100,26 +100,62 @@ export async function mountConfiguration(target, { subpage, config, publicConten
   }
 
   if (subpage === 'mail') {
+    let persistedTemplates = { ...templates };
     const sections = Object.entries(TEMPLATE_LABELS).map(([key, label]) => {
-      const item = templates[key] || {};
+      const item = persistedTemplates[key] || {};
       return `<details class="template-editor" open><summary>${label}</summary>
         <div class="field"><label for="tpl-${key}-subject">Betreff</label><input class="input" id="tpl-${key}-subject" data-template="${key}" data-template-part="subject" maxlength="200" value="${esc(item.subject || '')}"></div>
         ${textField(`tpl-${key}-body`, 'Nachrichtentext', item.body || '', 6).replace('<textarea', `<textarea data-template="${key}" data-template-part="body"`)}
         <div class="template-preview"><strong>Vorschau</strong><p>Betreff: <span data-preview-subject="${key}">${esc(previewTemplate(item.subject))}</span></p><pre data-preview="${key}">${esc(previewTemplate(item.body))}</pre></div>
+        <div class="template-save-row"><button class="btn btn-primary" type="button" data-save-template="${key}">Vorlage speichern</button><p class="msg" data-template-msg="${key}" role="status" aria-live="polite"></p></div>
       </details>`;
     }).join('');
     target.innerHTML = `<section class="section admin-section"><h2>Mailprofile und Vorlagen</h2>
       <p class="hint">Der technische Absender bleibt das authentifizierte Strato-Postfach. Das ausgewählte Profil legt Anzeigename und Antwortadresse fest.</p>
-      <form id="mail-config-form" class="form"><div class="config-list-head"><h3>Antwortprofile</h3><button class="btn btn-small" id="mail-profile-add" type="button">Profil hinzufügen</button></div>
-        <div id="mail-profile-list">${mailProfileRows(profiles)}</div>
-        <p class="hint">Das erste Profil ist der Standard für neue Ereignisse und Buchungsmails. Antwortadressen müssen erreichbar sein. Der technische Absender bleibt immer vfb-app@vfb-groetzingen.de.</p>
-        <h3>Buchungs-E-Mail-Vorlagen</h3><p class="hint">Platzhalter: {{title}}, {{date}}, {{time_range}}, {{resource_names}}, {{signature}}.</p>
-        ${sections}
-        ${textField('event-signature', 'Standardsignatur für neue Ereignisse', signatureToPlain(safeConfig.event_signature_html || 'Mit freundlichen Grüßen\nVfB Grötzingen\n\nInternet: http://www.vfb-groetzingen.de/'), 4)}
-        <p class="hint">Die Signatur wird als Klartext bearbeitet und beim Speichern sicher in HTML umgewandelt.</p>
-        <button class="btn btn-primary" type="submit">Mailprofile und Vorlagen speichern</button><p class="msg" id="mail-config-msg" role="alert"></p>
-      </form></section>`;
+      <div class="form">
+        <section class="mail-config-section" aria-labelledby="mail-profiles-heading">
+          <div class="config-list-head"><h3 id="mail-profiles-heading">Antwortprofile</h3><button class="btn btn-small" id="mail-profile-add" type="button">Profil hinzufügen</button></div>
+          <div id="mail-profile-list">${mailProfileRows(profiles)}</div>
+          <p class="hint">Das erste Profil ist der Standard für neue Ereignisse und Buchungsmails. Antwortadressen müssen erreichbar sein. Der technische Absender bleibt immer vfb-app@vfb-groetzingen.de.</p>
+          <div class="mail-save-row"><button class="btn btn-primary" id="mail-profile-save" type="button">Antwortprofile speichern</button><p class="msg" id="mail-profile-msg" role="status" aria-live="polite"></p></div>
+        </section>
+        <section class="mail-config-section" aria-labelledby="mail-templates-heading">
+          <h3 id="mail-templates-heading">Buchungs-E-Mail-Vorlagen</h3><p class="hint">Platzhalter: {{title}}, {{date}}, {{time_range}}, {{resource_names}}, {{signature}}. Jede Vorlage wird einzeln gespeichert.</p>
+          ${sections}
+        </section>
+        <section class="mail-config-section" aria-labelledby="mail-signature-heading">
+          <h3 id="mail-signature-heading">Signatur</h3>
+          ${textField('event-signature', 'Standardsignatur für neue Ereignisse', signatureToPlain(safeConfig.event_signature_html || 'Mit freundlichen Gr\u00fc\u00dfen\nVfB Gr\u00f6tzingen\n\nInternet: http://www.vfb-groetzingen.de/'), 4)}
+          <p class="hint">Die Signatur wird als Klartext bearbeitet und beim Speichern sicher in HTML umgewandelt.</p>
+          <div class="mail-save-row"><button class="btn btn-primary" id="mail-signature-save" type="button">Signatur speichern</button><p class="msg" id="mail-signature-msg" role="status" aria-live="polite"></p></div>
+        </section>
+      </div></section>`;
+
     const profileList = target.querySelector('#mail-profile-list');
+    const updateProfilePreview = (row) => {
+      const display = row.querySelector('[data-profile-display]')?.value.trim() || 'VfB Gr\u00f6tzingen';
+      const reply = row.querySelector('[data-profile-reply]')?.value.trim() || 'Antwortadresse';
+      const preview = row.querySelector('[data-profile-preview]');
+      if (preview) preview.textContent = `Absender: ${display} <vfb-app@vfb-groetzingen.de> \u00b7 Antworten an: ${reply}`;
+    };
+    const report = (message, text, success = false) => {
+      message.textContent = text;
+      message.classList.toggle('msg-success', success);
+    };
+    const runSave = async (button, message, operation, successText) => {
+      button.disabled = true;
+      report(message, '');
+      try {
+        await operation();
+        report(message, successText, true);
+        setNotice('ok', successText);
+      } catch (error) {
+        report(message, error?.message || 'Einstellungen konnten nicht gespeichert werden.');
+      } finally {
+        button.disabled = false;
+      }
+    };
+
     target.querySelector('#mail-profile-add').onclick = () => {
       profileList.insertAdjacentHTML('beforeend', mailProfileRows([{ id: crypto.randomUUID(), label: '', display_name: '', reply_to: '' }]).replace(' disabled', ''));
       const row = profileList.querySelector('[data-profile-row]:last-child');
@@ -143,19 +179,14 @@ export async function mountConfiguration(target, { subpage, config, publicConten
       if (bodyPreview) bodyPreview.textContent = previewTemplate(body);
     };
     target.querySelectorAll('[data-template]').forEach((field) => field.addEventListener('input', () => updateTemplatePreview(field.dataset.template)));
-    const updateProfilePreview = (row) => {
-      const display = row.querySelector('[data-profile-display]')?.value.trim() || 'VfB Grötzingen';
-      const reply = row.querySelector('[data-profile-reply]')?.value.trim() || 'Antwortadresse';
-      const preview = row.querySelector('[data-profile-preview]');
-      if (preview) preview.textContent = `Absender: ${display} <vfb-app@vfb-groetzingen.de> · Antworten an: ${reply}`;
-    };
     profileList.querySelectorAll('[data-profile-row]').forEach((row) => {
       updateProfilePreview(row);
       row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => updateProfilePreview(row)));
     });
-    target.querySelector('#mail-config-form').onsubmit = async (event) => {
-      event.preventDefault();
-      const msg = target.querySelector('#mail-config-msg');
+
+    target.querySelector('#mail-profile-save').onclick = () => {
+      const button = target.querySelector('#mail-profile-save');
+      const message = target.querySelector('#mail-profile-msg');
       const values = [...profileList.querySelectorAll('[data-profile-row]')].map((row) => ({
         id: row.dataset.profileId || crypto.randomUUID(),
         label: row.querySelector('[data-profile-label]').value.trim(),
@@ -163,20 +194,30 @@ export async function mountConfiguration(target, { subpage, config, publicConten
         reply_to: row.querySelector('[data-profile-reply]').value.trim()
       }));
       if (!values.length || values.some((item) => !item.label || !item.display_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.reply_to))) {
-        msg.textContent = 'Bitte mindestens ein vollständiges Mailprofil mit gültiger Antwortadresse eintragen.'; return;
+        report(message, 'Bitte mindestens ein vollst\u00e4ndiges Mailprofil mit g\u00fcltiger Antwortadresse eintragen.');
+        return;
       }
-      const updatedTemplates = {};
-      for (const key of Object.keys(TEMPLATE_LABELS)) {
-        updatedTemplates[key] = {
+      return runSave(button, message, () => store.saveSiteConfiguration({ mail_profiles: values }), 'Antwortprofile gespeichert.');
+    };
+    target.querySelectorAll('[data-save-template]').forEach((button) => {
+      button.onclick = () => {
+        const key = button.dataset.saveTemplate;
+        const message = target.querySelector(`[data-template-msg="${key}"]`);
+        const template = {
           subject: target.querySelector(`[data-template="${key}"][data-template-part="subject"]`).value.trim(),
           body: target.querySelector(`[data-template="${key}"][data-template-part="body"]`).value.trim()
         };
-      }
-      try {
-        await store.saveSiteConfiguration({ mail_profiles: values, mail_templates: updatedTemplates, event_signature_html: signatureToSafeHtml(target.querySelector('#event-signature').value) });
-        setNotice('ok', 'Mailprofile und Vorlagen wurden gespeichert.');
-        await refresh();
-      } catch (error) { msg.textContent = error.message || 'Einstellungen konnten nicht gespeichert werden.'; }
+        return runSave(button, message, async () => {
+          await store.saveMailTemplate(key, template);
+          persistedTemplates = { ...persistedTemplates, [key]: template };
+        }, `${TEMPLATE_LABELS[key]} gespeichert.`);
+      };
+    });
+    target.querySelector('#mail-signature-save').onclick = () => {
+      const button = target.querySelector('#mail-signature-save');
+      const message = target.querySelector('#mail-signature-msg');
+      const signature = signatureToSafeHtml(target.querySelector('#event-signature').value);
+      return runSave(button, message, () => store.saveSiteConfiguration({ event_signature_html: signature }), 'Signatur gespeichert.');
     };
     return;
   }
@@ -223,148 +264,28 @@ export async function mountConfiguration(target, { subpage, config, publicConten
   }
 
   if (subpage === 'documents') {
-    const canManageDocs = Boolean(store.isAdmin?.());
     const docRows = activeDocs.map((doc) => {
       const usedBy = eventRows.filter((event) => (event.document_ids || []).includes(doc.id));
-      const titleEditButton = canManageDocs ? `<button class="btn btn-small" type="button" data-doc-title-edit="${esc(doc.id)}" aria-label="Titel von ${esc(doc.title)} bearbeiten">Titel ändern</button>` : '';
-      const titleEditForm = canManageDocs ? `<form class="doc-title-editor" data-doc-title-form="${esc(doc.id)}" hidden>
-        <label class="sr-only" for="doc-title-edit-${esc(doc.id)}">Titel für ${esc(doc.file_name)}</label>
-        <input id="doc-title-edit-${esc(doc.id)}" class="input" maxlength="160" required value="${esc(doc.title)}">
-        <div class="doc-title-editor-actions"><button class="btn btn-primary btn-small" type="submit">Speichern</button><button class="btn btn-small" type="button" data-doc-title-cancel>Abbrechen</button></div>
-        <p class="msg" data-doc-title-msg role="alert"></p>
-      </form>` : '';
-      return `<tr><td class="doc-title-cell"><div class="doc-title-display-row"><span data-doc-title-display>${esc(doc.title)}</span>${titleEditButton}</div>${titleEditForm}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
+      return `<tr><td>${esc(doc.title)}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
     }).join('');
     target.innerHTML = `<section class="section admin-section"><h2>Dokumentenablage</h2><p>Bilder und PDFs können bei Ereignissen ausgewählt und als E-Mail-Anhang versendet werden. Bilder werden auf höchstens 1600 Pixel verkleinert und als WebP komprimiert. Das Gesamtlimit pro E-Mail bleibt 5 MB. Wird ein Ereignis gelöscht, wird nur seine Auswahl entfernt; das Original in der Ablage bleibt erhalten.</p>
-      <form id="document-upload-form" class="form"><div class="field"><label for="doc-title">Anzeigename</label><input id="doc-title" class="input" maxlength="160" required placeholder="Titel des Dokuments"></div><div class="field"><label for="doc-file">Bild oder PDF</label><div id="doc-drop-zone" class="doc-drop-zone" tabindex="0" role="button" aria-label="Datei hier ablegen oder auswählen" aria-describedby="doc-drop-help"><span class="doc-drop-icon" aria-hidden="true">⇧</span><span class="doc-drop-copy"><strong>Datei hier ablegen</strong><br><span>oder per Klick auswählen</span></span><span class="btn btn-small" aria-hidden="true">Datei auswählen</span><input id="doc-file" class="doc-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" aria-hidden="true" tabindex="-1"></div><p class="hint" id="doc-drop-help">Eine Datei pro Upload, höchstens 5 MB. Unterstützt: JPEG, PNG, WebP und PDF.</p><p class="doc-selected-file" id="doc-selected-file" aria-live="polite">Noch keine Datei ausgewählt.</p></div><button class="btn btn-primary" type="submit">Dokument hochladen</button><p class="msg" id="doc-msg" role="alert"></p></form>
+      <form id="document-upload-form" class="form"><div class="field"><label for="doc-title">Anzeigename</label><input id="doc-title" class="input" maxlength="160" required></div><div class="field"><label for="doc-file">Bild oder PDF</label><input id="doc-file" class="input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div><button class="btn btn-primary" type="submit">Dokument hochladen</button><p class="hint">Einzeldatei höchstens 5 MB. Unterstützt: JPEG, PNG, WebP und PDF.</p><p class="msg" id="doc-msg" role="alert"></p></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Datei</th><th>Größe</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${docRows || '<tr><td colspan="5">Noch keine Dokumente abgelegt.</td></tr>'}</tbody></table></div></section>`;
-
-    const form = target.querySelector('#document-upload-form');
-    const input = target.querySelector('#doc-file');
-    const zone = target.querySelector('#doc-drop-zone');
-    const titleInput = target.querySelector('#doc-title');
-    const selectedFileText = target.querySelector('#doc-selected-file');
-    const uploadMessage = target.querySelector('#doc-msg');
-    const uploadButton = form.querySelector('button[type="submit"]');
-    let pendingFile = null;
-    let dragDepth = 0;
-
-    const chooseFile = (file) => {
-      pendingFile = file || null;
-      zone.classList.remove('is-invalid');
-      uploadMessage.textContent = '';
-      if (!file) {
-        selectedFileText.textContent = 'Noch keine Datei ausgewählt.';
-        return;
-      }
-      selectedFileText.textContent = `${file.name} (${Math.max(1, Math.ceil(file.size / 1024))} KB) ausgewählt.`;
-      const suggested = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 160);
-      if (!titleInput.value.trim() || titleInput.value === titleInput.dataset.autoTitle) {
-        titleInput.value = suggested;
-        titleInput.dataset.autoTitle = suggested;
-      }
-    };
-
-    input.addEventListener('change', () => chooseFile(input.files?.[0] || null));
-    zone.addEventListener('click', (event) => {
-      if (event.target !== input) input.click();
-    });
-    zone.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        input.click();
-      }
-    });
-    zone.addEventListener('dragenter', (event) => {
+    target.querySelector('#document-upload-form').onsubmit = async (event) => {
       event.preventDefault();
-      dragDepth += 1;
-      zone.classList.add('is-dragover');
-    });
-    zone.addEventListener('dragover', (event) => event.preventDefault());
-    zone.addEventListener('dragleave', (event) => {
-      event.preventDefault();
-      dragDepth = Math.max(0, dragDepth - 1);
-      if (!dragDepth) zone.classList.remove('is-dragover');
-    });
-    zone.addEventListener('drop', (event) => {
-      event.preventDefault();
-      dragDepth = 0;
-      zone.classList.remove('is-dragover');
-      const files = [...(event.dataTransfer?.files || [])];
-      if (!files.length) return;
-      chooseFile(files[0]);
-      if (files.length > 1) selectedFileText.textContent += ' Es wird jeweils eine Datei hochgeladen.';
-    });
-
-    form.onsubmit = async (event) => {
-      event.preventDefault();
-      uploadMessage.textContent = '';
-      const file = pendingFile || input.files?.[0];
-      if (!file) {
-        uploadMessage.textContent = 'Bitte eine Datei auswählen oder in das Feld ziehen.';
-        zone.classList.add('is-invalid');
-        zone.focus();
-        return;
-      }
-      const title = titleInput.value.trim();
-      if (!title) {
-        uploadMessage.textContent = 'Bitte einen Titel eingeben.';
-        titleInput.focus();
-        return;
-      }
-      uploadButton.disabled = true;
-      uploadButton.textContent = 'Wird hochgeladen …';
+      const input = target.querySelector('#doc-file');
+      const file = input.files?.[0];
+      const msg = target.querySelector('#doc-msg');
+      if (!file) return;
+      const button = target.querySelector('button[type="submit"]'); button.disabled = true;
       try {
         const prepared = await prepareDocument(file);
         if (prepared.size > 5 * 1024 * 1024) throw new Error('Die Datei überschreitet nach der Bildkomprimierung 5 MB.');
-        await store.uploadEventDocument(prepared, title);
+        await store.uploadEventDocument(prepared, target.querySelector('#doc-title').value.trim());
         setNotice('ok', 'Dokument wurde in der Ablage gespeichert.');
         await refresh();
-      } catch (error) {
-        uploadMessage.textContent = error.message || 'Dokument konnte nicht hochgeladen werden.';
-        uploadButton.disabled = false;
-        uploadButton.textContent = 'Dokument hochladen';
-      }
+      } catch (error) { msg.textContent = error.message || 'Dokument konnte nicht hochgeladen werden.'; button.disabled = false; }
     };
-
-    target.querySelectorAll('[data-doc-title-edit]').forEach((button) => button.onclick = () => {
-      const row = button.closest('tr');
-      row.querySelector('[data-doc-title-display]').hidden = true;
-      button.hidden = true;
-      const editor = row.querySelector('[data-doc-title-form]');
-      editor.hidden = false;
-      editor.querySelector('input').focus();
-      editor.querySelector('input').select();
-    });
-    target.querySelectorAll('[data-doc-title-cancel]').forEach((button) => button.onclick = () => {
-      const row = button.closest('tr');
-      const editor = row.querySelector('[data-doc-title-form]');
-      editor.reset();
-      editor.hidden = true;
-      editor.querySelector('[data-doc-title-msg]').textContent = '';
-      row.querySelector('[data-doc-title-display]').hidden = false;
-      row.querySelector('[data-doc-title-edit]').hidden = false;
-    });
-    target.querySelectorAll('[data-doc-title-form]').forEach((editor) => editor.onsubmit = async (event) => {
-      event.preventDefault();
-      const row = editor.closest('tr');
-      const title = editor.querySelector('input').value.trim();
-      const msg = editor.querySelector('[data-doc-title-msg]');
-      const saveButton = editor.querySelector('button[type="submit"]');
-      if (!title) { msg.textContent = 'Bitte einen Titel eingeben.'; editor.querySelector('input').focus(); return; }
-      const doc = activeDocs.find((item) => item.id === editor.dataset.docTitleForm);
-      if (!doc) { msg.textContent = 'Dokument wurde nicht gefunden. Bitte die Seite neu laden.'; return; }
-      saveButton.disabled = true;
-      msg.textContent = '';
-      try {
-        await store.updateEventDocumentTitle(doc.id, title);
-        setNotice('ok', 'Dokumenttitel wurde geändert.');
-        await refresh();
-      } catch (error) {
-        msg.textContent = error.message || 'Dokumenttitel konnte nicht geändert werden.';
-        saveButton.disabled = false;
-      }
-    });
     target.querySelectorAll('[data-doc-archive]').forEach((button) => button.onclick = async () => {
       try { await store.archiveEventDocument(button.dataset.docArchive); setNotice('ok', 'Dokument wurde archiviert. Bestehende Ereignisse können es weiterhin versenden.'); await refresh(); }
       catch (error) { setNotice('error', error.message || 'Dokument konnte nicht archiviert werden.'); }

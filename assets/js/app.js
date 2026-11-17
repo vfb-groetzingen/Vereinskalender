@@ -79,6 +79,8 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const exportButton = e.target.closest('[data-export-target]');
   if (exportButton) { e.preventDefault(); openExportDialog(exportButton.dataset.exportTarget || 'all'); return; }
+  const printButton = e.target.closest('[data-print-view]');
+  if (printButton) { e.preventDefault(); window.print(); return; }
   const bulkDeleteButton = e.target.closest('[data-bulk-delete]');
   if (bulkDeleteButton) { e.preventDefault(); openBulkDeleteDialog(); }
 });
@@ -713,7 +715,7 @@ async function renderCombinedPlan() {
   const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
   app.innerHTML = `
     <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster: Tage als Spalten, Uhrzeiten links. Die Farbe kennzeichnet die Ressource.</p></div>
-      <div class="page-actions combined-actions"><a class="btn" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a>${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" id="combined-print">Drucken / als PDF speichern</button></div>
+      <div class="page-actions combined-actions"><a class="btn btn-ghost" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a><button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>${isEditor() ? '<button type="button" class="btn" id="combined-import">Spiele importieren</button>' : ''}${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button></div>
     </header>
     <div class="combined-layout">
       <aside class="sidebar combined-filter" aria-label="Angezeigte Rubriken">
@@ -738,7 +740,8 @@ async function renderCombinedPlan() {
     if (!resource_id) return setNotice('error', 'Bitte zuerst eine Ressource anlegen.');
     openBookingForm({ resource_id, date: S.planAnchor, startTime: '17:00' });
   };
-  $('#combined-print').onclick = () => window.print();
+  const combinedImport = $('#combined-import');
+  if (combinedImport) combinedImport.onclick = () => openImport(null);
   bindCalendarCreate('.combined-time-grid .tg-body[data-date]', (event, body) => ({
     resource_id: defaultResourceId(), date: L.parseISODate(body.dataset.date),
     startTime: snappedTimeFromY(event, body, HOUR_PX)
@@ -775,6 +778,7 @@ async function renderPlan() {
         <div class="page-actions">
           <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -804,6 +808,7 @@ async function renderPlan() {
         <div class="page-actions">
           <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -883,6 +888,7 @@ async function renderPlan() {
       <div class="page-actions">
         <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
         ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
         ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -1886,6 +1892,7 @@ async function render() {
   renderHeader();
   const route = parseRoute();
   document.body.classList.toggle('combined-plan-active', route.name === 'combinedPlan');
+  document.body.classList.toggle('booking-plan-active', route.name === 'plan');
   try {
     if (route.name === 'home') renderHome();
     else if (route.name === 'room') await renderRoom(route.res);
