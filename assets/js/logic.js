@@ -160,22 +160,28 @@ export function buildFollowingSeriesUpdates(bookings, selected, { dateStr, start
     });
 }
 
-export function seriesDates(dateStr, count, frequency = 'weekly') {
-  const base = parseISODate(dateStr);
-  if (!Number.isInteger(count) || count < 1 || count > 52) throw new RangeError('Die Anzahl muss zwischen 1 und 52 liegen.');
+export function recurrenceDate(dateStr, index, frequency = 'weekly') {
+  if (!Number.isInteger(index)) throw new RangeError('Der Serienindex muss eine ganze Zahl sein.');
   if (!['weekly', 'biweekly', 'monthly', 'yearly'].includes(frequency)) throw new RangeError('Unbekanntes Wiederholungsintervall.');
-  const dates = [];
-  for (let i = 0; i < count; i++) {
-    if (frequency === 'weekly') dates.push(ymd(addDays(base, i * 7)));
-    else if (frequency === 'biweekly') dates.push(ymd(addDays(base, i * 14)));
-    else {
-      const year = base.getFullYear() + (frequency === 'yearly' ? i : Math.floor((base.getMonth() + i) / 12));
-      const month = frequency === 'yearly' ? base.getMonth() : (base.getMonth() + i) % 12;
-      const day = Math.min(base.getDate(), new Date(year, month + 1, 0).getDate());
-      dates.push(ymd(new Date(year, month, day)));
-    }
+  const base = parseISODate(dateStr);
+  if (frequency === 'weekly') return ymd(addDays(base, index * 7));
+  if (frequency === 'biweekly') return ymd(addDays(base, index * 14));
+  if (frequency === 'yearly') {
+    const year = base.getFullYear() + index;
+    const month = base.getMonth();
+    const day = Math.min(base.getDate(), new Date(year, month + 1, 0).getDate());
+    return ymd(new Date(year, month, day));
   }
-  return dates;
+  const monthIndex = base.getFullYear() * 12 + base.getMonth() + index;
+  const year = Math.floor(monthIndex / 12);
+  const month = ((monthIndex % 12) + 12) % 12;
+  const day = Math.min(base.getDate(), new Date(year, month + 1, 0).getDate());
+  return ymd(new Date(year, month, day));
+}
+
+export function seriesDates(dateStr, count, frequency = 'weekly') {
+  if (!Number.isInteger(count) || count < 1 || count > 52) throw new RangeError('Die Anzahl muss zwischen 1 und 52 liegen.');
+  return Array.from({ length: count }, (_, index) => recurrenceDate(dateStr, index, frequency));
 }
 
 // CSV-Parser mit Erkennung des Trennzeichens (; oder ,) und Anführungszeichen.
@@ -310,8 +316,12 @@ export function validateMatchTable(table, { resource, resources = null, category
   const conflicts = [];
   const bookings = [];
   const availableResources = resources?.length ? resources : (resource ? [resource] : []);
-  if (!resource || !category) {
-    errors.push({ line: 1, message: 'Bitte den aktuellen Kalender und eine Kategorie auswählen.' });
+  if (!category) {
+    errors.push({ line: 1, message: 'Bitte eine Kategorie auswählen.' });
+    return { bookings, errors, warnings, conflicts };
+  }
+  if (!availableResources.length) {
+    errors.push({ line: 1, message: 'Es sind keine Zielkalender verfügbar.' });
     return { bookings, errors, warnings, conflicts };
   }
   if (!table || table.length < 2) {
@@ -356,12 +366,17 @@ export function validateMatchTable(table, { resource, resources = null, category
     if (startDate.error) rowErrors.push(`Start Date: ${startDate.error}`);
     if (startTime.error) rowErrors.push(`Start Time: ${startTime.error}`);
 
-    let targetResource = resource;
+    let targetResource = resource || null;
     const calendarName = cols.calendar >= 0 ? String(row[cols.calendar] ?? '').trim() : '';
     if (calendarName) {
       const match = resourceByKey.get(calendarName.toLowerCase());
       if (match) targetResource = match;
-      else warnings.push({ line, message: `Zeile ${line}: Kalender „${calendarName}“ nicht gefunden; der aktuelle Kalender „${resource.name}“ wird verwendet.` });
+      else if (resource) warnings.push({ line, message: `Zeile ${line}: Kalender „${calendarName}“ nicht gefunden; der ausgewählte Standardkalender „${resource.name}“ wird verwendet.` });
+      else rowErrors.push(`Calendar Name „${calendarName}“ ist unbekannt. Bitte einen Zielkalender auswählen.`);
+    } else if (resource) {
+      targetResource = resource;
+    } else {
+      rowErrors.push('Calendar Name fehlt. Bitte einen Zielkalender auswählen oder pro Zeile einen Kalendernamen bzw. Slug eintragen.');
     }
 
     const endDateText = cols.endDate >= 0 ? String(row[cols.endDate] ?? '').trim() : '';
