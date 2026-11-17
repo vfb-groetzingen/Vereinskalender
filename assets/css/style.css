@@ -491,3 +491,38 @@ textarea.input { resize: vertical; }
   body.combined-plan-active .combined-time-grid .ev-time { font-size: 6.5pt; }
   body.combined-plan-active .combined-time-grid .ev-title { font-size: 7pt; }
 }
+
+/* Druckansicht des klassischen Belegungsplans. */
+@page booking-plan { size: landscape; margin: 10mm; }
+@media print {
+  body.booking-plan-active { page: booking-plan; display: block; background: #fff; color: #111; font-size: 9pt; }
+  body.booking-plan-active .site-header, body.booking-plan-active .site-footer, body.booking-plan-active .skip-link, body.booking-plan-active #notice,
+  body.booking-plan-active .page-head .page-actions, body.booking-plan-active .plan-layout > .sidebar { display: none !important; }
+  body.booking-plan-active .main, body.booking-plan-active .wrap { width: 100%; max-width: none; margin: 0; padding: 0; }
+  body.booking-plan-active .page-head { margin: 0 0 3mm; }
+  body.booking-plan-active .page-head h1 { font-size: 15pt; }
+  body.booking-plan-active .plan-layout { display: block; }
+  body.booking-plan-active .plan-main { width: 100%; min-width: 0; }
+  body.booking-plan-active .plan-main > .toolbar { display: flex; gap: 0; padding: 0 0 2mm; margin: 0 0 2mm; border: 0; border-bottom: 1px solid #999; border-radius: 0; box-shadow: none; background: #fff; }
+  body.booking-plan-active .plan-main > .toolbar .btn-group, body.booking-plan-active .plan-main > .toolbar .date-pick { display: none !important; }
+  body.booking-plan-active .plan-main > .toolbar .range-label { display: block; min-width: 0; margin: 0; color: #111; font-size: 10pt; font-weight: 700; }
+  body.booking-plan-active .week-board, body.booking-plan-active .timeline { max-height: none; overflow: visible; border-radius: 0; box-shadow: none; }
+  body.booking-plan-active .week-grid-header, body.booking-plan-active .week-resource-row { min-width: 0; grid-template-columns: 34mm repeat(7, minmax(0, 1fr)); }
+  body.booking-plan-active .week-grid-header, body.booking-plan-active .week-resource-head, body.booking-plan-active .week-resource-label,
+  body.booking-plan-active .tl-head, body.booking-plan-active .tl-corner, body.booking-plan-active .tl-label { position: static; }
+  body.booking-plan-active .week-resource-head, body.booking-plan-active .week-resource-label { min-width: 0; }
+  body.booking-plan-active .week-day-cell { padding: 1mm; }
+  body.booking-plan-active .week-booking, body.booking-plan-active .bar, body.booking-plan-active .plan-month-event { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.booking-plan-active .plan-month-grid, body.booking-plan-active .plan-month-grid .mg { min-width: 0; }
+  body.booking-plan-active .plan-month-grid .mg-cell { min-height: 22mm; padding: 1mm; }
+  body.booking-plan-active .plan-month-grid .chip-ev { font-size: 7pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.booking-plan-active .tl-group-title { position: static; }
+}
+
+
+/* Separate Speicheraktionen in der Mailkonfiguration. */
+.mail-config-section { padding: .25rem 0 1rem; border-bottom: 1px solid var(--border); }
+.mail-config-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.mail-config-section > h3 { margin-top: .25rem; }
+.mail-save-row, .template-save-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: .7rem; }
+.msg-success { color: var(--ok); }
