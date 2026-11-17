@@ -2,7 +2,7 @@
 
 Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 
-- **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan, den kombinierbaren druckbaren Gesamtbelegungsplan und QR-Codes. Der Gesamtbelegungsplan zeigt die ausgewählten Ressourcen als gemeinsame Wochen-Zeitleiste mit Tagen als Spalten und Ressourcenfarben.
+- **Besucher** sehen ohne Anmeldung alle Raumkalender (Tag, Woche, Monat), den Belegungsplan, den kombinierbaren druckbaren Gesamtbelegungsplan und QR-Codes. Der Gesamtbelegungsplan zeigt die ausgewählten Ressourcen als gemeinsame Wochen-Zeitleiste mit Tagen als Spalten und Ressourcenfarben. Der Menüpunkt **Belegungsplan** öffnet diese Gesamtansicht; von dort führt ein Link zum bisherigen Belegungsplan.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Terminserien** unterstützen wöchentliche, zweiwöchentliche, monatliche und jährliche Wiederholungen: als begrenzte Serie mit bis zu 52 Terminen oder fortlaufend mit automatischer Ergänzung im rollierenden Sechsmonatszeitraum. Einzelne Vorkommen lassen sich ausnehmen; fortlaufende Serien können ab einem Termin beendet werden.
