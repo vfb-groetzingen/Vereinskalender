@@ -35,14 +35,15 @@ Vorhandene Konten: GitHub, Supabase und das Strato-Postfach `vfb-app@vfb-groetzi
 
 1. **Authentication > Sign In / Providers > Email**: E-Mail-Anmeldung aktiviert lassen. Die Option **Allow new users to sign up** deaktivieren. Damit können sich nur eingeladene Personen anmelden.
 2. **Authentication > URL Configuration**:
-   - **Site URL**: `https://DEIN-GITHUB-NAME.github.io/vereinskalender/`
+   - **Site URL**: `https://DEIN-GITHUB-NAME.github.io/Vereinskalender/`
    - **Redirect URLs**: dieselbe Adresse eintragen.
 3. **Authentication > Emails > SMTP Settings**: **Enable Custom SMTP** ist für den Anmeldelink-Versand eingeschaltet. Laut derzeitiger Konfiguration:
    - Host: `smtp.strato.de`, Port: `465`
    - Benutzername/Absender: `vfb-app@vfb-groetzingen.de`
    - Passwort: das Kennwort des Strato-Postfachs (niemals in GitHub committen oder im Chat teilen)
-   Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen.
-4. **Authentication > Emails > Magic Link** (Vorlage): Der Text sollte erklären, dass es sich um einen Anmeldelink für den Vereinskalender handelt.
+   Hinweis: Die Oberfläche von Supabase ändert sich gelegentlich. Falls der Menüpunkt anders heißt, im Dashboard nach „SMTP“ suchen. Diese Supabase-Auth-SMTP-Einstellung ist getrennt von den GitHub-Actions-Secrets, die Buchungs- und Ereignis-E-Mails versenden.
+4. Für Passwort-Wiederherstellung und Anmeldelinks muss die exakte Redirect-Adresse einschließlich Groß-/Kleinschreibung und abschließendem Schrägstrich in **Authentication > URL Configuration > Redirect URLs** zugelassen sein. Die App verwendet `CONFIG.BASE_PATH`; aktuell ergibt das `https://DEIN-GITHUB-NAME.github.io/Vereinskalender/`. Die neutrale Meldung nach „Passwort vergessen?“ bestätigt nicht, dass eine E-Mail tatsächlich zugestellt wurde. Bei fehlender Mail die **Auth-Logs** und den Supabase-SMTP-Fehler prüfen.
+5. **Authentication > Emails > Magic Link** (Vorlage): Der Text sollte erklären, dass es sich um einen Anmeldelink für den Vereinskalender handelt.
 
 ## Schritt 4: Ersten Administrator anlegen
 
@@ -56,7 +57,7 @@ Die Werte stehen unter **Project Settings > API**.
 
 Datei `assets/js/config.js` anpassen:
 
-- `BASE_PATH`: `'/vereinskalender/'` (Name des GitHub-Repositorys, mit Schrägstrichen)
+- `BASE_PATH`: `'/Vereinskalender/'` (Name des GitHub-Repositorys, mit Schrägstrichen)
 - `SUPABASE_URL`: die Project URL, z. B. `https://xyzxyz.supabase.co`
 - `SUPABASE_ANON_KEY`: der Schlüssel mit der Bezeichnung **anon public**
 
@@ -64,15 +65,15 @@ Datei `assets/js/config.js` anpassen:
 
 Solange `SUPABASE_URL` leer ist, läuft die Seite im **Demo-Modus** mit Beispieldaten. Der Demo-Modus ist für Tests gedacht und bietet keinen echten Schutz.
 
-Datei `data/seed.json` anpassen: Bei `settings.public_base_url` die eigene Adresse eintragen, z. B. `https://xyzxyz.github.io/vereinskalender`. Die QR-Codes werden danach automatisch neu erzeugt (Schritt 6).
+Datei `data/seed.json` anpassen: Bei `settings.public_base_url` die eigene Adresse eintragen, z. B. `https://xyzxyz.github.io/Vereinskalender`. Die QR-Codes werden danach automatisch neu erzeugt (Schritt 6).
 
 ## Schritt 6: GitHub-Repository und Veröffentlichung
 
-1. Auf GitHub ein **öffentliches** Repository mit dem Namen `vereinskalender` anlegen.
+1. Auf GitHub ein **öffentliches** Repository mit dem Namen `Vereinskalender` anlegen.
    - Warum öffentlich: Der kostenlose Tarif von GitHub Pages erfordert ein öffentliches Repository. Es enthält keine Geheimnisse. Die Sicherheit liegt in der Datenbank.
 2. Alle Dateien des Projekts hochladen (oder per Git übertragen). Dateien mit `.gitignore` werden ausgeschlossen.
 3. **Settings > Pages**: Source **Deploy from a branch**, Branch **main**, Ordner **/ (root)**.
-4. Nach ca. 1 bis 2 Minuten ist die Seite unter `https://DEIN-GITHUB-NAME.github.io/vereinskalender/` erreichbar.
+4. Nach ca. 1 bis 2 Minuten ist die Seite unter `https://DEIN-GITHUB-NAME.github.io/Vereinskalender/` erreichbar.
 5. Den Ordner `.nojekyll` nicht löschen. Er ist für GitHub Pages notwendig.
 
 Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die Startseite um. Der Basispfad in `404.html` muss mit `BASE_PATH` übereinstimmen.
