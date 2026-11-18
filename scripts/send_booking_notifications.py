@@ -23,18 +23,22 @@ FROM_FALLBACK_NAME = "VfB Grötzingen"
 DEFAULT_SIGNATURE = "Mit freundlichen Grüßen\nVfB Grötzingen\n\nInternet: http://www.vfb-groetzingen.de/"
 DEFAULT_TEMPLATES = {
     "confirmation": {
+        "enabled": True,
         "subject": "Buchungsbestätigung: {{title}}",
         "body": "Guten Tag,\n\nIhre Buchung wurde eingetragen.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}",
     },
     "changed": {
+        "enabled": True,
         "subject": "Änderung Ihrer Buchung: {{title}}",
         "body": "Guten Tag,\n\nIhre Buchung wurde geändert.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}",
     },
     "cancelled": {
+        "enabled": True,
         "subject": "Absage Ihrer Buchung: {{title}}",
         "body": "Guten Tag,\n\nIhre Buchung wurde abgesagt.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}",
     },
     "reminder": {
+        "enabled": True,
         "subject": "Erinnerung: {{title}}",
         "body": "Guten Tag,\n\nhiermit erinnern wir an Ihre bevorstehende Buchung.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}",
     },
@@ -151,6 +155,7 @@ def config_values():
         normalized[kind] = {
             "subject": str(value.get("subject") or defaults["subject"]),
             "body": str(value.get("body") or defaults["body"]),
+            "enabled": value.get("enabled", True) is not False,
         }
     signature = html_to_text(config.get("event_signature_html") or "") or DEFAULT_SIGNATURE
     return name, reply_to, normalized, signature
@@ -183,18 +188,28 @@ def booking_values(payload, signature):
     return values
 
 
+class DisabledTemplate(RuntimeError):
+    pass
+
+
+def template_enabled(config, kind):
+    return config[2].get(kind, {}).get("enabled", True) is not False
+
+
 def render_template(template, values):
     return re.sub(r"\{\{([a-z_]+)\}\}", lambda match: values.get(match.group(1), match.group(0)), template or "")
 
 
 def build_message(item, config):
-    recipient = str(item.get("recipient") or "").strip()
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
-        raise RuntimeError("Ungültige Empfängeradresse in der Warteschlange.")
     kind = item.get("kind")
     if kind not in DEFAULT_TEMPLATES:
         raise RuntimeError("Unbekannter Nachrichtentyp in der Warteschlange.")
     display_name, reply_to, templates, signature = config
+    if not template_enabled(config, kind):
+        raise DisabledTemplate("Die Buchungs-E-Mail-Vorlage ist deaktiviert; Nachricht nicht versendet.")
+    recipient = str(item.get("recipient") or "").strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+        raise RuntimeError("Ungültige Empfängeradresse in der Warteschlange.")
     values = booking_values(item.get("payload") or {}, signature)
     subject = render_template(templates[kind]["subject"], values).strip()
     body = render_template(templates[kind]["body"], values).strip()
@@ -267,6 +282,9 @@ def process():
                         raise RuntimeError(f"SMTP hat die Empfängeradresse abgelehnt ({code}): {reason}")
                     update_outbox(item["id"], "sent")
                     print(f"Buchungsnachricht vom SMTP-Server angenommen: {item['id']} ({item['kind']})")
+                except DisabledTemplate as exc:
+                    update_outbox(item["id"], "skipped", str(exc))
+                    print(f"Buchungsnachricht übersprungen: {item['id']} ({item['kind']})")
                 except Exception as exc:
                     error = str(exc)[:1000]
                     attempt = int(item.get("attempt_count") or 1)
