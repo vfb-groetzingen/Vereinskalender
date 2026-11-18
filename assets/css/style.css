@@ -330,6 +330,9 @@ textarea.input { resize: vertical; }
 .annual-recipients legend { font-weight: 600; margin-bottom: .35rem; }
 .annual-recipient-row { display: grid; grid-template-columns: 75px minmax(0, 1fr) auto; align-items: center; gap: .5rem; margin-bottom: .45rem; }
 .annual-recipient-row label { font-size: .9rem; }
+.annual-message-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
+.annual-message-heading > label:first-child { margin: 0; }
+.annual-message-heading .annual-send-after-save { margin: 0; font-weight: 400; }
 .annual-editor-toolbar { display: flex; flex-wrap: wrap; gap: .35rem; padding: .45rem; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: #f7f9fb; }
 .annual-editor { min-height: 180px; max-height: 360px; overflow: auto; padding: .75rem; border: 1px solid var(--border); border-radius: 0 0 8px 8px; background: #fff; }
 .annual-editor:focus { outline: 3px solid var(--focus); outline-offset: 1px; }
@@ -338,6 +341,7 @@ textarea.input { resize: vertical; }
 .annual-assets li { display: flex; justify-content: space-between; gap: .75rem; padding: .25rem 0; }
 
 @media (max-width: 640px) {
+  .annual-message-heading { align-items: flex-start; flex-direction: column; gap: .2rem; }
   .annual-day { min-height: 72px; padding: .2rem; }
   .annual-event-chip { font-size: .68rem; padding: .12rem .2rem; }
   .annual-weekday { font-size: .8rem; }
