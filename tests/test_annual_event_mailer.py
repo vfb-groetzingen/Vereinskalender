@@ -39,6 +39,25 @@ class AnnualEventMailerTests(unittest.TestCase):
         self.assertTrue(mailer.event_occurs_on(event, dt.date(2028, 2, 29)))
         self.assertFalse(mailer.event_occurs_on(event, dt.date(2028, 2, 28)))
 
+    def test_reminder_is_due_only_for_enabled_event_and_selected_lead_time(self):
+        today = dt.date(2026, 6, 3)
+        event = {"recurrence": "once", "event_date": "2026-06-10", "active": True,
+                 "reminder_enabled": True, "reminder_days": 7}
+        self.assertTrue(mailer.event_reminder_due_on(event, today))
+        event["reminder_days"] = 2
+        self.assertFalse(mailer.event_reminder_due_on(event, today))
+        event["reminder_enabled"] = False
+        self.assertFalse(mailer.event_reminder_due_on(event, today))
+        event["reminder_enabled"] = True
+        event["active"] = False
+        self.assertFalse(mailer.event_reminder_due_on(event, today))
+
+    def test_reminder_due_date_supports_annual_occurrences(self):
+        event = {"recurrence": "annual", "event_month": 6, "event_day": 10,
+                 "active": True, "reminder_enabled": True, "reminder_days": 2}
+        self.assertTrue(mailer.event_reminder_due_on(event, dt.date(2026, 6, 8)))
+        self.assertFalse(mailer.event_reminder_due_on(event, dt.date(2026, 6, 9)))
+
     def test_selected_profile_sets_reply_to_without_changing_authenticated_sender(self):
         event = {
             "id": "event-1",
@@ -53,10 +72,22 @@ class AnnualEventMailerTests(unittest.TestCase):
         self.assertIn("vfb-app@vfb-groetzingen.de", message["From"])
         self.assertIn("vorstand@example.org", message["Reply-To"])
 
+    def test_annual_reminder_appends_signature_only_when_enabled(self):
+        event = {"id": "event-signature", "title": "Sommerfest", "subject": "Erinnerung",
+                 "body_html": "<p>Wir freuen uns.</p>", "append_signature": True, "assets": []}
+        message = mailer.build_message(event, "person@example.org", signature_html="<p>Viele Grüße<br>VfB</p>")
+        self.assertIn("Viele Grüße", message.get_body(preferencelist=("plain",)).get_content())
+        self.assertIn("Viele Grüße", message.get_body(preferencelist=("html",)).get_content())
+        event["append_signature"] = False
+        message = mailer.build_message(event, "person@example.org", signature_html="<p>Viele Grüße</p>")
+        self.assertNotIn("Viele Grüße", message.get_body(preferencelist=("plain",)).get_content())
+
     def test_annual_send_loads_selected_documents_before_building_message(self):
         event = {
             "id": "event-annual-1",
             "title": "Jahrestag",
+            "active": True,
+            "reminder_enabled": True,
             "subject": "Einladung zum Jahrestag",
             "body_html": "<p>Wir laden ein.</p>",
             "recipients": ["person@example.org"],

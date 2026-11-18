@@ -95,23 +95,30 @@ test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungs
   assert.match(migration, /'skipped'/);
 });
 
-test('Ereignisformular bietet optionale Umschaltvorlagen und startet ohne Vorauswahl', () => {
+test('Ereignisformular speichert getrennte automatische Versandregeln mit sicheren Defaults', () => {
   const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
-  const admin = readFileSync(new URL('../assets/js/admin-config.js', import.meta.url), 'utf-8');
-  assert.doesNotMatch(annual, /id="ae-template"|id="ae-apply-template"/);
-  assert.match(annual, /data-event-template="\$\{key\}"/);
-  assert.match(annual, /data-event-template="signature"/);
-  assert.match(annual, /data-event-template="signature" aria-pressed="false"/);
-  assert.match(annual, /querySelectorAll\('\[data-event-template\]'\)/);
-  assert.match(annual, /signature: signatureToPlain/);
-  assert.match(annual, /time_range: '', resource_names: ''/);
-  assert.match(annual, /templateTextToHtml/);
-  assert.match(annual, /contenteditable="true"/);
-  assert.match(annual, /activeTemplateKey === key/);
-  assert.match(annual, /restoreTemplateDraft/);
-  assert.match(annual, /event\?\.body_html \|\| ''/);
-  assert.match(admin, /data-template-enabled="\$\{key\}"/);
-  assert.match(admin, /enabled: target\.querySelector\(.*data-template-enabled/);
+  const migration = readFileSync(new URL('../supabase/migration-event-email-controls.sql', import.meta.url), 'utf-8');
+  const worker = readFileSync(new URL('../scripts/send_annual_event_lifecycle_emails.py', import.meta.url), 'utf-8');
+  assert.match(annual, /id="ae-confirmation-enabled" type="checkbox"/);
+  assert.match(annual, /id="ae-changed-enabled" type="checkbox"/);
+  assert.match(annual, /id="ae-cancelled-enabled" type="checkbox"/);
+  assert.match(annual, /id="ae-reminder-enabled" type="checkbox"/);
+  assert.match(annual, /id="ae-append-signature" type="checkbox"/);
+  assert.match(annual, /<option value="1"/);
+  assert.match(annual, /<option value="2"/);
+  assert.match(annual, /<option value="7"/);
+  assert.match(annual, /confirmation_enabled: q\('#ae-confirmation-enabled'\)\.checked/);
+  assert.match(annual, /reminder_days: Number\(q\('#ae-reminder-days'\)\.value\)/);
+  assert.match(migration, /confirmation_enabled boolean not null default false/);
+  assert.match(migration, /reminder_enabled boolean not null default false/);
+  assert.match(migration, /check \(reminder_days in \(1, 2, 7\)\)/);
+  assert.match(migration, /annual_event_lifecycle_mail_trigger/);
+  assert.match(migration, /claim_annual_event_mail_outbox/);
+  assert.match(migration, /delete from public\.annual_event_mail_outbox[\s\S]*status = 'pending'/);
+  assert.match(worker, /template_is_enabled_for_event/);
+  assert.match(worker, /_expected_updated_at/);
+  assert.doesNotMatch(worker, /mail_templates.*enabled/);
+  assert.doesNotMatch(annual, /data-event-template/);
 });
 
 
