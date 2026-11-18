@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Send lifecycle notifications from the durable annual-event email outbox."""
+"""Send lifecycle and individual messages from the durable annual-event outbox."""
 import datetime as dt
 import email.policy
 import html
+import importlib.util
 from html.parser import HTMLParser
 import json
 import os
@@ -15,6 +16,7 @@ from email.utils import formataddr
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from pathlib import Path
 
 FROM_EMAIL = "vfb-app@vfb-groetzingen.de"
 FROM_FALLBACK_NAME = "VfB Grötzingen"
@@ -206,8 +208,38 @@ def text_to_html(source):
     return "".join(f"<p>{'<br>'.join(html.escape(line) for line in paragraph.splitlines())}</p>" for paragraph in paragraphs)
 
 
+_ANNUAL_MAILER = None
+
+
+def annual_mailer_module():
+    global _ANNUAL_MAILER
+    if _ANNUAL_MAILER is None:
+        script = Path(__file__).with_name("send_annual_event_emails.py")
+        spec = importlib.util.spec_from_file_location("annual_event_attachment_mailer", script)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Der Ereignis-Mailer für Anhänge konnte nicht geladen werden.")
+        _ANNUAL_MAILER = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_ANNUAL_MAILER)
+    return _ANNUAL_MAILER
+
+
+def build_individual_message(item):
+    payload = item.get("payload") or {}
+    recipient = str(item.get("recipient") or "").strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+        raise RuntimeError("Ungültige Empfängeradresse in der Warteschlange.")
+    event = dict(payload)
+    event["id"] = str(item.get("event_id") or payload.get("id") or "")
+    mailer = annual_mailer_module()
+    documents = mailer.load_event_documents(event)
+    signature = mailer.event_signature_html() if payload.get("append_signature") is True else None
+    return mailer.build_message(event, recipient, documents, signature)
+
+
 def build_message(item, config):
     kind = item.get("kind")
+    if kind == "individual":
+        return build_individual_message(item)
     if kind not in KIND_FLAGS:
         raise RuntimeError("Unbekannter Ereignis-Mailtyp in der Warteschlange.")
     recipient = str(item.get("recipient") or "").strip()
@@ -265,7 +297,7 @@ def build_message(item, config):
 
 def template_is_enabled_for_event(item, current_event):
     kind = item.get("kind")
-    if kind not in KIND_FLAGS:
+    if kind != "individual" and kind not in KIND_FLAGS:
         return False, "Unbekannter Ereignis-Mailtyp."
     if current_event is None:
         if kind == "cancelled":
@@ -275,7 +307,7 @@ def template_is_enabled_for_event(item, current_event):
         return False, "Ereignis ist wieder aktiv; alte Absage übersprungen."
     if kind != "cancelled" and current_event.get("active") is not True:
         return False, "Ereignis ist pausiert; Nachricht übersprungen."
-    if current_event.get(KIND_FLAGS[kind]) is not True:
+    if kind in KIND_FLAGS and current_event.get(KIND_FLAGS[kind]) is not True:
         return False, "Dieser Ereignis-Mailtyp ist inzwischen deaktiviert."
     expected = (item.get("payload") or {}).get("_expected_updated_at")
     actual = current_event.get("updated_at")
@@ -332,7 +364,7 @@ def process():
     now_filter = quote(dt.datetime.now(dt.timezone.utc).isoformat(), safe=":.-")
     pending = api("GET", f"annual_event_mail_outbox?select=id&status=eq.pending&next_attempt_at=lte.{now_filter}&limit=1") or []
     if not pending:
-        print("Keine Ereignis-Bestätigungen, Änderungen oder Absagen in der Warteschlange.")
+        print("Keine Ereignis-Mails in der Warteschlange.")
         return
     config = config_values()
     smtp = smtp_connect()
