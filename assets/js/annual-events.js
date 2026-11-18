@@ -202,10 +202,10 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         <div class="field-row"><div class="field"><label for="ae-reminder-days">Erinnerungsvorlauf</label><select id="ae-reminder-days" class="input"><option value="1" ${Number(event?.reminder_days || 1) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(event?.reminder_days || 1) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(event?.reminder_days || 1) === 7 ? 'selected' : ''}>7 Tage vorher</option></select></div></div>
         <p class="hint">Die Standardsignatur steht bei neuen Ereignissen direkt im Nachrichtentext und kann dort bearbeitet oder entfernt werden. Bei älteren Ereignissen wird eine bisherige Versand-Signatur beim Bearbeiten in den Text übernommen. Die globale Aktivierung der Buchungsvorlagen steuert diese Ereignis-Schalter nicht. „Ereignis aktiv“ ist zusätzlich der Master.</p>
       </fieldset>
-      <div class="field"><label>Nachricht *</label><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
+      <div class="field"><div class="annual-message-heading"><label>Nachricht *</label><label class="check annual-send-after-save"><input id="ae-send-after-save" type="checkbox"> Wird direkt nach dem Speichern verschickt.</label></div><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
         <button type="button" class="btn btn-small" data-command="bold" aria-label="Fett">Fett</button><button type="button" class="btn btn-small" data-command="italic" aria-label="Kursiv">Kursiv</button><button type="button" class="btn btn-small" data-command="underline" aria-label="Unterstrichen">Unterstrichen</button><button type="button" class="btn btn-small" data-command="insertUnorderedList">Aufzählung</button><button type="button" class="btn btn-small" data-command="insertOrderedList">Nummerierung</button>
         <button type="button" class="btn btn-small" id="ae-add-link">Link</button><button type="button" class="btn btn-small" id="ae-add-image">Bild einbetten</button><button type="button" class="btn btn-small" id="ae-add-file">Anhang hinzufügen</button><button type="button" class="btn btn-small" id="ae-insert-signature">Signatur einfügen</button></div>
-        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(initialBody)}</div><p class="hint">Die Standardsignatur ist bei neuen Ereignissen bereits eingefügt. Bilder werden auf maximal 1600 Pixel verkleinert. Bilder und Anhänge zusammen höchstens 5 MB.</p>
+        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(initialBody)}</div><p class="hint">Die Standardsignatur ist bei neuen Ereignissen bereits eingefügt. Wenn das Kästchen aktiviert ist, wird die Nachricht nach erfolgreichem Speichern einmalig eingereiht; der tatsächliche Versand erfolgt beim nächsten Workflow-Lauf (üblicherweise innerhalb von etwa 5 Minuten). Ohne Häkchen wird beim Speichern nichts zusätzlich versendet. Bilder werden auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen höchstens 5 MB.</p>
       </div>
       <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
       <div class="field"><strong>Dateien des Ereignisses</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
@@ -429,6 +429,8 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const totalBytes = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
     if (totalBytes > MAX_BYTES) return msg('Bilder und Anhänge dürfen zusammen höchstens 5 MB groß sein.');
     q('#ae-save').disabled = true;
+    const sendAfterSave = q('#ae-send-after-save').checked;
+    const eventActive = q('#ae-active').checked;
     try {
       const recurrence = q('#ae-recurrence').value;
       const profile = profiles.find((item) => item.id === q('#ae-mail-profile').value) || profiles[0];
@@ -445,9 +447,34 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         reminder_days: Number(q('#ae-reminder-days').value),
         append_signature: false
       });
-      for (const asset of removedAssets) await store.deleteAnnualAsset(asset.path);
       saved = true;
-      dialog.close(); setNotice('ok', 'Ereignis wurde gespeichert.'); monthCursor = new Date(recurrence === 'once' ? year : monthCursor.getFullYear(), month - 1, 1); await rerenderPage();
+      let cleanupWarning = false;
+      for (const asset of removedAssets) {
+        try { await store.deleteAnnualAsset(asset.path); }
+        catch (cleanupError) { cleanupWarning = true; console.warn('Eine entfernte Ereignisdatei konnte nicht bereinigt werden.', cleanupError); }
+      }
+      let queuedCount = 0;
+      if (sendAfterSave) {
+        if (!eventActive) {
+          msg('Ereignis wurde gespeichert, aber nicht versendet: Für den Versand muss es aktiv sein. Aktiviere es und speichere erneut mit gesetztem Kästchen.');
+          q('#ae-save').disabled = false;
+          return;
+        }
+        try {
+          const result = await store.sendAnnualEventIndividualMessage(id);
+          queuedCount = Number(Array.isArray(result) ? result[0] : result);
+          if (!Number.isFinite(queuedCount) || queuedCount < 1) throw new Error('Es wurden keine Empfänger in die Versandwarteschlange gestellt.');
+        } catch (sendError) {
+          msg(`Ereignis wurde gespeichert, die Nachricht aber nicht bestätigt eingereiht: ${sendError.message || 'Unbekannter Fehler'}. Prüfe das Versandprotokoll, bevor du erneut speicherst.`);
+          q('#ae-save').disabled = false;
+          return;
+        }
+      }
+      dialog.close();
+      const successMessage = queuedCount ? `Ereignis gespeichert; ${queuedCount} individuelle Nachricht${queuedCount === 1 ? '' : 'en'} für den nächsten Workflow-Lauf eingereiht.` : 'Ereignis wurde gespeichert.';
+      setNotice('ok', cleanupWarning ? `${successMessage} Eine entfernte Datei konnte nicht bereinigt werden.` : successMessage);
+      monthCursor = new Date(recurrence === 'once' ? year : monthCursor.getFullYear(), month - 1, 1);
+      await rerenderPage();
     } catch (error) { msg(error.message || 'Ereignis konnte nicht gespeichert werden.'); q('#ae-save').disabled = false; }
   };
   q('#ae-title').focus();
