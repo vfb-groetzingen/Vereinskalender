@@ -29,6 +29,17 @@ Deno.serve(async (req: Request) => {
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
+  const findAuthUserByEmail = async (email: string) => {
+    const perPage = 1000;
+    for (let page = 1; ; page++) {
+      const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+      if (error) throw error;
+      const users = data.users || [];
+      const existing = users.find((user) => (user.email || '').trim().toLowerCase() === email);
+      if (existing) return existing;
+      if (users.length < perPage) return null;
+    }
+  };
   const { data: userData, error: userError } = await callerClient.auth.getUser(jwt);
   if (userError || !userData.user) return json({ error: 'Sitzung ungültig oder abgelaufen.' }, 401);
 
@@ -63,14 +74,36 @@ Deno.serve(async (req: Request) => {
     const role = input.role;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Bitte eine gültige E-Mail-Adresse angeben.' }, 400);
     if (!validRole(role)) return json({ error: 'Ungültige Rolle.' }, 400);
+
+    let authUser: { id: string } | null = null;
+    let restored = false;
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, { redirectTo: siteUrl });
-    if (error || !data.user) return json({ error: error?.message || 'Einladung konnte nicht erstellt werden.' }, 400);
-    const { error: roleError } = await adminClient.from('memberships').upsert({ user_id: data.user.id, role }, { onConflict: 'user_id' });
-    if (roleError) {
-      await adminClient.auth.admin.deleteUser(data.user.id);
-      return json({ error: 'Benutzerkonto wurde nicht vollständig eingerichtet. Bitte Einladung erneut senden.' }, 500);
+    if (!error && data.user) {
+      authUser = data.user;
+    } else {
+      // Bei bestehender Auth-Identität keine neue Identität anlegen, sondern den Kalenderzugang erneuern.
+      try { authUser = await findAuthUserByEmail(email); }
+      catch { return json({ error: 'Vorhandenes Benutzerkonto konnte nicht geprüft werden.' }, 500); }
+      if (!authUser) return json({ error: error?.message || 'Einladung konnte nicht erstellt werden.' }, 400);
+      restored = true;
     }
-    return json({ ok: true });
+
+    if (!authUser) return json({ error: 'Benutzerkonto konnte nicht ermittelt werden.' }, 500);
+    if (restored) {
+      const { data: existingMembership, error: membershipLookupError } = await adminClient
+        .from('memberships').select('user_id').eq('user_id', authUser.id).maybeSingle();
+      if (membershipLookupError) return json({ error: 'Bestehender Kalenderzugang konnte nicht geprüft werden.' }, 500);
+      if (existingMembership) return json({ error: 'Dieses Benutzerkonto hat bereits Kalenderzugang. Bitte die Rolle in der Benutzerliste ändern.' }, 409);
+    }
+
+    const { error: roleError } = await adminClient.from('memberships').upsert({ user_id: authUser.id, role }, { onConflict: 'user_id' });
+    if (roleError) {
+      if (!restored) await adminClient.auth.admin.deleteUser(authUser.id);
+      return json({ error: restored
+        ? 'Das vorhandene Benutzerkonto wurde gefunden, aber der Kalenderzugang konnte nicht wiederhergestellt werden.'
+        : 'Benutzerkonto wurde nicht vollständig eingerichtet. Bitte Einladung erneut senden.' }, 500);
+    }
+    return json({ ok: true, restored });
   }
 
   const userId = String(input.userId || '');
