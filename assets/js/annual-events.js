@@ -181,8 +181,9 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const documentOptions = availableDocuments.map((document) => `<label class="check annual-library-document"><input type="checkbox" data-library-document="${esc(document.id)}" ${selectedDocumentIds.has(document.id) ? 'checked' : ''}><span>${esc(document.title)} — ${esc(document.file_name)} (${(Number(document.file_size) / 1024).toFixed(0)} KB)${document.active ? '' : ' · archiviert'}</span></label>`).join('');
   const defaultSignature = siteConfiguration?.event_signature_html || '<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href="http://www.vfb-groetzingen.de/">http://www.vfb-groetzingen.de/</a></p>';
   const eventMailTemplates = { ...DEFAULT_TEMPLATES, ...(siteConfiguration?.mail_templates || {}) };
-  const templateOptions = Object.entries(TEMPLATE_LABELS).map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('');
-  const selectedTemplateOption = event ? '<option value="saved" selected>Gespeicherte Nachricht beibehalten</option>' : '';
+  const templateButtons = Object.entries(TEMPLATE_LABELS).map(([key, label]) =>
+    `<button type="button" class="btn btn-small annual-template-button" data-event-template="${key}" aria-pressed="false">${esc(label)}</button>`
+  ).join('');
   dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
       <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
@@ -191,7 +192,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
-      <div class="field"><label for="ae-template">E-Mail-Vorlage</label><div class="annual-template-controls"><select id="ae-template" class="input">${selectedTemplateOption}<option value="signature" ${event ? '' : 'selected'}>Standardsignatur für neue Ereignisse</option>${templateOptions}</select><button type="button" class="btn btn-small" id="ae-apply-template" ${event ? 'disabled' : ''}>Vorlage anwenden</button></div><p class="hint">Die Auswahl ersetzt Betreff und Nachricht. Nicht verfügbare Platzhalter für Zeit und Ort werden entfernt. Die Vorauswahl bei neuen Ereignissen ist die Standardsignatur.</p></div>
+      <fieldset class="field annual-template-picker"><legend>Textvorlagen</legend><div class="annual-template-options" role="group" aria-label="E-Mail-Textvorlagen">${templateButtons}<button type="button" class="btn btn-small annual-template-button" data-event-template="signature" aria-pressed="${event ? 'false' : 'true'}">Standardsignatur</button></div><p class="hint">Jede Schaltfläche wendet ihre Vorlage direkt an. Buchungsvorlagen ersetzen Betreff und Nachricht; die Standardsignatur ersetzt den Nachrichtentext und kann danach frei bearbeitet werden. Zeit- und Ortsplatzhalter werden entfernt.</p></fieldset>
       <div class="field"><label>Nachricht *</label><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
         <button type="button" class="btn btn-small" data-command="bold" aria-label="Fett">Fett</button><button type="button" class="btn btn-small" data-command="italic" aria-label="Kursiv">Kursiv</button><button type="button" class="btn btn-small" data-command="underline" aria-label="Unterstrichen">Unterstrichen</button><button type="button" class="btn btn-small" data-command="insertUnorderedList">Aufzählung</button><button type="button" class="btn btn-small" data-command="insertOrderedList">Nummerierung</button>
         <button type="button" class="btn btn-small" id="ae-add-link">Link</button><button type="button" class="btn btn-small" id="ae-add-image">Bild einbetten</button><button type="button" class="btn btn-small" id="ae-add-file">Anhang hinzufügen</button></div>
@@ -214,30 +215,37 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   dialog.showModal();
   const q = (selector) => dialog.querySelector(selector);
   const msg = (text) => { q('#ae-msg').textContent = text; };
-  q('#ae-template').onchange = () => { q('#ae-apply-template').disabled = q('#ae-template').value === 'saved'; };
-  q('#ae-apply-template').onclick = () => {
-    const key = q('#ae-template').value;
-    if (key === 'saved') return;
-    if (key === 'signature') {
-      q('#ae-body').innerHTML = safeHtml(defaultSignature);
-      return;
-    }
-    const template = eventMailTemplates[key];
-    if (!template) return;
-    const dateParts = (q('#ae-date').value || '').split('-');
-    const dateText = dateParts.length === 3
-      ? `${dateParts[2]}.${dateParts[1]}${q('#ae-recurrence').value === 'once' ? `.${dateParts[0]}` : '.'}`
-      : '';
-    const values = {
-      title: q('#ae-title').value.trim(), date: dateText, time_range: '', resource_names: '',
-      signature: signatureToPlain(siteConfiguration?.event_signature_html || defaultSignature)
-    };
-    const fill = (source) => String(source || '').replace(/\{\{([a-z_]+)\}\}/g, (_match, name) => values[name] ?? '');
-    const subject = fill(template.subject).trim();
-    if (subject) q('#ae-subject').value = subject;
-    const body = fill(template.body).replace(/^\s*(?:Zeit|Ort):\s*$/gmi, '').replace(/\n{3,}/g, '\n\n').trim();
-    q('#ae-body').innerHTML = safeHtml(templateTextToHtml(body));
+  const setActiveTemplateButton = (activeButton) => {
+    q('.annual-template-options').querySelectorAll('[data-event-template]').forEach((button) => {
+      button.setAttribute('aria-pressed', button === activeButton ? 'true' : 'false');
+    });
   };
+  q('.annual-template-options').querySelectorAll('[data-event-template]').forEach((button) => {
+    button.onclick = () => {
+      const key = button.dataset.eventTemplate;
+      if (key === 'signature') {
+        q('#ae-body').innerHTML = safeHtml(defaultSignature);
+        setActiveTemplateButton(button);
+        return;
+      }
+      const template = eventMailTemplates[key];
+      if (!template) return;
+      const dateParts = (q('#ae-date').value || '').split('-');
+      const dateText = dateParts.length === 3
+        ? `${dateParts[2]}.${dateParts[1]}${q('#ae-recurrence').value === 'once' ? `.${dateParts[0]}` : '.'}`
+        : '';
+      const values = {
+        title: q('#ae-title').value.trim(), date: dateText, time_range: '', resource_names: '',
+        signature: signatureToPlain(siteConfiguration?.event_signature_html || defaultSignature)
+      };
+      const fill = (source) => String(source || '').replace(/\{\{([a-z_]+)\}\}/g, (_match, name) => values[name] ?? '');
+      const subject = fill(template.subject).trim();
+      if (subject) q('#ae-subject').value = subject;
+      const body = fill(template.body).replace(/^\s*(?:Zeit|Ort):\s*$/gmi, '').replace(/\n{3,}/g, '\n\n').trim();
+      q('#ae-body').innerHTML = safeHtml(templateTextToHtml(body));
+      setActiveTemplateButton(button);
+    };
+  });
   let previousRecurrence = selectedRecurrence;
   const syncRecurrenceUI = () => {
     const recurrence = q('#ae-recurrence').value;
