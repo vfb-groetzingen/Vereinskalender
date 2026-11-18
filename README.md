@@ -85,7 +85,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 npm test
 ```
 
-Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher, Gesamtplan-Klickpfade, Kategorieunterdrückung, Ereignisvorlagen sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
+Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher, Gesamtplan-Klickpfade, Kategorieunterdrückung, Ereignisvorlagen, Passwort-Reset-Redirects sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
 
 ## Sicherheit in Kürze
 
