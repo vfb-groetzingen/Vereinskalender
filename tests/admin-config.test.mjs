@@ -62,3 +62,18 @@ test('Generische Auditfunktion greift nicht auf Buchungsspalten zu', () => {
   assert.match(sql, /if not public\.is_admin\(\)/);
   assert.match(sql, /p_template_key not in \('booking_confirmation', 'booking_changed', 'booking_cancelled', 'booking_reminder'\)/);
 });
+
+
+test('Zugangsentzug laesst Auth-Konto bestehen und Einladung reaktiviert es', () => {
+  const source = readFileSync(new URL('../supabase/functions/admin-users/index.ts', import.meta.url), 'utf-8');
+  assert.match(source, /auth\.admin\.inviteUserByEmail/);
+  assert.match(source, /findAuthUserByEmail\(email\)/);
+  assert.match(source, /restored = true/);
+  assert.match(source, /from\('memberships'\)\.upsert/);
+  const removeStart = source.indexOf("if (action === 'remove') {");
+  const removeEnd = source.indexOf("return json({ error: 'Unbekannte Aktion.'", removeStart);
+  const removeBlock = source.slice(removeStart, removeEnd);
+  assert.ok(removeStart >= 0 && removeEnd > removeStart);
+  assert.match(removeBlock, /from\('memberships'\)\.delete/);
+  assert.doesNotMatch(removeBlock, /auth\.admin\.deleteUser/);
+});
