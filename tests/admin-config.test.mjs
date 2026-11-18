@@ -43,7 +43,7 @@ test('Mailvorlagen werden atomar ueber den einzelnen Vorlagen-RPC gespeichert', 
   store.role = 'admin';
   let request;
   store._req = async (path, options) => { request = { path, options }; return null; };
-  const template = { subject: 'Neuer Betreff', body: 'Nur dieser Nachrichtentext' };
+  const template = { subject: 'Neuer Betreff', body: 'Nur dieser Nachrichtentext', enabled: true };
   await store.saveMailTemplate('booking_changed', template);
   assert.equal(request.path, '/rest/v1/rpc/admin_update_mail_template');
   assert.equal(request.options.method, 'POST');
@@ -76,4 +76,35 @@ test('Zugangsentzug laesst Auth-Konto bestehen und Einladung reaktiviert es', ()
   assert.ok(removeStart >= 0 && removeEnd > removeStart);
   assert.match(removeBlock, /from\('memberships'\)\.delete/);
   assert.doesNotMatch(removeBlock, /auth\.admin\.deleteUser/);
+});
+
+
+test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungskategorie unterdrueckt Buchungsmails', () => {
+  const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
+  const migration = readFileSync(new URL('../supabase/migration-booking-email-controls.sql', import.meta.url), 'utf-8');
+  assert.match(app, /querySelectorAll\('\.combined-event'\).*openDetail\(button\.dataset\.id\)/s);
+  assert.match(app, /\.trim\(\)\.toLowerCase\(\) === 'veranstaltung'/);
+  assert.match(app, /contactEmail = eventCategory \? null/);
+  assert.match(app, /reminderDays = eventCategory \? 0/);
+  assert.match(migration, /lower\(btrim\(c\.name\)\) = 'veranstaltung'/);
+  assert.match(migration, /not public\.booking_is_event_category\(new\.category_id\)/);
+  assert.match(migration, /not public\.booking_is_event_category\(bk\.category_id\)/);
+  assert.match(migration, /booking_mail_template_enabled\(v_kind\)/);
+  assert.match(migration, /jsonb_typeof\(p_template->'enabled'\).*boolean/);
+  assert.match(migration, /kind = v_kind and status = 'pending'/);
+  assert.match(migration, /'skipped'/);
+});
+
+test('Ereignisformular bietet Buchungsvorlagen und neue Ereignisse starten mit der Signatur', () => {
+  const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
+  const admin = readFileSync(new URL('../assets/js/admin-config.js', import.meta.url), 'utf-8');
+  assert.match(annual, /id="ae-template"/);
+  assert.match(annual, /eventMailTemplates/);
+  assert.match(annual, /value="signature" \$\{event \? '' : 'selected'\}/);
+  assert.equal((annual.match(/<option value="signature"/g) || []).length, 1);
+  assert.match(annual, /signature: signatureToPlain/);
+  assert.match(annual, /time_range: '', resource_names: ''/);
+  assert.match(annual, /templateTextToHtml/);
+  assert.match(admin, /data-template-enabled="\$\{key\}"/);
+  assert.match(admin, /enabled: target\.querySelector\(.*data-template-enabled/);
 });

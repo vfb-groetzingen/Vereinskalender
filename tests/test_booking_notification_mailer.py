@@ -54,6 +54,57 @@ class BookingNotificationMailerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Betreffzeile"):
             mailer.build_message(item, config)
 
+    def test_disabled_booking_template_is_not_sent(self):
+        templates = {key: dict(value) for key, value in mailer.DEFAULT_TEMPLATES.items()}
+        templates["confirmation"]["enabled"] = False
+        config = ("VfB", "vorstand@example.org", templates, "Gruß")
+        item = {"kind": "confirmation", "recipient": "ungültig", "payload": {"title": "Sommerfest"}}
+        with self.assertRaisesRegex(mailer.DisabledTemplate, "deaktiviert"):
+            mailer.build_message(item, config)
+
+    def test_worker_marks_disabled_template_row_skipped_without_sending(self):
+        templates = {key: dict(value) for key, value in mailer.DEFAULT_TEMPLATES.items()}
+        templates["confirmation"]["enabled"] = False
+        config = ("VfB", "vorstand@example.org", templates, "Gruß")
+        item = {"id": "outbox-1", "kind": "confirmation", "recipient": "person@example.org", "payload": {"title": "Sommerfest"}}
+        original_config_values = mailer.config_values
+        original_smtp_connect = mailer.smtp_connect
+        original_api = mailer.api
+        original_claim = mailer.claim_outbox
+        status_updates = []
+        claims = [[item], []]
+
+        class FakeSMTP:
+            def send_message(self, _message):
+                raise AssertionError("Deaktivierte Vorlage darf nicht versendet werden")
+            def quit(self):
+                pass
+
+        def fake_api(method, path, body=None, prefer=None):
+            if method == "POST" and path == "rpc/enqueue_due_booking_reminders":
+                return 0
+            if method == "GET" and path.startswith("booking_email_outbox?select=id"):
+                return [{"id": "outbox-1"}]
+            if method == "PATCH" and path.startswith("booking_email_outbox?id=eq."):
+                status_updates.append(body)
+            return []
+
+        try:
+            mailer.config_values = lambda: config
+            mailer.smtp_connect = lambda: FakeSMTP()
+            mailer.api = fake_api
+            mailer.claim_outbox = lambda _limit=25: claims.pop(0)
+            mailer.process()
+        finally:
+            mailer.config_values = original_config_values
+            mailer.smtp_connect = original_smtp_connect
+            mailer.api = original_api
+            mailer.claim_outbox = original_claim
+
+        self.assertEqual(len(status_updates), 1)
+        self.assertEqual(status_updates[0]["status"], "skipped")
+        self.assertIn("deaktiviert", status_updates[0]["error"])
+
     def test_retry_backoff_caps_at_one_hour(self):
         self.assertEqual(min(5 * (2 ** (1 - 1)), 60), 5)
         self.assertEqual(min(5 * (2 ** (4 - 1)), 60), 40)
