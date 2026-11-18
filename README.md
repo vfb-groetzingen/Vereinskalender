@@ -6,11 +6,11 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Terminserien** unterstützen wöchentliche, zweiwöchentliche, monatliche und jährliche Wiederholungen: als begrenzte Serie mit bis zu 52 Terminen oder fortlaufend mit automatischer Ergänzung im rollierenden Sechsmonatszeitraum. Einzelne Vorkommen lassen sich ausnehmen; fortlaufende Serien können ab einem Termin beendet werden.
-- **Buchungsnachrichten:** optionale Kontaktadresse für Bestätigungen, Änderungen und Absagen; Erinnerungen sind mit 1, 2 oder 7 Tagen Vorlauf wählbar. Die Kategorie „Veranstaltung“ erzeugt keine Buchungs-E-Mails oder Erinnerungen. Automatische Versandarten lassen sich einzeln aktivieren; Ereignis-E-Mails bieten vier Buchungsvorlagen und die editierbare Standardsignatur als optionale, einzeln umschaltbare Schaltflächen; standardmäßig ist keine Vorlage aktiv.
+- **Buchungsnachrichten:** optionale Kontaktadresse für Bestätigungen, Änderungen und Absagen; Erinnerungen sind mit 1, 2 oder 7 Tagen Vorlauf wählbar. Die Kategorie „Veranstaltung“ erzeugt keine Buchungs-E-Mails oder Erinnerungen. Automatische Buchungsversandarten lassen sich einzeln aktivieren; deren globale Vorlagenschalter steuern ausschließlich Buchungsmails.
 - **Administration:** Benutzer, Ressourcen, filterbares Änderungsprotokoll, Texte, Mailprofile, Dokumente und Navigation werden in Admin-Unterseiten gepflegt.
 - **Kalender-Abo:** öffentliche, schreibgeschützte iCalendar-Feeds für alle Ressourcen oder einzelne Räume/Plätze.
-- **Ereignisse und E-Mail-Erinnerungen:** Bearbeiter können einmalige oder jährlich wiederkehrende Ereignisse anlegen; jährliche Wiederholung ist der Standard.
-- **Aufbewahrung:** Buchungen und einmalige Ereignisse werden nach drei Jahren gelöscht. Bei Jahresereignissen werden nur alte Durchläufe und Protokolle bereinigt; die Wiederholungsregel und Zukunft bleiben erhalten.
+- **Ereignisse und automatische E-Mails:** Bestätigung beim Speichern/Aktivieren, Änderungsmitteilung, Absage und Erinnerung sind je Ereignis separat steuerbar. Alle Schalter sind standardmäßig aus; Erinnerungen sind 1, 2 oder 7 Tage vorher wählbar. Eine optionale Standardsignatur ergänzt die aktivierten Mails. Der Ereignistext wird in Bestätigungen, Änderungen und Absagen eingebunden; Buchungsvorlagen mit Zeit-/Ortsfeldern werden für Ereignisse bereinigt. Jährliche Wiederholung ist der Standard.
+- **Aufbewahrung:** Buchungen und einmalige Ereignisse werden nach drei Jahren gelöscht. Bei Jahresereignissen werden nur alte Durchläufe und Protokolle bereinigt; die Wiederholungsregel und Zukunft bleiben erhalten. Ereignis-Lifecycle-Mailprotokolle werden nach drei Jahren entfernt.
 - **Administratoren** können Termine kalenderübergreifend und unabhängig vom sichtbaren Zeitraum mehrfach markieren und löschen.
 
 ## Technik
@@ -53,13 +53,15 @@ supabase/migration-event-recurrence-retention-3-years.sql  Einmalige Ereignisse 
 supabase/migration-admin-configuration-communications.sql  Admin-Konfiguration, Buchungsnachrichten und Dokumentablage
 supabase/migration-admin-config-audit-fix.sql  Audit-Triggerkorrektur und atomare Einzelvorlagenspeicherung
 supabase/migration-booking-email-controls.sql  Buchungs-Mailsteuerung, Veranstaltungsschutz und Status skipped
+supabase/migration-event-email-controls.sql  Ereignis-Mailregeln und dauerhafte Lifecycle-Outbox
 supabase/migration-continuous-booking-series.sql  Fortlaufende Buchungsserien und tägliche Ergänzung
 supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
 supabase/functions/admin-users/index.ts  Einladungen und Wiederfreischaltung vorhandener Konten
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
-scripts/send_annual_event_emails.py  Versendet Ereignis-E-Mails über Strato
+scripts/send_annual_event_emails.py  Versendet aktivierte Ereigniserinnerungen über Strato
+scripts/send_annual_event_lifecycle_emails.py  Versendet Ereignisbestätigungen, Änderungen und Absagen
 scripts/send_booking_notifications.py  Versendet Buchungsnachrichten und Erinnerungen über Strato
 scripts/cleanup_annual_event_data.py  Löscht abgelaufene Einmalereignisse und Dateien
 tests/                  Automatisierte Tests (npm test)
@@ -85,7 +87,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 npm test
 ```
 
-Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher, Gesamtplan-Klickpfade, Kategorieunterdrückung, Ereignisvorlagen, Passwort-Reset-Redirects sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
+Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher, Gesamtplan-Klickpfade, Kategorieunterdrückung, Ereignis-Mailsteuerung und Passwort-Reset-Redirects sowie Mailer-, Lifecycle-Outbox- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
 
 ## Sicherheit in Kürze
 
