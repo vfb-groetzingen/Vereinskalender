@@ -21,6 +21,7 @@ MAX_BYTES = 5 * 1024 * 1024
 TZ = ZoneInfo("Europe/Berlin")
 FROM_EMAIL = "vfb-app@vfb-groetzingen.de"
 FROM_NAME = "VfB Grötzingen (Kalender)"
+DEFAULT_SIGNATURE_HTML = "<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href=\"http://www.vfb-groetzingen.de/\">http://www.vfb-groetzingen.de/</a></p>"
 ALLOWED_TAGS = {"p", "div", "br", "b", "strong", "i", "em", "u", "ul", "ol", "li", "h2", "h3", "blockquote", "a", "img"}
 
 
@@ -199,7 +200,7 @@ def parse_mime(content_type):
     return main, sub.split(";", 1)[0] or "octet-stream"
 
 
-def build_message(event, recipient, documents=None):
+def build_message(event, recipient, documents=None, signature_html=None):
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient or ""):
         raise RuntimeError("Ungültige Empfängeradresse")
     subject = event.get("subject", "")
@@ -211,6 +212,10 @@ def build_message(event, recipient, documents=None):
     if total > MAX_BYTES:
         raise RuntimeError("Die Gesamtgröße der Anhänge überschreitet 5 MB")
     body_html = sanitize_html(event.get("body_html", ""))
+    if event.get("append_signature") is True:
+        signature_html = sanitize_html(signature_html or DEFAULT_SIGNATURE_HTML)
+        if signature_html:
+            body_html += signature_html
     sender_name = (event.get("sender_display_name") or FROM_NAME).strip()[:100]
     reply_to = (event.get("reply_to_email") or FROM_EMAIL).strip()
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", reply_to):
@@ -332,7 +337,7 @@ def process_test_requests():
             try:
                 events = api(
                     "GET",
-                    "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id"
+                    "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id,append_signature"
                     f"&id=eq.{request['event_id']}&limit=1",
                 ) or []
                 if not events:
@@ -345,7 +350,8 @@ def process_test_requests():
                     + event.get("body_html", "")
                 )
                 documents = load_event_documents(event)
-                message = build_message(event, request["recipient"], documents)
+                signature_html = event_signature_html() if event.get("append_signature") is True else None
+                message = build_message(event, request["recipient"], documents, signature_html)
                 send_checked(smtp, message, request["recipient"])
                 update_test_request(request_id, "sent", event=event)
                 print(f"Testmail vom SMTP-Server angenommen: {request['recipient']}")
@@ -358,6 +364,12 @@ def process_test_requests():
             smtp.quit()
         except Exception:
             pass
+
+
+def event_signature_html():
+    rows = api("GET", "site_configuration?select=event_signature_html&singleton=eq.true&limit=1") or []
+    configured = rows[0].get("event_signature_html") if rows else None
+    return sanitize_html(configured or DEFAULT_SIGNATURE_HTML)
 
 
 def previous_delivery_statuses(event_id, year):
@@ -380,13 +392,32 @@ def event_occurs_on(event, date):
     return False
 
 
+def reminder_days(event):
+    try:
+        days = int(event.get("reminder_days"))
+    except (TypeError, ValueError):
+        return None
+    return days if days in {1, 2, 7} else None
+
+
+def event_reminder_due_on(event, today):
+    if event.get("active") is not True or event.get("reminder_enabled") is not True:
+        return False
+    days = reminder_days(event)
+    return days is not None and event_occurs_on(event, today + dt.timedelta(days=days))
+
+
 def send_event_recipients(event, event_date, smtp):
+    if event.get("active") is not True or event.get("reminder_enabled") is not True:
+        print(f"Erinnerung für Ereignis {event.get('id')} deaktiviert; kein Versand.")
+        return
     previous = previous_delivery_statuses(event["id"], event_date.year)
     handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
     recipients = event.get("recipients") or []
     documents = None
     documents_loaded = False
     documents_error = None
+    signature_html = event_signature_html() if event.get("append_signature") is True else None
 
     for recipient in recipients:
         if recipient.lower() in handled:
@@ -403,7 +434,7 @@ def send_event_recipients(event, event_date, smtp):
                 documents_loaded = True
             if documents_error:
                 raise RuntimeError(documents_error)
-            message = build_message(event, recipient, documents)
+            message = build_message(event, recipient, documents, signature_html)
             send_checked(smtp, message, recipient)
             upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
             print(f"Versendet: Ereignis {event['id']} an {recipient}")
@@ -425,23 +456,29 @@ def main():
         print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
         return
     query = (
-        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id"
-        "&active=eq.true"
+        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id,active,reminder_enabled,reminder_days,append_signature"
+        "&active=eq.true&reminder_enabled=eq.true"
     )
-    events = [event for event in (api("GET", query) or []) if event_occurs_on(event, now.date())]
-    if not events:
-        print(f"Keine aktiven Ereignisse am {now.strftime('%d.%m.')}.")
+    candidates = api("GET", query) or []
+    due_events = []
+    for event in candidates:
+        days = reminder_days(event)
+        if days is None or event.get("active") is not True or event.get("reminder_enabled") is not True:
+            continue
+        event_date = now.date() + dt.timedelta(days=days)
+        if event_occurs_on(event, event_date):
+            due_events.append((event, event_date))
+    if not due_events:
+        print(f"Keine aktivierten Ereignis-Erinnerungen am Fälligkeitstag {now.strftime('%d.%m.%Y')}.")
         return
 
-    event_date = now.date()
-    year = event_date.year
     try:
         smtp = smtp_connect()
     except Exception as exc:
         error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
-        for event in events:
+        for event, event_date in due_events:
             try:
-                previous = previous_delivery_statuses(event["id"], year)
+                previous = previous_delivery_statuses(event["id"], event_date.year)
                 handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
                 for recipient in event.get("recipients") or []:
                     if recipient.lower() not in handled:
@@ -452,7 +489,7 @@ def main():
         return
 
     try:
-        for event in events:
+        for event, event_date in due_events:
             try:
                 send_event_recipients(event, event_date, smtp)
             except Exception as exc:
