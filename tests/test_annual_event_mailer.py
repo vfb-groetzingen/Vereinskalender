@@ -53,6 +53,53 @@ class AnnualEventMailerTests(unittest.TestCase):
         self.assertIn("vfb-app@vfb-groetzingen.de", message["From"])
         self.assertIn("vorstand@example.org", message["Reply-To"])
 
+    def test_annual_send_loads_selected_documents_before_building_message(self):
+        event = {
+            "id": "event-annual-1",
+            "title": "Jahrestag",
+            "subject": "Einladung zum Jahrestag",
+            "body_html": "<p>Wir laden ein.</p>",
+            "recipients": ["person@example.org"],
+            "assets": [],
+            "document_ids": ["document-1"],
+        }
+        documents = [{
+            "id": "document-1",
+            "file_name": "Programm.pdf",
+            "storage_path": "document-1/programm.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 8,
+        }]
+        sent_messages = []
+        delivery_statuses = []
+        original_previous = mailer.previous_delivery_statuses
+        original_load_documents = mailer.load_event_documents
+        original_download = mailer.download_library_asset
+        original_upsert = mailer.upsert_delivery
+
+        class FakeSMTP:
+            def send_message(self, message):
+                sent_messages.append(message)
+                return {}
+
+        try:
+            mailer.previous_delivery_statuses = lambda _event_id, _year: []
+            mailer.load_event_documents = lambda _event: documents
+            mailer.download_library_asset = lambda _path, _document_id: b"pdf-data"
+            mailer.upsert_delivery = lambda _event, _date, _recipient, status, *args, **kwargs: delivery_statuses.append(status)
+            mailer.send_event_recipients(event, dt.date(2026, 11, 18), FakeSMTP())
+        finally:
+            mailer.previous_delivery_statuses = original_previous
+            mailer.load_event_documents = original_load_documents
+            mailer.download_library_asset = original_download
+            mailer.upsert_delivery = original_upsert
+
+        self.assertEqual(delivery_statuses, ["sending", "sent"])
+        self.assertEqual(len(sent_messages), 1)
+        attachments = list(sent_messages[0].iter_attachments())
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0].get_filename(), "Programm.pdf")
+
     def test_smtp_recipient_rejection_is_reported(self):
         class RejectedSMTP:
             def send_message(self, _message):
