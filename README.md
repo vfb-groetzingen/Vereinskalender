@@ -6,7 +6,7 @@ Webseite für den Verein zur Verwaltung von Räumen und Plätzen.
 - **Berechtigte Mitglieder** legen Termine an, bearbeiten und löschen sie, können sie einem anderen Platz/Raum zuordnen und importieren/exportieren Belegungen als CSV oder Excel.
 - **Überschneidungen sind erlaubt**, auch auf derselben Ressource; die Kalenderansichten zeigen überlappende Termine in getrennten Spuren.
 - **Terminserien** unterstützen wöchentliche, zweiwöchentliche, monatliche und jährliche Wiederholungen: als begrenzte Serie mit bis zu 52 Terminen oder fortlaufend mit automatischer Ergänzung im rollierenden Sechsmonatszeitraum. Einzelne Vorkommen lassen sich ausnehmen; fortlaufende Serien können ab einem Termin beendet werden.
-- **Buchungsnachrichten:** optionale Kontaktadresse für Bestätigungen, Änderungen und Absagen; Erinnerungen sind mit 1, 2 oder 7 Tagen Vorlauf wählbar.
+- **Buchungsnachrichten:** optionale Kontaktadresse für Bestätigungen, Änderungen und Absagen; Erinnerungen sind mit 1, 2 oder 7 Tagen Vorlauf wählbar. Die Kategorie „Veranstaltung“ erzeugt keine Buchungs-E-Mails oder Erinnerungen. Automatische Versandarten lassen sich einzeln aktivieren; Ereignis-E-Mails können die vier Buchungsvorlagen als Ausgangstext verwenden.
 - **Administration:** Benutzer, Ressourcen, filterbares Änderungsprotokoll, Texte, Mailprofile, Dokumente und Navigation werden in Admin-Unterseiten gepflegt.
 - **Kalender-Abo:** öffentliche, schreibgeschützte iCalendar-Feeds für alle Ressourcen oder einzelne Räume/Plätze.
 - **Ereignisse und E-Mail-Erinnerungen:** Bearbeiter können einmalige oder jährlich wiederkehrende Ereignisse anlegen; jährliche Wiederholung ist der Standard.
@@ -52,6 +52,7 @@ supabase/migration-annual-email-log-context.sql  Ereignisdatum und Empfänger im
 supabase/migration-event-recurrence-retention-3-years.sql  Einmalige Ereignisse und 3-Jahres-Aufbewahrung
 supabase/migration-admin-configuration-communications.sql  Admin-Konfiguration, Buchungsnachrichten und Dokumentablage
 supabase/migration-admin-config-audit-fix.sql  Audit-Triggerkorrektur und atomare Einzelvorlagenspeicherung
+supabase/migration-booking-email-controls.sql  Buchungs-Mailsteuerung, Veranstaltungsschutz und Status skipped
 supabase/migration-continuous-booking-series.sql  Fortlaufende Buchungsserien und tägliche Ergänzung
 supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
 supabase/functions/admin-users/index.ts  Einladungen und Wiederfreischaltung vorhandener Konten
@@ -72,7 +73,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
 2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Audit-Korrektur kommt direkt nach `supabase/migration-admin-configuration-communications.sql`; Bestandsinstallationen müssen sie ausführen. Die Serienmigration kommt danach.
+3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Audit-Korrektur kommt direkt nach `supabase/migration-admin-configuration-communications.sql`; anschließend folgt `supabase/migration-booking-email-controls.sql`, die Bestandsinstallationen ebenfalls ausführen müssen. Die Serienmigration kommt danach.
 4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
 5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
@@ -84,7 +85,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 npm test
 ```
 
-Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
+Die Tests prüfen Datumsangaben und alle vier Serienfrequenzen, erlaubte Überschneidungen, Import mit optionalen Endangaben und Kalenderzuordnung, Kalenderpositionen, den Demo-Datenspeicher, Gesamtplan-Klickpfade, Kategorieunterdrückung, Ereignisvorlagen sowie Mailer- und Antwortadresslogik. Die SQL-Dateien und die Oberfläche im Browser müssen nach der Einrichtung zusätzlich nach `docs/TESTPROTOKOLL.md` geprüft werden.
 
 ## Sicherheit in Kürze
 
