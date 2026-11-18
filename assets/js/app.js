@@ -1674,7 +1674,10 @@ function openLogin() {
     try {
       await s.requestPasswordReset(email);
       $('#lf-msg', d).textContent = 'Falls für diese Adresse ein Konto besteht, wurde ein Wiederherstellungslink gesendet.';
-    } catch { $('#lf-msg', d).textContent = 'Der Wiederherstellungslink konnte gerade nicht gesendet werden.'; }
+    } catch (error) {
+      console.error('Passwort-Wiederherstellung fehlgeschlagen:', { status: error?.status, code: error?.code, message: error?.message });
+      $('#lf-msg', d).textContent = 'Der Wiederherstellungslink konnte gerade nicht gesendet werden.';
+    }
   };
 }
 
