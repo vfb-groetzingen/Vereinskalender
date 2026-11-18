@@ -166,7 +166,7 @@ Eine eigene Domain wird in den GitHub-Pages-Einstellungen unter **Custom domain*
 - [ ] GitHub Actions Secrets für Datenbank, Strato-Versand und Sicherung hinterlegt
 - [ ] `calendar-feed` mit `--no-verify-jwt` bereitgestellt und öffentlichen iCalendar-Link getestet
 - [ ] Buchungsnachrichten- und Ereignis-Lifecycle-Workflow manuell gestartet und Strato-Versand mit kontrollierter Adresse geprüft
-- [ ] Ereignis-Mailtypen einzeln aktiviert/deaktiviert, Masterfreigabe, bearbeitbare Standardsignatur im Nachrichtentext, Erinnerungsfrist und bestätigungspflichtigen Einzelversand geprüft
+- [ ] Ereignis-Mailtypen einzeln aktiviert/deaktiviert, Masterfreigabe, bearbeitbare Standardsignatur im Nachrichtentext, Erinnerungsfrist sowie Checkbox-Versand nach dem Speichern an- und ausgeschaltet geprüft
 - [ ] Jahreserinnerung mit 1-, 2- und 7-Tage-Vorlauf in Testdaten geprüft; globale Buchungsvorlagen dürfen Ereignisschalter nicht umgehen
 - [ ] Keepalive, Sicherung, Wiederherstellung sowie Buchungs- und Ereignis-E-Mail-Workflows geprüft
 - [ ] Impressum und Datenschutzerklärung vervollständigt
