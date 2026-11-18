@@ -380,6 +380,41 @@ def event_occurs_on(event, date):
     return False
 
 
+def send_event_recipients(event, event_date, smtp):
+    previous = previous_delivery_statuses(event["id"], event_date.year)
+    handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
+    recipients = event.get("recipients") or []
+    documents = None
+    documents_loaded = False
+    documents_error = None
+
+    for recipient in recipients:
+        if recipient.lower() in handled:
+            print(f"Bereits versendet oder in Bearbeitung: Ereignis {event['id']} an {recipient}")
+            continue
+        handled.add(recipient.lower())
+        try:
+            upsert_delivery(event, event_date, recipient, "sending")
+            if not documents_loaded:
+                try:
+                    documents = load_event_documents(event)
+                except Exception as exc:
+                    documents_error = str(exc)
+                documents_loaded = True
+            if documents_error:
+                raise RuntimeError(documents_error)
+            message = build_message(event, recipient, documents)
+            send_checked(smtp, message, recipient)
+            upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
+            print(f"Versendet: Ereignis {event['id']} an {recipient}")
+        except Exception as exc:
+            try:
+                upsert_delivery(event, event_date, recipient, "failed", error=str(exc))
+            except Exception as log_error:
+                print(f"Versandfehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
+            print(f"FEHLER für Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
+
+
 def main():
     if "--tests-only" in sys.argv:
         process_test_requests()
@@ -406,7 +441,6 @@ def main():
         error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
         for event in events:
             try:
-                documents = load_event_documents(event)
                 previous = previous_delivery_statuses(event["id"], year)
                 handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
                 for recipient in event.get("recipients") or []:
@@ -420,25 +454,7 @@ def main():
     try:
         for event in events:
             try:
-                previous = previous_delivery_statuses(event["id"], year)
-                handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
-                for recipient in event.get("recipients") or []:
-                    if recipient.lower() in handled:
-                        print(f"Bereits versendet oder in Bearbeitung: Ereignis {event['id']} an {recipient}")
-                        continue
-                    handled.add(recipient.lower())
-                    try:
-                        upsert_delivery(event, event_date, recipient, "sending")
-                        message = build_message(event, recipient, documents)
-                        send_checked(smtp, message, recipient)
-                        upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
-                        print(f"Versendet: Ereignis {event['id']} an {recipient}")
-                    except Exception as exc:
-                        try:
-                            upsert_delivery(event, event_date, recipient, "failed", error=str(exc))
-                        except Exception as log_error:
-                            print(f"Versandfehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
-                        print(f"FEHLER für Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
+                send_event_recipients(event, event_date, smtp)
             except Exception as exc:
                 print(f"FEHLER für Ereignis {event.get('id')}: {exc}", file=sys.stderr)
     finally:
