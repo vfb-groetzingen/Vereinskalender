@@ -94,15 +94,25 @@ Die Datei `404.html` leitet Direktaufrufe wie `/raeume/trainingsplatz-a` auf die
 
 Das Passwort für `BACKUP_PASSPHRASE` ist notwendig, um Sicherungen zu entschlüsseln. **Ohne dieses Passwort sind die Sicherungen unbrauchbar.** Es muss an mindestens zwei Stellen gespeichert werden (z. B. im Vereins-Passwortmanager).
 
-## Schritt 8: iCalendar-Feed bereitstellen
+## Schritt 8: Supabase Edge Functions bereitstellen
 
-Der öffentliche Feed ist nur lesend und liest Buchungen aus `public_bookings`; Notizen, Kontakt-E-Mail-Adressen und andere interne Felder werden nicht ausgegeben. Nach der Datenbankmigration die Supabase CLI für das Projekt anmelden und im Projektordner verknüpfen (`supabase login`, `supabase link --project-ref DEINE_PROJECT_REF`). Danach die öffentliche Funktion bereitstellen:
+Nach der Datenbankmigration die Supabase CLI für das Projekt anmelden und im Projektordner verknüpfen (`supabase login`, `supabase link --project-ref DEINE_PROJECT_REF`).
+
+Zuerst die geschützte Admin-Funktion bereitstellen:
+
+```sh
+supabase functions deploy admin-users
+```
+
+Für `admin-users` **kein** `--no-verify-jwt` verwenden: Die Funktion erwartet ein gültiges Bearer-Token und prüft zusätzlich die Admin-Rolle. Sie benötigt die Supabase-Laufzeitwerte `SUPABASE_URL`, `SUPABASE_ANON_KEY` und `SUPABASE_SERVICE_ROLE_KEY`. Der Service-Role-Schlüssel darf nur als serverseitiges Supabase-Secret verwendet werden, niemals in Webseiten-Dateien oder im Git-Repository. Falls die Webseite unter einer anderen Adresse betrieben wird, die optionalen Edge-Function-Secrets `SITE_URL` und `ALLOWED_ORIGIN` an die eigene Website anpassen.
+
+Danach den öffentlichen iCalendar-Feed bereitstellen. Er liest Buchungen nur aus `public_bookings`; Notizen, Kontakt-E-Mail-Adressen und andere interne Felder werden nicht ausgegeben:
 
 ```sh
 supabase functions deploy calendar-feed --no-verify-jwt
 ```
 
-`--no-verify-jwt` ist erforderlich, damit Kalenderprogramme den Feed ohne Anmeldung abrufen können. Die Funktion verwendet ausschließlich den öffentlichen anon-Schlüssel und die Datenbankrechte der öffentlichen Views. Keine Service-Role-Zugangsdaten in die Funktion oder Webseite eintragen. Anschließend auf der öffentlichen Seite **Kalender abonnieren** den Link kopieren und mit einem Kalenderprogramm testen.
+`--no-verify-jwt` ist nur für den Kalenderfeed erforderlich, damit Kalenderprogramme ihn ohne Anmeldung abrufen können. Die Funktion verwendet den öffentlichen anon-Schlüssel und die Datenbankrechte der öffentlichen Views. Anschließend auf der öffentlichen Seite **Kalender abonnieren** den Link kopieren und mit einem Kalenderprogramm testen.
 
 ## Schritt 9: Automatisierung prüfen
 
