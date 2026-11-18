@@ -54,6 +54,7 @@ supabase/migration-admin-configuration-communications.sql  Admin-Konfiguration, 
 supabase/migration-admin-config-audit-fix.sql  Audit-Triggerkorrektur und atomare Einzelvorlagenspeicherung
 supabase/migration-continuous-booking-series.sql  Fortlaufende Buchungsserien und tägliche Ergänzung
 supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
+supabase/functions/admin-users/index.ts  Einladungen und Wiederfreischaltung vorhandener Konten
 supabase/seed.sql       Startdaten für die Datenbank
 supabase/admin-setup.sql  Ersten Administrator eintragen
 scripts/build_qr.py     Erzeugt die QR-Codes
