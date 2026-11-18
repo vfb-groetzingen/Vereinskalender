@@ -51,6 +51,7 @@ function parseRoute() {
   const p = relPath();
   if (p === '/') return { name: 'home' };
   if (p === '/belegungsplan') return { name: 'plan' };
+  if (p === '/belegungsplan/gesamt') return { name: 'combinedPlan' };
   if (p === '/admin') return { name: 'admin', section: new URLSearchParams(location.search).get('section') || 'overview', config: new URLSearchParams(location.search).get('config') || 'general' };
   if (p === '/ereignisse') return { name: 'annualEvents' };
   if (p === '/kalender-abonnieren') return { name: 'calendarSubscription' };
@@ -78,6 +79,8 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const exportButton = e.target.closest('[data-export-target]');
   if (exportButton) { e.preventDefault(); openExportDialog(exportButton.dataset.exportTarget || 'all'); return; }
+  const printButton = e.target.closest('[data-print-view]');
+  if (printButton) { e.preventDefault(); window.print(); return; }
   const bulkDeleteButton = e.target.closest('[data-bulk-delete]');
   if (bulkDeleteButton) { e.preventDefault(); openBulkDeleteDialog(); }
 });
@@ -128,7 +131,7 @@ function renderHeader() {
       <a class="brand" href="${HOME}" data-link="/" aria-label="Zur Startseite"><img class="brand-logo" src="${esc(LOGO_URL)}" alt="VfB 04 Grötzingen e. V. – Hier ist Sport daheim"></a>
       <nav class="nav" aria-label="Hauptnavigation">
         <a href="${HOME}" data-link="/">Start</a>
-        <a href="${BASE}/belegungsplan" data-link="/belegungsplan">Belegungsplan</a>
+        <a href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt" aria-label="Gesamtbelegungsplan">Gesamtbelegungsplan</a>
         <a href="${BASE}/kalender-abonnieren" data-link="/kalender-abonnieren">Kalender abonnieren</a>
         ${eventsLink}
         ${adminLink}
@@ -460,7 +463,7 @@ function timeGrid(range, bookings) {
         style="top:${bl.top}px;height:${bl.height}px;left:${bl.left}%;width:calc(${bl.width}% - 4px);background:${catColor(b.category_id)}"
         aria-label="${esc(b.title)}, ${hhmm(new Date(b.starts_at))} bis ${hhmm(new Date(b.ends_at))}${note}">
         <span class="ev-time">${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</span>
-        <span class="ev-title">${esc(b.title)}</span></button>`;
+        <span class="ev-title">${seriesMark(b)}${esc(b.title)}</span></button>`;
     }).join('');
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}" role="group" aria-label="${esc(dayLong(d))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(d))}</span><span class="tg-date">${d.getDate()}.${d.getMonth() + 1}.</span></div>
@@ -481,7 +484,7 @@ function monthGrid(range, bookings) {
     const dayEnd = L.addDays(dayStart, 1);
     const list = bookings.filter((b) => new Date(b.ends_at) > dayStart && new Date(b.starts_at) < dayEnd)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${esc(b.title)}</button>`).join('');
+    const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</button>`).join('');
     const more = list.length > 3 ? `<button type="button" class="link-btn" data-goto="${L.ymd(d)}">+${list.length - 3} weitere</button>` : '';
     const isToday = d.toDateString() === new Date().toDateString();
     return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}">
@@ -496,7 +499,7 @@ function futureTable(list) {
   const rows = list.map((b) => `<tr>
       <td>${esc(new Date(b.starts_at).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }))}</td>
       <td>${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</td>
-      <td><span class="chip" style="background:${catColor(b.category_id)}" aria-hidden="true"></span>${esc(b.title)}</td>
+      <td><span class="chip" style="background:${catColor(b.category_id)}" aria-hidden="true"></span>${seriesMark(b)}${esc(b.title)}</td>
       <td>${esc(catById(b.category_id)?.name || '')}</td>
       ${isEditor() ? `<td>${esc(b.notes || '')}</td>` : ''}
       ${isEditor() ? `<td><button type="button" class="btn btn-small btn-ghost" data-id="${esc(b.id)}">Bearbeiten</button></td>` : ''}
@@ -582,7 +585,7 @@ function planMonthGrid(range, bookings) {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     const shown = rows.slice(0, 4).map((b) => {
       const resource = resById(b.resource_id);
-      return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${esc(b.title)}</button>`;
+      return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${seriesMark(b)}${esc(b.title)}</button>`;
     }).join('');
     const more = rows.length > 4 ? `<span class="plan-month-more">+${rows.length - 4} weitere</span>` : '';
     const out = day.getMonth() !== range.month;
@@ -619,7 +622,7 @@ function planWeekBoard(range, groups) {
             title="${esc(booking.title)} · ${esc(category)} · ${esc(time)}"
             aria-label="${esc(resource.name)}, ${esc(dayLong(day))}: ${esc(booking.title)}, ${esc(category)}, ${esc(time)}">
             <span class="week-booking-time">${time}</span>
-            <span class="week-booking-title">${esc(booking.title)}</span>
+            <span class="week-booking-title">${seriesMark(booking)}${esc(booking.title)}</span>
           </button>`;
         }).join('');
         return `<div class="week-day-cell" data-date="${L.ymd(day)}" data-resource-id="${esc(resource.id)}" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
@@ -638,6 +641,131 @@ function planWeekBoard(range, groups) {
   </div>`;
 }
 
+function isoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function combinedRangeLabel(days) {
+  const first = days[0], last = days[6];
+  if (first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear()) {
+    return `${first.getDate()}. – ${last.getDate()}. ${last.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}`;
+  }
+  return `${first.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })} – ${last.toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
+function combinedTimeGrid(range, resources) {
+  const selectedIds = new Set(resources.map((resource) => resource.id));
+  const bookingsById = new Map();
+  for (const booking of S.bookings) {
+    if (!selectedIds.has(booking.resource_id)) continue;
+    let combined = bookingsById.get(booking.id);
+    if (!combined) {
+      combined = { ...booking, _selectedResourceIds: new Set() };
+      bookingsById.set(booking.id, combined);
+    }
+    combined._selectedResourceIds.add(booking.resource_id);
+  }
+  const bookings = [...bookingsById.values()].map((booking) => ({
+    ...booking,
+    _selectedResources: [...booking._selectedResourceIds].map(resById).filter(Boolean)
+  }));
+  const segments = bookings.flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
+  const blocks = LY.timeGridBlocks(segments, DS, HOUR_PX);
+  const hours = [...Array(DE - DS + 1)].map((_, i) => DS + i);
+  const height = (DE - DS) * HOUR_PX;
+  const byDay = range.days.map((_, dayIndex) => blocks.filter((block) => block.dayIndex === dayIndex));
+  const cols = range.days.map((day, dayIndex) => {
+    const events = byDay[dayIndex].map((block) => {
+      const booking = block.booking;
+      const colors = booking._selectedResources.map((resource) => resource.color || '#4a5568');
+      const gradient = colors.length > 1
+        ? `repeating-linear-gradient(135deg, ${colors.map((color, i) => `${color} ${i * 18}px ${(i + 1) * 18}px`).join(', ')})`
+        : (colors[0] || '#4a5568');
+      const resourceNames = booking._selectedResources.map((resource) => resource.name).join(', ');
+      const start = new Date(booking.starts_at), end = new Date(booking.ends_at);
+      return `<button type="button" class="event combined-event" data-id="${esc(booking.id)}"
+        style="top:${block.top}px;height:${block.height}px;left:${block.left}%;width:calc(${block.width}% - 4px);background:${esc(gradient)};border-left-color:${esc(colors[0] || '#4a5568')}"
+        title="${esc(resourceNames)} · ${esc(booking.title)} · ${hhmm(start)}–${hhmm(end)}"
+        aria-label="${esc(resourceNames)}: ${esc(booking.title)}, ${hhmm(start)} bis ${hhmm(end)}">
+        <span class="ev-time">${hhmm(start)}</span><span class="ev-title">${seriesMark(booking)}${esc(booking.title)}</span></button>`;
+    }).join('');
+    const isToday = day.toDateString() === new Date().toDateString();
+    return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(day))}">
+      <div class="tg-head"><span class="tg-dow">${esc(dayName(day))}</span><span class="tg-date">${day.getDate()}. ${esc(day.toLocaleDateString('de-DE', { month: 'short' }))}</span></div>
+      <div class="tg-body" data-date="${L.ymd(day)}" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
+    </div>`;
+  }).join('');
+  return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
+    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
+    <div class="tg-cols">${cols}</div>
+  </div>${bookings.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
+}
+
+async function renderCombinedPlan() {
+  const firstDay = L.weekStart(S.planAnchor);
+  const range = { from: firstDay, to: L.addDays(firstDay, 7), days: [...Array(7)].map((_, i) => L.addDays(firstDay, i)) };
+  S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
+  const visible = S.resources.filter((resource) => !S.hiddenRes.has(resource.id));
+  const dateLabel = combinedRangeLabel(range.days);
+  const resourceGroups = [['Räume', S.resources.filter((r) => r.type === 'raum')], ['Plätze', S.resources.filter((r) => r.type === 'platz')]];
+  const filters = resourceGroups.map(([title, list]) => list.length ? `<fieldset class="combined-filter-group"><legend>${title}</legend><ul class="check-list">${list.map((resource) => `<li><label class="check"><input type="checkbox" data-combined-resource="${esc(resource.id)}" ${S.hiddenRes.has(resource.id) ? '' : 'checked'}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label></li>`).join('')}</ul></fieldset>` : '').join('');
+  const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
+  app.innerHTML = `
+    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster: Tage als Spalten, Uhrzeiten links. Die Farbe kennzeichnet die Ressource.</p></div>
+      <div class="page-actions combined-actions"><a class="btn btn-ghost" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a><button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>${isEditor() ? '<button type="button" class="btn" id="combined-import">Spiele importieren</button>' : ''}${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button></div>
+    </header>
+    <div class="combined-layout">
+      <aside class="sidebar combined-filter" aria-label="Angezeigte Rubriken">
+        <section class="filter-box"><h2>Rubriken auswählen</h2><div class="filter-actions"><button type="button" class="link-btn" id="combined-show-all">Alle einblenden</button><button type="button" class="link-btn" id="combined-hide-all">Alle ausblenden</button></div>${filters || '<p class="muted">Keine Ressourcen vorhanden.</p>'}</section>
+      </aside>
+      <section class="combined-main">
+        <div class="toolbar combined-toolbar" role="toolbar" aria-label="Woche auswählen">
+          <div class="btn-group"><button type="button" class="btn" id="combined-prev" aria-label="Vorherige Woche">‹</button><button type="button" class="btn" id="combined-today">Heute</button><button type="button" class="btn" id="combined-next" aria-label="Nächste Woche">›</button></div>
+          <label class="date-pick"><span class="sr-only">Datum in der Woche wählen</span><input type="date" id="combined-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
+          <p class="range-label" aria-live="polite">${esc(dateLabel)}</p>
+        </div>
+        <p class="combined-print-period">Woche ${String(isoWeekNumber(range.days[0])).padStart(2, '0')}: ${esc(dateLabel)}</p>
+        <section class="combined-legend" aria-label="Farblegende"><h2>Farblegende</h2><ul>${legend || '<li>Keine Rubriken ausgewählt</li>'}</ul></section>
+        ${combinedTimeGrid(range, visible)}
+      </section>
+    </div>`;
+
+  const defaultResourceId = () => visible[0]?.id || S.resources[0]?.id;
+  const newButton = $('#combined-new');
+  if (newButton) newButton.onclick = () => {
+    const resource_id = defaultResourceId();
+    if (!resource_id) return setNotice('error', 'Bitte zuerst eine Ressource anlegen.');
+    openBookingForm({ resource_id, date: S.planAnchor, startTime: '17:00' });
+  };
+  const combinedImport = $('#combined-import');
+  if (combinedImport) combinedImport.onclick = () => openImport(null);
+  bindCalendarCreate('.combined-time-grid .tg-body[data-date]', (event, body) => ({
+    resource_id: defaultResourceId(), date: L.parseISODate(body.dataset.date),
+    startTime: snappedTimeFromY(event, body, HOUR_PX)
+  }));
+  const move = (days) => { S.planAnchor = L.addDays(S.planAnchor, days); render(); };
+  $('#combined-prev').onclick = () => move(-7);
+  $('#combined-next').onclick = () => move(7);
+  $('#combined-today').onclick = () => { S.planAnchor = new Date(); render(); };
+  $('#combined-date').onchange = (event) => {
+    if (!event.target.value) return;
+    const [year, month, day] = event.target.value.split('-').map(Number);
+    S.planAnchor = new Date(year, month - 1, day);
+    render();
+  };
+  document.querySelectorAll('[data-combined-resource]').forEach((checkbox) => checkbox.onchange = () => {
+    if (checkbox.checked) S.hiddenRes.delete(checkbox.dataset.combinedResource);
+    else S.hiddenRes.add(checkbox.dataset.combinedResource);
+    render();
+  });
+  $('#combined-show-all').onclick = () => { S.hiddenRes.clear(); render(); };
+  $('#combined-hide-all').onclick = () => { S.resources.forEach((resource) => S.hiddenRes.add(resource.id)); render(); };
+  document.querySelectorAll('.combined-event').forEach((button) => button.onclick = () => openDetail(button.dataset.id));
+}
+
 // ---------- Belegungsplan ----------
 async function renderPlan() {
   const range = planRange();
@@ -648,7 +776,9 @@ async function renderPlan() {
     app.innerHTML = `
       <header class="page-head"><div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Monatsübersicht aller Räume und Plätze.')}</p></div>
         <div class="page-actions">
+          <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -676,7 +806,9 @@ async function renderPlan() {
       <header class="page-head">
         <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Wochenübersicht von Montag bis Sonntag. Farbe am Eintrag = Kategorie.')}</p></div>
         <div class="page-actions">
+          <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
           <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
           ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
           ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
           ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -730,7 +862,7 @@ async function renderPlan() {
           style="left:${bar.x}px;width:${bar.width}px;top:${bar.lane * TL_ROW_LANE + 5}px;background:${esc(r.color)};border-left-color:${catColor(b.category_id)}"
           title="${esc(b.title)} · ${esc(cat)} · ${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}"
           aria-label="${esc(r.name)}: ${esc(b.title)}, ${esc(cat)}, ${L.fmtDateDE(new Date(b.starts_at))} ${hhmm(new Date(b.starts_at))} bis ${hhmm(new Date(b.ends_at))}">
-          <span class="bar-text">${hhmm(new Date(b.starts_at))} ${esc(b.title)}</span></button>`;
+          <span class="bar-text">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</span></button>`;
       }).join('');
       const grid = range.days.map((_, i) => `<span class="tl-daysep" style="left:${i * dayW}px"></span>`).join('');
       return `<div class="tl-row" role="row">
@@ -754,7 +886,9 @@ async function renderPlan() {
     <header class="page-head">
       <div><h1>${esc(S.publicContent?.plan_title || 'Belegungsplan')}</h1><p class="muted">${esc(S.publicContent?.plan_intro || 'Plätze und Räume nach Datum und Uhrzeit. Farbe = Rubrik, linker Rand = Kategorie.')}</p></div>
       <div class="page-actions">
-        <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+        <a class="btn btn-ghost" href="${BASE}/belegungsplan/gesamt" data-link="/belegungsplan/gesamt">Gesamtplan</a>
+          <button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>
+          <button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button>
         ${isEditor() ? '<button type="button" class="btn" id="btn-import-plan">Spiele importieren</button>' : ''}
         ${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}
         ${isEditor() ? '<button type="button" class="btn btn-primary" id="btn-new-plan">Neuer Termin</button>' : ''}
@@ -866,6 +1000,11 @@ function makeDialog(title, bodyHtml, cls = '') {
   return d;
 }
 
+function seriesMark(booking) {
+  if (!booking?.series_id) return '';
+  return `<span class="series-mark" role="img" aria-label="Wiederkehrender Termin" title="Wiederkehrender Termin">↻</span>`;
+}
+
 function openDetail(id, editFirst = false) {
   const b = S.bookings.find((x) => x.id === id) || S.futureList.find((x) => x.id === id);
   if (!b) return;
@@ -880,7 +1019,7 @@ function openDetail(id, editFirst = false) {
       <dt>Datum</dt><dd>${esc(dayLong(start))}</dd>
       <dt>Zeit</dt><dd>${hhmm(start)} – ${hhmm(end)} Uhr</dd>
       ${isEditor() && b.notes ? `<dt>Notiz</dt><dd>${esc(b.notes)}</dd>` : ''}
-      ${b.series_id ? '<dt>Serie</dt><dd>Teil einer Terminserie</dd>' : ''}
+      ${b.series_id ? `<dt>Serie</dt><dd>${seriesMark(b)} Teil einer Terminserie</dd>` : ''}
     </dl>
     ${isEditor() ? `<div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="d-del">Löschen</button>
@@ -911,21 +1050,23 @@ function openDetail(id, editFirst = false) {
 
 function openSeriesScopeDialog(booking, action) {
   const isEdit = action === 'edit';
+  const isContinuous = booking.series_id && booking.series_occurrence !== null && booking.series_occurrence !== undefined;
   const dateLabel = L.fmtDateDE(new Date(booking.starts_at));
   const d = makeDialog(
     isEdit ? 'Wiederholung bearbeiten' : 'Wiederholung löschen',
     `
       <p>Dieser Termin gehört zu einer Terminserie. Ausgewählter Termin: <strong>${esc(dateLabel)}</strong>.</p>
-      <p>${isEdit ? 'Welche Termine sollen geändert werden?' : 'Welche Termine sollen endgültig gelöscht werden?'}</p>
+      <p>${isEdit ? 'Welche Termine sollen geändert werden?' : 'Wie soll mit der Serie weiter verfahren werden?'}</p>
       <div class="dialog-actions series-scope-actions">
         <button type="button" class="btn ${isEdit ? '' : 'btn-danger'}" id="series-only">Nur diesen Termin ${isEdit ? 'bearbeiten' : 'löschen'}</button>
-        <button type="button" class="btn ${isEdit ? 'btn-primary' : 'btn-danger'}" id="series-following">Diesen und alle folgenden ${isEdit ? 'bearbeiten' : 'löschen'}</button>
+        <button type="button" class="btn ${isEdit ? 'btn-primary' : 'btn-danger'}" id="series-following">${isEdit ? 'Diesen und folgende bearbeiten' : (isContinuous ? 'Ab diesem Termin beenden' : 'Diesen und alle folgenden löschen')}</button>
+        ${isEdit && isContinuous ? '<button type="button" class="btn" id="series-all">Gesamte Serie bearbeiten</button>' : ''}
         <button type="button" class="btn" data-close>Abbrechen</button>
       </div>
       <p class="msg" id="series-scope-msg" role="alert"></p>`, 'dialog-narrow'
   );
   const msg = (text) => { $('#series-scope-msg', d).textContent = text; };
-  const buttons = [$('#series-only', d), $('#series-following', d)];
+  const buttons = [...d.querySelectorAll('.series-scope-actions .btn:not([data-close])')];
   const editScope = (scope) => {
     d.addEventListener('close', () => openBookingForm({ booking, seriesScope: scope }), { once: true });
     d.close();
@@ -934,6 +1075,20 @@ function openSeriesScopeDialog(booking, action) {
     buttons.forEach((button) => { button.disabled = true; });
     msg(scope === 'following' ? 'Folgende Termine werden ermittelt …' : 'Termin wird gelöscht …');
     try {
+      if (isContinuous && scope === 'single') {
+        await S.store.deleteRecurringOccurrence(booking.series_id, Number(booking.series_occurrence), booking.id);
+        d.close();
+        setNotice('ok', 'Der Einzeltermin wurde gelöscht und wird nicht erneut angelegt.');
+        render();
+        return;
+      }
+      if (isContinuous && scope === 'following') {
+        await S.store.endRecurringSeries(booking.series_id, Number(booking.series_occurrence));
+        d.close();
+        setNotice('ok', 'Die Serie wurde ab diesem Datum beendet; vorgemerkte Folgetermine wurden entfernt.');
+        render();
+        return;
+      }
       let targets = [booking];
       if (scope === 'following') {
         const series = await S.store.getSeriesBookings(booking.series_id);
@@ -957,6 +1112,8 @@ function openSeriesScopeDialog(booking, action) {
   if (isEdit) {
     $('#series-only', d).onclick = () => editScope('single');
     $('#series-following', d).onclick = () => editScope('following');
+    const allButton = $('#series-all', d);
+    if (allButton) allButton.onclick = () => editScope('all');
   } else {
     $('#series-only', d).onclick = () => deleteScope('single');
     $('#series-following', d).onclick = () => deleteScope('following');
@@ -981,7 +1138,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   const initialEndTime = end ? hhmm(end) : (endTime || defaultEndClock(initialStartTime));
   const d = makeDialog(isEdit ? 'Termin bearbeiten' : 'Neuer Termin', `
     <form id="bf" class="form" novalidate>
-      ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten für diesen Termin und alle folgenden Termine der Serie.</p>' : ''}
+      ${isEdit && booking.series_id && seriesScope === 'following' ? '<p class="notice notice-warn">Die Änderungen gelten ab diesem Termin. Künftige Vorkommen werden automatisch angepasst.</p>' : ''}${isEdit && booking.series_id && seriesScope === 'all' ? '<p class="notice notice-warn">Die Änderungen gelten für die gesamte Serie.</p>' : ''}
       <div class="field"><label for="bf-title">Titel <span class="req">*</span></label>
         <input id="bf-title" class="input" required maxlength="120" value="${esc(booking?.title || '')}" autocomplete="off">
         <p class="hint">Öffentlich sichtbar. Bitte allgemein formulieren.</p></div>
@@ -1003,11 +1160,13 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <div class="field"><label for="bf-repeat">Wiederholung</label>
           <select id="bf-repeat" class="input"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="biweekly">Alle 2 Wochen</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div>
         <div class="field"><label for="bf-count">Anzahl Termine insgesamt</label>
-          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div></div>`}
-      <div class="field-row booking-notification-fields">
+          <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint" id="bf-count-hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div>
+        <div class="field"><label class="check"><input id="bf-continuous" type="checkbox" disabled> Fortlaufend</label><p class="hint">Sechs Monate werden vorgemerkt und automatisch ergänzt.</p></div></div>`}
+      <div class="field-row booking-notification-fields" id="bf-notification-fields">
         <div class="field"><label for="bf-contact-email">Kontakt-E-Mail für Buchungsnachrichten</label><input id="bf-contact-email" type="email" class="input" maxlength="254" autocomplete="email" value="${esc(booking?.contact_email || '')}"><p class="hint">Optional. Bestätigung, Änderungen, Absage und Erinnerung gehen an diese Adresse.</p></div>
         <div class="field"><label for="bf-reminder-days">Erinnerung</label><select id="bf-reminder-days" class="input"><option value="0" ${Number(booking?.reminder_days || 0) === 0 ? 'selected' : ''}>Keine Erinnerung</option><option value="1" ${Number(booking?.reminder_days || 0) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(booking?.reminder_days || 0) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(booking?.reminder_days || 0) === 7 ? 'selected' : ''}>7 Tage vorher</option></select><p class="hint">Wird nur mit Kontakt-E-Mail eingereiht.</p></div>
       </div>
+      <p class="hint" id="bf-no-booking-mail" hidden>Bei der Kategorie Veranstaltung werden keine Buchungs-E-Mails oder Erinnerungen verschickt.</p>
       <div class="field"><label for="bf-note">Notiz (nur für Mitglieder sichtbar)</label>
         <textarea id="bf-note" class="input" rows="3" maxlength="1000">${esc(booking?.notes || '')}</textarea></div>
       <p class="msg" id="bf-msg" role="alert"></p>
@@ -1021,7 +1180,38 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   const saveButton = form.querySelector('button[type="submit"]');
   const msg = (t) => { $('#bf-msg', d).textContent = t; };
   const repeat = $('#bf-repeat', d);
-  if (repeat) repeat.onchange = () => { $('#bf-count', d).disabled = repeat.value === 'none'; };
+  const continuousInput = $('#bf-continuous', d);
+  const categorySelect = $('#bf-cat', d);
+  const notificationFields = $('#bf-notification-fields', d);
+  const noBookingMailHint = $('#bf-no-booking-mail', d);
+  const contactEmailInput = $('#bf-contact-email', d);
+  const reminderInput = $('#bf-reminder-days', d);
+  const isEventCategory = () => (S.categories.find((category) => category.id === categorySelect.value)?.name || '').trim().toLowerCase() === 'veranstaltung';
+  const updateNotificationFields = () => {
+    const eventCategory = isEventCategory();
+    notificationFields.hidden = eventCategory;
+    noBookingMailHint.hidden = !eventCategory;
+    contactEmailInput.disabled = eventCategory;
+    reminderInput.disabled = eventCategory;
+    if (eventCategory) {
+      contactEmailInput.value = '';
+      reminderInput.value = '0';
+    }
+  };
+  categorySelect.onchange = updateNotificationFields;
+  updateNotificationFields();
+  const updateRepeatControls = () => {
+    if (!repeat) return;
+    const recurring = repeat.value !== 'none';
+    continuousInput.disabled = !recurring;
+    if (!recurring) continuousInput.checked = false;
+    const continuous = recurring && continuousInput.checked;
+    $('#bf-count', d).disabled = !recurring || continuous;
+    $('#bf-count', d).parentElement.querySelector('label').textContent = continuous ? 'Vorlauf' : 'Anzahl Termine insgesamt';
+    $('#bf-count-hint', d).textContent = continuous ? 'Ein fortlaufender Vorschauzeitraum von sechs Monaten.' : 'Der erste Termin zählt mit; höchstens 52 Termine.';
+  };
+  if (repeat) repeat.onchange = updateRepeatControls;
+  if (continuousInput) continuousInput.onchange = updateRepeatControls;
 
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -1034,8 +1224,9 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     const s = $('#bf-start', d).value;
     const en = $('#bf-end', d).value;
     const notes = $('#bf-note', d).value.trim() || null;
-    const contactEmail = $('#bf-contact-email', d).value.trim() || null;
-    const reminderDays = Number($('#bf-reminder-days', d).value);
+    const eventCategory = isEventCategory();
+    const contactEmail = eventCategory ? null : ($('#bf-contact-email', d).value.trim() || null);
+    const reminderDays = eventCategory ? 0 : Number($('#bf-reminder-days', d).value);
     if (contactEmail && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) || contactEmail.length > 254)) return msg('Bitte eine gültige Kontakt-E-Mail-Adresse eingeben.');
     if (![0, 1, 2, 7].includes(reminderDays)) return msg('Bitte eine gültige Erinnerungsfrist auswählen.');
     if (reminderDays && !contactEmail) return msg('Für eine Erinnerung bitte eine Kontakt-E-Mail-Adresse eingeben.');
@@ -1045,10 +1236,11 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     const parsedS = L.combine(dateStr, s), parsedE = L.combine(dateStr, en);
     if (parsedE <= parsedS) return msg('Die Endzeit muss nach der Startzeit liegen.');
     const frequency = repeat?.value || 'none';
+    const continuous = frequency !== 'none' && !!continuousInput?.checked;
     const countInput = Number($('#bf-count', d)?.value);
-    if (frequency !== 'none' && (!Number.isInteger(countInput) || countInput < 2 || countInput > 52)) return msg('Für eine Wiederholung bitte 2 bis 52 Termine angeben.');
-    const count = frequency === 'none' ? 1 : countInput;
-    const dates = count > 1 ? L.seriesDates(dateStr, count, frequency) : [dateStr];
+    if (frequency !== 'none' && !continuous && (!Number.isInteger(countInput) || countInput < 2 || countInput > 52)) return msg('Für eine begrenzte Wiederholung bitte 2 bis 52 Termine angeben.');
+    const count = frequency === 'none' ? 1 : (continuous ? 0 : countInput);
+    const dates = continuous ? [] : (count > 1 ? L.seriesDates(dateStr, count, frequency) : [dateStr]);
     const seriesId = count > 1 ? newUuid() : null;
     const rows = dates.map((ds) => ({
       resource_id: resId,
@@ -1065,7 +1257,15 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     saveButton.disabled = true;
     try {
       let successMessage;
-      if (isEdit && booking.series_id && seriesScope === 'following') {
+      if (isEdit && booking.series_id && (seriesScope === 'following' || seriesScope === 'all')
+          && booking.series_occurrence !== null && booking.series_occurrence !== undefined) {
+        const occurrenceIndex = Number(booking.series_occurrence);
+        await S.store.updateRecurringSeries(booking.series_id, occurrenceIndex, seriesScope, {
+          starts_on: dateStr, start_time: s, end_time: en, title, resource_id: resId, resource_ids: resourceIds,
+          category_id: catId, notes, contact_email: contactEmail, reminder_days: reminderDays
+        });
+        successMessage = seriesScope === 'all' ? 'Die gesamte Serie wurde angepasst.' : 'Die Serie wurde ab diesem Termin angepasst.';
+      } else if (isEdit && booking.series_id && seriesScope === 'following') {
         const series = await S.store.getSeriesBookings(booking.series_id);
         const updates = L.buildFollowingSeriesUpdates(series, booking, {
           dateStr,
@@ -1081,6 +1281,13 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       } else if (isEdit) {
         await S.store.updateBooking(booking.id, { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, starts_at: rows[0].starts_at, ends_at: rows[0].ends_at, notes, contact_email: contactEmail, reminder_days: reminderDays });
         successMessage = 'Termin wurde gespeichert.';
+      } else if (continuous) {
+        await S.store.createRecurringSeries({
+          resource_id: resId, resource_ids: resourceIds, category_id: catId, title, notes,
+          contact_email: contactEmail, reminder_days: reminderDays, starts_on: dateStr,
+          start_time: s, end_time: en, frequency, timezone: 'Europe/Berlin'
+        });
+        successMessage = `Fortlaufende ${{ weekly: 'wöchentliche', biweekly: 'zweiwöchentliche', monthly: 'monatliche', yearly: 'jährliche' }[frequency]} Serie wurde angelegt.`;
       } else {
         await S.store.createBookings(rows);
         successMessage = count > 1 ? `${count} Termine wurden angelegt.` : 'Termin wurde angelegt.';
@@ -1467,7 +1674,10 @@ function openLogin() {
     try {
       await s.requestPasswordReset(email);
       $('#lf-msg', d).textContent = 'Falls für diese Adresse ein Konto besteht, wurde ein Wiederherstellungslink gesendet.';
-    } catch { $('#lf-msg', d).textContent = 'Der Wiederherstellungslink konnte gerade nicht gesendet werden.'; }
+    } catch (error) {
+      console.error('Passwort-Wiederherstellung fehlgeschlagen:', { status: error?.status, code: error?.code, message: error?.message });
+      $('#lf-msg', d).textContent = 'Der Wiederherstellungslink konnte gerade nicht gesendet werden.';
+    }
   };
 }
 
@@ -1556,10 +1766,10 @@ async function renderAdmin() {
       <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
       <p class="hint">Der Name kann ohne Änderung des Links angepasst werden. Administratoren können auch den Slug bearbeiten. Eine Slug-Änderung ändert den Kalenderlink und bereits verteilte QR-Codes.</p></section>`;
   } else if (section === 'users') {
-    content = `<section class="section admin-section"><h2>${esc(adminLabel('users'))}</h2><form id="invite-form" class="form admin-invite-form">
+    content = `<section class="section admin-section"><h2>${esc(adminLabel('users'))}</h2><p class="hint">Neue Konten erhalten eine Einladung. Ein vorhandenes Supabase-Konto ohne Kalenderzugang wird wieder freigeschaltet.</p><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
       <div class="field"><label for="invite-role">Rolle</label><select id="invite-role" class="input"><option value="bearbeiter">Bearbeiter</option><option value="admin">Administrator</option></select></div>
-      <button type="submit" class="btn btn-primary">Einladung senden</button><p class="msg" id="invite-msg" role="alert"></p></form>
+      <button type="submit" class="btn btn-primary">Einladen / reaktivieren</button><p class="msg" id="invite-msg" role="alert"></p></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'audit') {
     content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
@@ -1681,8 +1891,11 @@ function bindAdmin(resources) {
     e.preventDefault();
     const msg = $('#invite-msg'); msg.textContent = '';
     try {
-      await S.store.inviteMember($('#invite-email').value.trim(), $('#invite-role').value);
-      await renderAdmin(); setNotice('ok', 'Einladung wurde versendet.');
+      const result = await S.store.inviteMember($('#invite-email').value.trim(), $('#invite-role').value);
+      await renderAdmin();
+      setNotice('ok', result?.restored
+        ? 'Bestehendes Konto wurde für den Kalender freigeschaltet. Der Benutzer kann sich mit seiner vorhandenen E-Mail-Adresse anmelden.'
+        : 'Einladung wurde versendet.');
     } catch (err) { msg.textContent = friendlyError(err); }
   };
   document.querySelectorAll('[data-member-save]').forEach((button) => button.onclick = async () => {
@@ -1691,7 +1904,7 @@ function bindAdmin(resources) {
     catch (err) { setNotice('error', friendlyError(err)); }
   });
   document.querySelectorAll('[data-member-remove]').forEach((button) => button.onclick = async () => {
-    if (!confirm('Zugang entziehen? Der Benutzer verliert die Kalender-Berechtigung.')) return;
+    if (!confirm('Kalenderzugang entziehen? Das Supabase-Benutzerkonto bleibt bestehen und kann später wieder freigeschaltet werden.')) return;
     try { await S.store.removeMember(button.dataset.memberRemove); await renderAdmin(); setNotice('ok', 'Zugang wurde entzogen.'); }
     catch (err) { setNotice('error', friendlyError(err)); }
   });
@@ -1705,10 +1918,13 @@ function renderNotFound() {
 async function render() {
   renderHeader();
   const route = parseRoute();
+  document.body.classList.toggle('combined-plan-active', route.name === 'combinedPlan');
+  document.body.classList.toggle('booking-plan-active', route.name === 'plan');
   try {
     if (route.name === 'home') renderHome();
     else if (route.name === 'room') await renderRoom(route.res);
     else if (route.name === 'plan') await renderPlan();
+    else if (route.name === 'combinedPlan') await renderCombinedPlan();
     else if (route.name === 'admin') await renderAdmin();
     else if (route.name === 'annualEvents') await renderAnnualEvents(app, S.store, setNotice);
     else if (route.name === 'calendarSubscription') renderCalendarSubscription();
@@ -1717,7 +1933,7 @@ async function render() {
     app.innerHTML = `<p class="notice notice-error">Die Daten konnten nicht geladen werden: ${esc(friendlyError(err))}</p>`;
   }
   renderNotice();
-  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : route.name === 'calendarSubscription' ? 'Kalender abonnieren · ' : '') + S.seed.settings.vereins_name;
+  document.title = (route.name === 'room' ? route.res.name + ' · ' : route.name === 'plan' ? 'Belegungsplan · ' : route.name === 'combinedPlan' ? 'Gesamtbelegungsplan · ' : route.name === 'admin' ? 'Administration · ' : route.name === 'annualEvents' ? 'Ereignisse · ' : route.name === 'calendarSubscription' ? 'Kalender abonnieren · ' : '') + S.seed.settings.vereins_name;
 }
 
 async function boot() {
