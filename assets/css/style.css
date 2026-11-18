@@ -528,9 +528,12 @@ textarea.input { resize: vertical; }
 .msg-success { color: var(--ok); }
 
 /* Ereignis-Mailvorlagen und automatische Buchungs-Mailsteuerung. */
-.annual-template-controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.annual-template-controls .input { flex: 1 1 260px; min-width: 0; }
-.annual-template-controls .btn { flex: 0 0 auto; }
+.annual-template-picker { min-width: 0; margin: 0; padding: 0; border: 0; }
+.annual-template-picker legend { margin-bottom: .45rem; font-weight: 600; }
+.annual-template-options { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.annual-template-button { white-space: normal; text-align: left; }
+.annual-template-button[aria-pressed="true"] { color: #fff; background: var(--primary); border-color: var(--primary); }
+.annual-template-button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .template-enabled { display: flex; align-items: flex-start; gap: .5rem; margin: .65rem 0; font-weight: 600; }
 .template-enabled input { margin-top: .25rem; }
 #bf-notification-fields[hidden], #bf-no-booking-mail[hidden] { display: none !important; }
