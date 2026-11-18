@@ -29,13 +29,13 @@ export function normaliseMenu(items, defaults) {
   }).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'de'));
 }
 
-const DEFAULT_TEMPLATES = {
-  booking_confirmation: { subject: 'Buchungsbestätigung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde eingetragen.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
-  booking_changed: { subject: 'Änderung Ihrer Buchung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde geändert.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
-  booking_cancelled: { subject: 'Absage Ihrer Buchung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde abgesagt.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
-  booking_reminder: { subject: 'Erinnerung: {{title}}', body: 'Guten Tag,\n\nhiermit erinnern wir an Ihre bevorstehende Buchung.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' }
+export const DEFAULT_TEMPLATES = {
+  booking_confirmation: { enabled: true, subject: 'Buchungsbestätigung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde eingetragen.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
+  booking_changed: { enabled: true, subject: 'Änderung Ihrer Buchung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde geändert.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
+  booking_cancelled: { enabled: true, subject: 'Absage Ihrer Buchung: {{title}}', body: 'Guten Tag,\n\nIhre Buchung wurde abgesagt.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' },
+  booking_reminder: { enabled: true, subject: 'Erinnerung: {{title}}', body: 'Guten Tag,\n\nhiermit erinnern wir an Ihre bevorstehende Buchung.\n\nTermin: {{title}}\nDatum: {{date}}\nZeit: {{time_range}}\nOrt: {{resource_names}}\n\n{{signature}}' }
 };
-const TEMPLATE_LABELS = {
+export const TEMPLATE_LABELS = {
   booking_confirmation: 'Buchungsbestätigung',
   booking_changed: 'Änderungsmitteilung',
   booking_cancelled: 'Absage',
@@ -49,7 +49,7 @@ function textField(id, label, value, rows = 3) {
 function previewTemplate(text) {
   return String(text || '').replace(/\{\{([a-z_]+)\}\}/g, (match, key) => SAMPLE_VALUES[key] ?? match);
 }
-function signatureToPlain(source) {
+export function signatureToPlain(source) {
   const parsed = new DOMParser().parseFromString(`<div>${source || ''}</div>`, 'text/html');
   const root = parsed.body.firstElementChild;
   root.querySelectorAll('script,style,iframe,object').forEach((node) => node.remove());
@@ -106,6 +106,7 @@ export async function mountConfiguration(target, { subpage, config, publicConten
       return `<details class="template-editor" open><summary>${label}</summary>
         <div class="field"><label for="tpl-${key}-subject">Betreff</label><input class="input" id="tpl-${key}-subject" data-template="${key}" data-template-part="subject" maxlength="200" value="${esc(item.subject || '')}"></div>
         ${textField(`tpl-${key}-body`, 'Nachrichtentext', item.body || '', 6).replace('<textarea', `<textarea data-template="${key}" data-template-part="body"`)}
+        <label class="check template-enabled"><input type="checkbox" data-template-enabled="${key}" ${item.enabled === false ? '' : 'checked'}> Automatischen Versand dieser Buchungsnachricht aktivieren</label>
         <div class="template-preview"><strong>Vorschau</strong><p>Betreff: <span data-preview-subject="${key}">${esc(previewTemplate(item.subject))}</span></p><pre data-preview="${key}">${esc(previewTemplate(item.body))}</pre></div>
         <div class="template-save-row"><button class="btn btn-primary" type="button" data-save-template="${key}">Vorlage speichern</button><p class="msg" data-template-msg="${key}" role="status" aria-live="polite"></p></div>
       </details>`;
@@ -120,7 +121,7 @@ export async function mountConfiguration(target, { subpage, config, publicConten
           <div class="mail-save-row"><button class="btn btn-primary" id="mail-profile-save" type="button">Antwortprofile speichern</button><p class="msg" id="mail-profile-msg" role="status" aria-live="polite"></p></div>
         </section>
         <section class="mail-config-section" aria-labelledby="mail-templates-heading">
-          <h3 id="mail-templates-heading">Buchungs-E-Mail-Vorlagen</h3><p class="hint">Platzhalter: {{title}}, {{date}}, {{time_range}}, {{resource_names}}, {{signature}}. Jede Vorlage wird einzeln gespeichert.</p>
+          <h3 id="mail-templates-heading">Buchungs-E-Mail-Vorlagen</h3><p class="hint">Platzhalter: {{title}}, {{date}}, {{time_range}}, {{resource_names}}, {{signature}}. Jede Vorlage wird einzeln gespeichert. Die Checkbox steuert den automatischen Versand; die Vorlagen können zusätzlich beim Erstellen von Ereignis-E-Mails als Textvorlage eingesetzt werden.</p>
           ${sections}
         </section>
         <section class="mail-config-section" aria-labelledby="mail-signature-heading">
@@ -205,7 +206,8 @@ export async function mountConfiguration(target, { subpage, config, publicConten
         const message = target.querySelector(`[data-template-msg="${key}"]`);
         const template = {
           subject: target.querySelector(`[data-template="${key}"][data-template-part="subject"]`).value.trim(),
-          body: target.querySelector(`[data-template="${key}"][data-template-part="body"]`).value.trim()
+          body: target.querySelector(`[data-template="${key}"][data-template-part="body"]`).value.trim(),
+          enabled: target.querySelector(`[data-template-enabled="${key}"]`).checked
         };
         return runSave(button, message, async () => {
           await store.saveMailTemplate(key, template);

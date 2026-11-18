@@ -763,7 +763,7 @@ async function renderCombinedPlan() {
   });
   $('#combined-show-all').onclick = () => { S.hiddenRes.clear(); render(); };
   $('#combined-hide-all').onclick = () => { S.resources.forEach((resource) => S.hiddenRes.add(resource.id)); render(); };
-  document.querySelectorAll('.combined-booking').forEach((button) => button.onclick = () => openDetail(button.dataset.id));
+  document.querySelectorAll('.combined-event').forEach((button) => button.onclick = () => openDetail(button.dataset.id));
 }
 
 // ---------- Belegungsplan ----------
@@ -1162,10 +1162,11 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         <div class="field"><label for="bf-count">Anzahl Termine insgesamt</label>
           <input id="bf-count" type="number" class="input" min="2" max="52" value="4" disabled><p class="hint" id="bf-count-hint">Der erste Termin zählt mit; höchstens 52 Termine.</p></div>
         <div class="field"><label class="check"><input id="bf-continuous" type="checkbox" disabled> Fortlaufend</label><p class="hint">Sechs Monate werden vorgemerkt und automatisch ergänzt.</p></div></div>`}
-      <div class="field-row booking-notification-fields">
+      <div class="field-row booking-notification-fields" id="bf-notification-fields">
         <div class="field"><label for="bf-contact-email">Kontakt-E-Mail für Buchungsnachrichten</label><input id="bf-contact-email" type="email" class="input" maxlength="254" autocomplete="email" value="${esc(booking?.contact_email || '')}"><p class="hint">Optional. Bestätigung, Änderungen, Absage und Erinnerung gehen an diese Adresse.</p></div>
         <div class="field"><label for="bf-reminder-days">Erinnerung</label><select id="bf-reminder-days" class="input"><option value="0" ${Number(booking?.reminder_days || 0) === 0 ? 'selected' : ''}>Keine Erinnerung</option><option value="1" ${Number(booking?.reminder_days || 0) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(booking?.reminder_days || 0) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(booking?.reminder_days || 0) === 7 ? 'selected' : ''}>7 Tage vorher</option></select><p class="hint">Wird nur mit Kontakt-E-Mail eingereiht.</p></div>
       </div>
+      <p class="hint" id="bf-no-booking-mail" hidden>Bei der Kategorie Veranstaltung werden keine Buchungs-E-Mails oder Erinnerungen verschickt.</p>
       <div class="field"><label for="bf-note">Notiz (nur für Mitglieder sichtbar)</label>
         <textarea id="bf-note" class="input" rows="3" maxlength="1000">${esc(booking?.notes || '')}</textarea></div>
       <p class="msg" id="bf-msg" role="alert"></p>
@@ -1180,6 +1181,25 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   const msg = (t) => { $('#bf-msg', d).textContent = t; };
   const repeat = $('#bf-repeat', d);
   const continuousInput = $('#bf-continuous', d);
+  const categorySelect = $('#bf-cat', d);
+  const notificationFields = $('#bf-notification-fields', d);
+  const noBookingMailHint = $('#bf-no-booking-mail', d);
+  const contactEmailInput = $('#bf-contact-email', d);
+  const reminderInput = $('#bf-reminder-days', d);
+  const isEventCategory = () => (S.categories.find((category) => category.id === categorySelect.value)?.name || '').trim().toLowerCase() === 'veranstaltung';
+  const updateNotificationFields = () => {
+    const eventCategory = isEventCategory();
+    notificationFields.hidden = eventCategory;
+    noBookingMailHint.hidden = !eventCategory;
+    contactEmailInput.disabled = eventCategory;
+    reminderInput.disabled = eventCategory;
+    if (eventCategory) {
+      contactEmailInput.value = '';
+      reminderInput.value = '0';
+    }
+  };
+  categorySelect.onchange = updateNotificationFields;
+  updateNotificationFields();
   const updateRepeatControls = () => {
     if (!repeat) return;
     const recurring = repeat.value !== 'none';
@@ -1204,8 +1224,9 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     const s = $('#bf-start', d).value;
     const en = $('#bf-end', d).value;
     const notes = $('#bf-note', d).value.trim() || null;
-    const contactEmail = $('#bf-contact-email', d).value.trim() || null;
-    const reminderDays = Number($('#bf-reminder-days', d).value);
+    const eventCategory = isEventCategory();
+    const contactEmail = eventCategory ? null : ($('#bf-contact-email', d).value.trim() || null);
+    const reminderDays = eventCategory ? 0 : Number($('#bf-reminder-days', d).value);
     if (contactEmail && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) || contactEmail.length > 254)) return msg('Bitte eine gültige Kontakt-E-Mail-Adresse eingeben.');
     if (![0, 1, 2, 7].includes(reminderDays)) return msg('Bitte eine gültige Erinnerungsfrist auswählen.');
     if (reminderDays && !contactEmail) return msg('Für eine Erinnerung bitte eine Kontakt-E-Mail-Adresse eingeben.');
