@@ -2,7 +2,7 @@
 // - DemoStore: Beispieldaten im Browser (localStorage). Keine echte Sicherheit!
 // - SupabaseStore: spricht die Supabase-REST-API an. Die Rechte prüft ausschließlich die Datenbank (RLS).
 import { CONFIG } from './config.js';
-import { addDays, weekStart, combine, ymd, recurrenceDate, shiftDateString } from './logic.js';
+import { addDays, weekStart } from './logic.js';
 
 export const ROOT = new URL(CONFIG.BASE_PATH, location.origin);
 
@@ -24,8 +24,6 @@ export function friendlyError(err) {
 // ---------- Demo-Speicher ----------
 const DEMO_KEY = 'vk-demo-bookings-v1';
 const DEMO_SESSION = 'vk-demo-session-v1';
-const DEMO_SERIES_KEY = 'vk-demo-series-v1';
-const DEMO_SERIES_SKIPS_KEY = 'vk-demo-series-skips-v1';
 
 function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
@@ -87,13 +85,10 @@ export class DemoStore {
     this.categories = seed.categories.map((c) => ({ ...c, id: 'cat-' + c.name.toLowerCase() }));
     const saved = localStorage.getItem(DEMO_KEY);
     this.bookings = saved ? JSON.parse(saved) : demoSeedBookings(seed);
-    this.recurringSeries = JSON.parse(localStorage.getItem(DEMO_SERIES_KEY) || '[]');
-    this.recurringSeriesSkips = JSON.parse(localStorage.getItem(DEMO_SERIES_SKIPS_KEY) || '[]');
     this.session = JSON.parse(localStorage.getItem(DEMO_SESSION) || 'null');
     this.userEmail = this.session?.email || '';
   }
   persist() { localStorage.setItem(DEMO_KEY, JSON.stringify(this.bookings)); }
-  persistSeries() { localStorage.setItem(DEMO_SERIES_KEY, JSON.stringify(this.recurringSeries)); localStorage.setItem(DEMO_SERIES_SKIPS_KEY, JSON.stringify(this.recurringSeriesSkips)); }
   get role() { return this.session?.role || null; }
   isEditor() { return this.role === 'bearbeiter' || this.role === 'admin'; }
   isAdmin() { return this.role === 'admin'; }
@@ -158,101 +153,9 @@ export class DemoStore {
     this.bookings = this.bookings.filter((b) => !ids.includes(b.id));
     this.persist();
   }
-  async createRecurringSeries(rule) {
-    this.requireEditor();
-    const id = uid();
-    const series = {
-      ...rule, id, resource_ids: [...rule.resource_ids], date_offset_days: 0,
-      anchor_occurrence_index: 0, first_occurrence_index: 0, is_active: true
-    };
-    this.recurringSeries.push(series);
-    this._fillDemoSeries(series);
-    this.persistSeries();
-    this.persist();
-    return id;
-  }
-  _fillDemoSeries(series) {
-    if (!series.is_active) return;
-    const today = ymd(new Date());
-    const horizon = ymd(addDays(new Date(), 183));
-    const existing = new Set(this.bookings.filter((b) => b.series_id === series.id).map((b) => b.series_occurrence));
-    let index = series.first_occurrence_index;
-    for (let guard = 0; guard < 10000; guard++, index++) {
-      const baseDate = recurrenceDate(series.starts_on, index - series.anchor_occurrence_index, series.frequency);
-      const date = shiftDateString(baseDate, Number(series.date_offset_days || 0));
-      if (date > horizon) break;
-      if (date < today || existing.has(index) || this.recurringSeriesSkips.includes(`${series.id}:${index}`)) continue;
-      this.bookings.push({
-        id: uid(), series_id: series.id, series_occurrence: index,
-        resource_id: series.resource_id, resource_ids: [...series.resource_ids],
-        category_id: series.category_id, title: series.title, notes: series.notes || null,
-        contact_email: series.contact_email || null, reminder_days: Number(series.reminder_days || 0),
-        starts_at: combine(date, series.start_time).toISOString(),
-        ends_at: combine(date, series.end_time).toISOString()
-      });
-    }
-  }
-  async updateRecurringSeries(seriesId, occurrenceIndex, scope, patch) {
-    this.requireEditor();
-    const series = this.recurringSeries.find((item) => item.id === seriesId);
-    if (!series) throw { code: 'P0002', message: 'Serie nicht gefunden.' };
-    if (!series.is_active) throw { code: '22023', message: 'Diese Serie wurde bereits beendet.' };
-    if (scope === 'following') {
-      series.starts_on = patch.starts_on;
-      series.anchor_occurrence_index = occurrenceIndex;
-      series.date_offset_days = 0;
-      series.first_occurrence_index = occurrenceIndex;
-    } else {
-      const selected = this.bookings.find((item) => item.series_id === seriesId && item.series_occurrence === occurrenceIndex);
-      const oldDate = selected ? ymd(new Date(selected.starts_at)) : series.starts_on;
-      const dayShift = Math.round((Date.parse(`${patch.starts_on}T00:00:00Z`) - Date.parse(`${oldDate}T00:00:00Z`)) / 86400000);
-      series.date_offset_days = Number(series.date_offset_days || 0) + dayShift;
-      series.first_occurrence_index = 0;
-    }
-    Object.assign(series, {
-      title: patch.title, resource_id: patch.resource_id, resource_ids: [...patch.resource_ids],
-      category_id: patch.category_id, notes: patch.notes || null,
-      contact_email: patch.contact_email || null, reminder_days: Number(patch.reminder_days || 0),
-      start_time: patch.start_time, end_time: patch.end_time
-    });
-    for (const booking of this.bookings.filter((item) => item.series_id === seriesId
-        && (scope === 'all' || item.series_occurrence >= occurrenceIndex))) {
-      const baseDate = recurrenceDate(series.starts_on, booking.series_occurrence - series.anchor_occurrence_index, series.frequency);
-      const date = shiftDateString(baseDate, Number(series.date_offset_days || 0));
-      Object.assign(booking, {
-        title: series.title, resource_id: series.resource_id, resource_ids: [...series.resource_ids],
-        category_id: series.category_id, notes: series.notes, contact_email: series.contact_email,
-        reminder_days: series.reminder_days, starts_at: combine(date, series.start_time).toISOString(),
-        ends_at: combine(date, series.end_time).toISOString()
-      });
-    }
-    this._fillDemoSeries(series);
-    this.persistSeries();
-    this.persist();
-  }
-  async endRecurringSeries(seriesId, occurrenceIndex) {
-    this.requireEditor();
-    const series = this.recurringSeries.find((item) => item.id === seriesId);
-    if (!series) throw { code: 'P0002', message: 'Serie nicht gefunden.' };
-    series.is_active = false;
-    this.bookings = this.bookings.filter((item) => item.series_id !== seriesId || item.series_occurrence < occurrenceIndex);
-    this.persistSeries();
-    this.persist();
-  }
-  async deleteRecurringOccurrence(seriesId, occurrenceIndex, bookingId) {
-    this.requireEditor();
-    const skip = `${seriesId}:${occurrenceIndex}`;
-    if (!this.recurringSeriesSkips.includes(skip)) this.recurringSeriesSkips.push(skip);
-    this.bookings = this.bookings.filter((item) => !(item.id === bookingId && item.series_id === seriesId && item.series_occurrence === occurrenceIndex));
-    this.persistSeries();
-    this.persist();
-  }
   async deleteSeries(seriesId) {
     this.requireEditor();
     this.bookings = this.bookings.filter((b) => b.series_id !== seriesId);
-    this.recurringSeries = this.recurringSeries.filter((item) => item.id !== seriesId);
-    this.recurringSeriesSkips = this.recurringSeriesSkips.filter((item) => !item.startsWith(`${seriesId}:`));
-    this.persistSeries();
     this.persist();
   }
 }
@@ -440,6 +343,16 @@ export class SupabaseStore {
     const deletedPath = await this._req('/rest/v1/rpc/admin_delete_event_document', { method: 'POST', body: { p_document_id: id } });
     await this.deleteEventDocumentObject(typeof deletedPath === 'string' ? deletedPath : path);
   }
+  async updateEventDocumentTitle(id, title) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Nur Administratoren können Dokumenttitel ändern.' };
+    const cleanTitle = String(title ?? '').trim();
+    if (!cleanTitle || cleanTitle.length > 160) throw new Error('Der Titel muss zwischen 1 und 160 Zeichen lang sein.');
+    const rows = await this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: { title: cleanTitle }, prefer: 'return=representation'
+    });
+    if (!Array.isArray(rows) || !rows[0]) throw new Error('Dokument wurde nicht gefunden oder der Titel wurde nicht gespeichert.');
+    return rows[0];
+  }
   async archiveEventDocument(id) {
     if (!this.isAdmin()) throw { code: '42501', message: 'Keine Berechtigung.' };
     return this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: { active: false }, prefer: 'return=representation' });
@@ -493,38 +406,6 @@ export class SupabaseStore {
   }
   async deleteSeries(seriesId) {
     return this._req(`/rest/v1/bookings?series_id=eq.${encodeURIComponent(seriesId)}`, { method: 'DELETE', prefer: 'return=minimal' });
-  }
-  async createRecurringSeries(rule) {
-    return this._req('/rest/v1/rpc/create_booking_series', {
-      method: 'POST', body: {
-        p_resource_id: rule.resource_id, p_resource_ids: rule.resource_ids,
-        p_category_id: rule.category_id, p_title: rule.title, p_notes: rule.notes || null,
-        p_contact_email: rule.contact_email || null, p_reminder_days: Number(rule.reminder_days || 0),
-        p_starts_on: rule.starts_on, p_start_time: rule.start_time, p_end_time: rule.end_time,
-        p_frequency: rule.frequency, p_timezone: rule.timezone || 'Europe/Berlin'
-      }
-    });
-  }
-  async updateRecurringSeries(seriesId, occurrenceIndex, scope, rule) {
-    return this._req('/rest/v1/rpc/update_booking_series', {
-      method: 'POST', body: {
-        p_series_id: seriesId, p_occurrence_index: occurrenceIndex, p_scope: scope,
-        p_starts_on: rule.starts_on, p_start_time: rule.start_time, p_end_time: rule.end_time,
-        p_title: rule.title, p_resource_id: rule.resource_id, p_resource_ids: rule.resource_ids,
-        p_category_id: rule.category_id, p_notes: rule.notes || null,
-        p_contact_email: rule.contact_email || null, p_reminder_days: Number(rule.reminder_days || 0)
-      }
-    });
-  }
-  async endRecurringSeries(seriesId, occurrenceIndex) {
-    return this._req('/rest/v1/rpc/end_booking_series', {
-      method: 'POST', body: { p_series_id: seriesId, p_from_occurrence: occurrenceIndex }
-    });
-  }
-  async deleteRecurringOccurrence(seriesId, occurrenceIndex, bookingId) {
-    return this._req('/rest/v1/rpc/skip_booking_series_occurrence', {
-      method: 'POST', body: { p_series_id: seriesId, p_occurrence_index: occurrenceIndex, p_booking_id: bookingId }
-    });
   }
 
   async getAnnualEvents() {
@@ -606,4 +487,15 @@ export class SupabaseStore {
 export async function createStore(seed) {
   if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY) return new SupabaseStore();
   return new DemoStore(seed);
+}
+
+async saveMailTemplate(key, template) {
+  if (!this.isAdmin()) {
+    throw { code: '42501', message: 'Nur Administratoren können Einstellungen ändern.' };
+  }
+  return this._req('/rest/v1/rpc/admin_update_mail_template', {
+    method: 'POST',
+    body: { p_template_key: key, p_template: template },
+    prefer: 'return=minimal'
+  });
 }
