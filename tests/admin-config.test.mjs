@@ -103,7 +103,9 @@ test('Ereignisformular speichert getrennte automatische Versandregeln mit sicher
   assert.match(annual, /id="ae-changed-enabled" type="checkbox"/);
   assert.match(annual, /id="ae-cancelled-enabled" type="checkbox"/);
   assert.match(annual, /id="ae-reminder-enabled" type="checkbox"/);
-  assert.match(annual, /id="ae-append-signature" type="checkbox"/);
+  assert.doesNotMatch(annual, /id="ae-append-signature" type="checkbox"/);
+  assert.match(annual, /const initialBody = event[\s\S]*: defaultSignature/);
+  assert.match(annual, /append_signature: false/);
   assert.match(annual, /<option value="1"/);
   assert.match(annual, /<option value="2"/);
   assert.match(annual, /<option value="7"/);
@@ -121,6 +123,24 @@ test('Ereignisformular speichert getrennte automatische Versandregeln mit sicher
   assert.doesNotMatch(annual, /data-event-template/);
 });
 
+
+test('Einmaliger Ereignisversand nutzt gespeicherte Empfänger, Outbox und aktive Versionsprüfung', () => {
+  const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
+  const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
+  const migration = readFileSync(new URL('../supabase/migration-event-individual-messages.sql', import.meta.url), 'utf-8');
+  const worker = readFileSync(new URL('../scripts/send_annual_event_lifecycle_emails.py', import.meta.url), 'utf-8');
+  assert.match(annual, /id="ae-send-individual"/);
+  assert.match(annual, /zuletzt gespeicherte Betreff und Nachricht/);
+  assert.match(annual, /confirm\(`Die zuletzt gespeicherte Nachricht/);
+  assert.match(data, /queue_annual_event_individual_message/);
+  assert.match(migration, /'individual'/);
+  assert.match(migration, /if not e\.active then/);
+  assert.match(migration, /distinct on \(lower\(btrim\(r\.email\)\)\)/);
+  assert.match(migration, /grant execute on function public\.queue_annual_event_individual_message\(uuid\) to authenticated/);
+  assert.match(worker, /if kind == "individual":/);
+  assert.match(worker, /_expected_updated_at/);
+  assert.match(worker, /get\("active"\) is not True/);
+});
 
 test('Passwort-Reset nutzt den konfigurierten Redirect und protokolliert Fehler ohne E-Mail-Adresse', () => {
   const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');

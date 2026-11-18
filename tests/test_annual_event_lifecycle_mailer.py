@@ -87,6 +87,29 @@ class AnnualEventLifecycleMailerTests(unittest.TestCase):
         self.assertFalse(mailer.template_is_enabled_for_event(item, {**current, "updated_at": "2026-05-01T10:01:00+00:00"})[0])
         self.assertFalse(mailer.template_is_enabled_for_event(item, {**current, "active": False})[0])
 
+    def test_individual_message_uses_saved_subject_body_and_shared_attachment_mailer(self):
+        item = {
+            "id": 4, "event_id": "event-1", "kind": "individual", "recipient": "person@example.org",
+            "payload": {
+                "id": "event-1", "title": "Sommerfest", "subject": "Wichtige Änderung",
+                "body_html": "<p>Bitte beachten Sie den neuen Ablauf.</p>", "recurrence": "once",
+                "event_date": "2027-06-10", "assets": [], "document_ids": [],
+                "append_signature": False, "_expected_updated_at": "2026-05-01T10:00:00+00:00",
+            },
+        }
+        message = mailer.build_message(item, self.config)
+        self.assertEqual(message["Subject"], "Wichtige Änderung")
+        self.assertEqual(message["To"], "person@example.org")
+        self.assertIn("Bitte beachten Sie den neuen Ablauf.", message.get_body(preferencelist=("plain",)).get_content())
+
+    def test_individual_message_requires_active_unchanged_event_but_not_lifecycle_switch(self):
+        item = {"kind": "individual", "payload": {"_expected_updated_at": "2026-05-01T10:00:00+00:00"}}
+        current = {"active": True, "confirmation_enabled": False, "updated_at": "2026-05-01T10:00:00+00:00"}
+        self.assertEqual(mailer.template_is_enabled_for_event(item, current), (True, None))
+        self.assertFalse(mailer.template_is_enabled_for_event(item, {**current, "active": False})[0])
+        self.assertFalse(mailer.template_is_enabled_for_event(item, {**current, "updated_at": "2026-05-01T10:01:00+00:00"})[0])
+        self.assertFalse(mailer.template_is_enabled_for_event(item, None)[0])
+
     def test_deleted_event_cancellation_uses_durable_snapshot(self):
         item = {"kind": "cancelled", "payload": {"title": "Sommerfest", "cancelled_enabled": True}}
         self.assertEqual(mailer.template_is_enabled_for_event(item, None), (True, None))
