@@ -547,6 +547,12 @@ export class SupabaseStore {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
     return this._req(`/rest/v1/annual_email_events?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', prefer: 'return=minimal' });
   }
+  async sendAnnualEventIndividualMessage(id) {
+    if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
+    return this._req('/rest/v1/rpc/queue_annual_event_individual_message', {
+      method: 'POST', body: { p_event_id: id }
+    });
+  }
   async getAnnualDeliveryLog(id) {
     if (!this.isEditor()) throw { code: '42501', message: 'Keine Berechtigung.' };
     const [annual, tests, lifecycle] = await Promise.all([
