@@ -16,10 +16,10 @@ Befehl: `npm test`
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
 | `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, Mehrfachressourcen, vollständiges Laden aller Zeiträume und einer Serie, fortlaufende Serien mit allen Frequenzen, Kontakt- und Erinnerungsdaten sowie Bearbeiten/Löschen/Beenden | 12 von 12 bestanden |
 | `tests/admin-config.test.mjs` | Navigationspflege, getrennte Speicheraktionen, Einzelvorlagen-RPC, Audit-Trigger-Regression, Wiederfreischaltung bestehender Konten, Gesamtplan-Klickpfad, Kategorie-Unterdrückung, Ereignis-Vorlagen und Passwort-Reset-Redirect | 8 von 8 bestanden |
-| `tests/test_annual_event_mailer.py` | Einmalige und jährliche Fälligkeit, Schalttag, `Reply-To`, SMTP-Ablehnung, Aufbewahrungsgrenze und sichere Dateipfade | 8 von 8 bestanden |
+| `tests/test_annual_event_mailer.py` | Einmalige und jährliche Fälligkeit, Schalttag, jährlicher Versand mit ausgewählten Anhängen, `Reply-To`, SMTP-Ablehnung, Aufbewahrungsgrenze und sichere Dateipfade | 9 von 9 bestanden |
 | `tests/test_booking_notification_mailer.py` | fester Strato-Absender, konfigurierbares Reply-To, Vorlagenersetzung, deaktivierte Vorlagen, Signaturformat und Wiederholungslogik | 6 von 6 bestanden |
 
-**Ergebnis: 49 JavaScript- und 14 Python-Tests bestanden.**
+**Ergebnis: 49 JavaScript- und 15 Python-Tests bestanden.**
 
 Zusätzlich geprüft:
 - Die JavaScript-Dateien sind syntaktisch gültig (`node --check`); CSS, HTML und die TypeScript-Syntax der Edge Function wurden statisch geparst.
