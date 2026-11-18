@@ -1742,10 +1742,10 @@ async function renderAdmin() {
       <p class="hint">Eine kleinere Reihenfolgenzahl erscheint weiter oben; die gespeicherte Reihenfolge gilt für alle. Deaktivierte Ressourcen verschwinden aus den Kalendern, ihre Buchungen bleiben erhalten. Endgültiges Löschen ist nur ohne aktuelle oder zukünftige Termine möglich; dabei werden alle vergangenen Buchungen gelöscht, Audit-Einträge bleiben erhalten.</p>
       <p class="hint">Der Name kann ohne Änderung des Links angepasst werden. Administratoren können auch den Slug bearbeiten. Eine Slug-Änderung ändert den Kalenderlink und bereits verteilte QR-Codes.</p></section>`;
   } else if (section === 'users') {
-    content = `<section class="section admin-section"><h2>${esc(adminLabel('users'))}</h2><form id="invite-form" class="form admin-invite-form">
+    content = `<section class="section admin-section"><h2>${esc(adminLabel('users'))}</h2><p class="hint">Neue Konten erhalten eine Einladung. Ein vorhandenes Supabase-Konto ohne Kalenderzugang wird wieder freigeschaltet.</p><form id="invite-form" class="form admin-invite-form">
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
       <div class="field"><label for="invite-role">Rolle</label><select id="invite-role" class="input"><option value="bearbeiter">Bearbeiter</option><option value="admin">Administrator</option></select></div>
-      <button type="submit" class="btn btn-primary">Einladung senden</button><p class="msg" id="invite-msg" role="alert"></p></form>
+      <button type="submit" class="btn btn-primary">Einladen / reaktivieren</button><p class="msg" id="invite-msg" role="alert"></p></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'audit') {
     content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
@@ -1867,8 +1867,11 @@ function bindAdmin(resources) {
     e.preventDefault();
     const msg = $('#invite-msg'); msg.textContent = '';
     try {
-      await S.store.inviteMember($('#invite-email').value.trim(), $('#invite-role').value);
-      await renderAdmin(); setNotice('ok', 'Einladung wurde versendet.');
+      const result = await S.store.inviteMember($('#invite-email').value.trim(), $('#invite-role').value);
+      await renderAdmin();
+      setNotice('ok', result?.restored
+        ? 'Bestehendes Konto wurde für den Kalender freigeschaltet. Der Benutzer kann sich mit seiner vorhandenen E-Mail-Adresse anmelden.'
+        : 'Einladung wurde versendet.');
     } catch (err) { msg.textContent = friendlyError(err); }
   };
   document.querySelectorAll('[data-member-save]').forEach((button) => button.onclick = async () => {
@@ -1877,7 +1880,7 @@ function bindAdmin(resources) {
     catch (err) { setNotice('error', friendlyError(err)); }
   });
   document.querySelectorAll('[data-member-remove]').forEach((button) => button.onclick = async () => {
-    if (!confirm('Zugang entziehen? Der Benutzer verliert die Kalender-Berechtigung.')) return;
+    if (!confirm('Kalenderzugang entziehen? Das Supabase-Benutzerkonto bleibt bestehen und kann später wieder freigeschaltet werden.')) return;
     try { await S.store.removeMember(button.dataset.memberRemove); await renderAdmin(); setNotice('ok', 'Zugang wurde entzogen.'); }
     catch (err) { setNotice('error', friendlyError(err)); }
   });
