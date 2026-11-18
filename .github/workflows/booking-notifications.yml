@@ -25,3 +25,11 @@ jobs:
           STRATO_SMTP_USER: ${{ secrets.STRATO_SMTP_USER }}
           STRATO_SMTP_PASSWORD: ${{ secrets.STRATO_SMTP_PASSWORD }}
         run: python3 scripts/send_booking_notifications.py
+      - name: Ereignis-Bestätigungen, Änderungen und Absagen verarbeiten
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STRATO_SMTP_USER: ${{ secrets.STRATO_SMTP_USER }}
+          STRATO_SMTP_PASSWORD: ${{ secrets.STRATO_SMTP_PASSWORD }}
+        run: python3 scripts/send_annual_event_lifecycle_emails.py
