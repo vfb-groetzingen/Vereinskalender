@@ -192,11 +192,11 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
-      <fieldset class="field annual-template-picker"><legend>Textvorlagen</legend><div class="annual-template-options" role="group" aria-label="E-Mail-Textvorlagen">${templateButtons}<button type="button" class="btn btn-small annual-template-button" data-event-template="signature" aria-pressed="${event ? 'false' : 'true'}">Standardsignatur</button></div><p class="hint">Jede Schaltfläche wendet ihre Vorlage direkt an. Buchungsvorlagen ersetzen Betreff und Nachricht; die Standardsignatur ersetzt den Nachrichtentext und kann danach frei bearbeitet werden. Zeit- und Ortsplatzhalter werden entfernt.</p></fieldset>
+      <fieldset class="field annual-template-picker"><legend>Textvorlagen</legend><div class="annual-template-options" role="group" aria-label="E-Mail-Textvorlagen">${templateButtons}<button type="button" class="btn btn-small annual-template-button" data-event-template="signature" aria-pressed="false">Standardsignatur</button></div><p class="hint">Alle Vorlagen sind optional; bei neuen Ereignissen ist keine vorausgewählt. Eine Schaltfläche wendet die Vorlage an. Erneutes Klicken stellt den eigenen Entwurf wieder her. Der Text kann danach frei bearbeitet werden; Zeit- und Ortsplatzhalter werden entfernt.</p></fieldset>
       <div class="field"><label>Nachricht *</label><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
         <button type="button" class="btn btn-small" data-command="bold" aria-label="Fett">Fett</button><button type="button" class="btn btn-small" data-command="italic" aria-label="Kursiv">Kursiv</button><button type="button" class="btn btn-small" data-command="underline" aria-label="Unterstrichen">Unterstrichen</button><button type="button" class="btn btn-small" data-command="insertUnorderedList">Aufzählung</button><button type="button" class="btn btn-small" data-command="insertOrderedList">Nummerierung</button>
         <button type="button" class="btn btn-small" id="ae-add-link">Link</button><button type="button" class="btn btn-small" id="ae-add-image">Bild einbetten</button><button type="button" class="btn btn-small" id="ae-add-file">Anhang hinzufügen</button></div>
-        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(event?.body_html || defaultSignature)}</div><p class="hint">Bilder werden automatisch auf maximal 1600 Pixel verkleinert. Bilder und Anhänge zusammen höchstens 5 MB.</p>
+        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(event?.body_html || '')}</div><p class="hint">Bilder werden automatisch auf maximal 1600 Pixel verkleinert. Bilder und Anhänge zusammen höchstens 5 MB.</p>
       </div>
       <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
       <div class="field"><strong>Dateien des Ereignisses</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
@@ -215,35 +215,54 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   dialog.showModal();
   const q = (selector) => dialog.querySelector(selector);
   const msg = (text) => { q('#ae-msg').textContent = text; };
-  const setActiveTemplateButton = (activeButton) => {
+  let activeTemplateKey = null;
+  let templateDraft = null;
+  const setActiveTemplateButton = (activeKey) => {
     q('.annual-template-options').querySelectorAll('[data-event-template]').forEach((button) => {
-      button.setAttribute('aria-pressed', button === activeButton ? 'true' : 'false');
+      button.setAttribute('aria-pressed', button.dataset.eventTemplate === activeKey ? 'true' : 'false');
     });
+  };
+  const restoreTemplateDraft = () => {
+    if (!templateDraft) return;
+    q('#ae-subject').value = templateDraft.subject;
+    q('#ae-body').innerHTML = safeHtml(templateDraft.body);
   };
   q('.annual-template-options').querySelectorAll('[data-event-template]').forEach((button) => {
     button.onclick = () => {
       const key = button.dataset.eventTemplate;
-      if (key === 'signature') {
-        q('#ae-body').innerHTML = safeHtml(defaultSignature);
-        setActiveTemplateButton(button);
+      if (activeTemplateKey === key) {
+        restoreTemplateDraft();
+        activeTemplateKey = null;
+        templateDraft = null;
+        setActiveTemplateButton(null);
         return;
       }
-      const template = eventMailTemplates[key];
-      if (!template) return;
-      const dateParts = (q('#ae-date').value || '').split('-');
-      const dateText = dateParts.length === 3
-        ? `${dateParts[2]}.${dateParts[1]}${q('#ae-recurrence').value === 'once' ? `.${dateParts[0]}` : '.'}`
-        : '';
-      const values = {
-        title: q('#ae-title').value.trim(), date: dateText, time_range: '', resource_names: '',
-        signature: signatureToPlain(siteConfiguration?.event_signature_html || defaultSignature)
-      };
-      const fill = (source) => String(source || '').replace(/\{\{([a-z_]+)\}\}/g, (_match, name) => values[name] ?? '');
-      const subject = fill(template.subject).trim();
-      if (subject) q('#ae-subject').value = subject;
-      const body = fill(template.body).replace(/^\s*(?:Zeit|Ort):\s*$/gmi, '').replace(/\n{3,}/g, '\n\n').trim();
-      q('#ae-body').innerHTML = safeHtml(templateTextToHtml(body));
-      setActiveTemplateButton(button);
+      if (!templateDraft) {
+        templateDraft = { subject: q('#ae-subject').value, body: q('#ae-body').innerHTML };
+      } else {
+        restoreTemplateDraft();
+      }
+      if (key === 'signature') {
+        q('#ae-body').innerHTML = safeHtml(defaultSignature);
+      } else {
+        const template = eventMailTemplates[key];
+        if (!template) return;
+        const dateParts = (q('#ae-date').value || '').split('-');
+        const dateText = dateParts.length === 3
+          ? `${dateParts[2]}.${dateParts[1]}${q('#ae-recurrence').value === 'once' ? `.${dateParts[0]}` : '.'}`
+          : '';
+        const values = {
+          title: q('#ae-title').value.trim(), date: dateText, time_range: '', resource_names: '',
+          signature: signatureToPlain(siteConfiguration?.event_signature_html || defaultSignature)
+        };
+        const fill = (source) => String(source || '').replace(/\{\{([a-z_]+)\}\}/g, (_match, name) => values[name] ?? '');
+        const subject = fill(template.subject).trim();
+        if (subject) q('#ae-subject').value = subject;
+        const body = fill(template.body).replace(/^\s*(?:Zeit|Ort):\s*$/gmi, '').replace(/\n{3,}/g, '\n\n').trim();
+        q('#ae-body').innerHTML = safeHtml(templateTextToHtml(body));
+      }
+      activeTemplateKey = key;
+      setActiveTemplateButton(key);
     };
   });
   let previousRecurrence = selectedRecurrence;
