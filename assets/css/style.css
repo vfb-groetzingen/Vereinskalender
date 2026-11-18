@@ -526,3 +526,11 @@ textarea.input { resize: vertical; }
 .mail-config-section > h3 { margin-top: .25rem; }
 .mail-save-row, .template-save-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: .7rem; }
 .msg-success { color: var(--ok); }
+
+/* Ereignis-Mailvorlagen und automatische Buchungs-Mailsteuerung. */
+.annual-template-controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.annual-template-controls .input { flex: 1 1 260px; min-width: 0; }
+.annual-template-controls .btn { flex: 0 0 auto; }
+.template-enabled { display: flex; align-items: flex-start; gap: .5rem; margin: .65rem 0; font-weight: 600; }
+.template-enabled input { margin-top: .25rem; }
+#bf-notification-fields[hidden], #bf-no-booking-mail[hidden] { display: none !important; }
