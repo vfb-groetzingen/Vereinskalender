@@ -81,7 +81,13 @@ test('Zugangsentzug laesst Auth-Konto bestehen und Einladung reaktiviert es', ()
 
 test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungskategorie unterdrueckt Buchungsmails', () => {
   const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
+  const fallback = readFileSync(new URL('../404.html', import.meta.url), 'utf-8');
+  const config = readFileSync(new URL('../assets/js/config.js', import.meta.url), 'utf-8');
   const migration = readFileSync(new URL('../supabase/migration-booking-email-controls.sql', import.meta.url), 'utf-8');
+  assert.match(app, /data-link="\/belegungsplan\/gesamt" aria-label="Gesamtbelegungsplan">Gesamtbelegungsplan/);
+  assert.match(fallback, /var base = '\/Vereinskalender\//);
+  assert.match(config, /BASE_PATH: '\/Vereinskalender\//);
+  assert.match(app, /if \(p === '\/belegungsplan\/gesamt'\) return \{ name: 'combinedPlan' \}/);
   assert.match(app, /querySelectorAll\('\.combined-event'\).*openDetail\(button\.dataset\.id\)/s);
   assert.match(app, /\.trim\(\)\.toLowerCase\(\) === 'veranstaltung'/);
   assert.match(app, /contactEmail = eventCategory \? null/);
@@ -130,6 +136,9 @@ test('Einmaliger Ereignisversand nutzt gespeicherte Empfänger, Outbox und aktiv
   const migration = readFileSync(new URL('../supabase/migration-event-individual-messages.sql', import.meta.url), 'utf-8');
   const worker = readFileSync(new URL('../scripts/send_annual_event_lifecycle_emails.py', import.meta.url), 'utf-8');
   assert.match(annual, /id="ae-send-individual"/);
+  assert.match(annual, /id="ae-send-after-save" type="checkbox"/);
+  assert.match(annual, /const sendAfterSave = q\('#ae-send-after-save'\)\.checked/);
+  assert.match(annual, /sendAnnualEventIndividualMessage\(id\)/);
   assert.match(annual, /zuletzt gespeicherte Betreff und Nachricht/);
   assert.match(annual, /confirm\(`Die zuletzt gespeicherte Nachricht/);
   assert.match(data, /queue_annual_event_individual_message/);
