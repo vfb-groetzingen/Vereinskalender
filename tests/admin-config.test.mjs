@@ -108,3 +108,17 @@ test('Ereignisformular bietet Buchungsvorlagen und neue Ereignisse starten mit d
   assert.match(admin, /data-template-enabled="\$\{key\}"/);
   assert.match(admin, /enabled: target\.querySelector\(.*data-template-enabled/);
 });
+
+
+test('Passwort-Reset nutzt den konfigurierten Redirect und protokolliert Fehler ohne E-Mail-Adresse', () => {
+  const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
+  const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
+  const config = readFileSync(new URL('../assets/js/config.js', import.meta.url), 'utf-8');
+  const setup = readFileSync(new URL('../docs/EINRICHTUNG.md', import.meta.url), 'utf-8');
+  assert.match(data, /auth\/v1\/recover\?redirect_to=/);
+  assert.match(data, /new URL\(CONFIG\.BASE_PATH, location\.origin\)\.href/);
+  assert.match(config, /BASE_PATH: '\/Vereinskalender\/'/);
+  assert.match(setup, /Redirect URLs[\s\S]*?\/Vereinskalender\//);
+  assert.doesNotMatch(setup, /\/vereinskalender\//);
+  assert.match(app, /console\.error\('Passwort-Wiederherstellung fehlgeschlagen:'/);
+});
