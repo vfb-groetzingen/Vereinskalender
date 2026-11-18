@@ -95,18 +95,21 @@ test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungs
   assert.match(migration, /'skipped'/);
 });
 
-test('Ereignisformular bietet Buchungsvorlagen und neue Ereignisse starten mit der Signatur', () => {
+test('Ereignisformular bietet optionale Umschaltvorlagen und startet ohne Vorauswahl', () => {
   const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
   const admin = readFileSync(new URL('../assets/js/admin-config.js', import.meta.url), 'utf-8');
   assert.doesNotMatch(annual, /id="ae-template"|id="ae-apply-template"/);
   assert.match(annual, /data-event-template="\$\{key\}"/);
   assert.match(annual, /data-event-template="signature"/);
-  assert.match(annual, /aria-pressed="\$\{event \? 'false' : 'true'\}"/);
+  assert.match(annual, /data-event-template="signature" aria-pressed="false"/);
   assert.match(annual, /querySelectorAll\('\[data-event-template\]'\)/);
   assert.match(annual, /signature: signatureToPlain/);
   assert.match(annual, /time_range: '', resource_names: ''/);
   assert.match(annual, /templateTextToHtml/);
   assert.match(annual, /contenteditable="true"/);
+  assert.match(annual, /activeTemplateKey === key/);
+  assert.match(annual, /restoreTemplateDraft/);
+  assert.match(annual, /event\?\.body_html \|\| ''/);
   assert.match(admin, /data-template-enabled="\$\{key\}"/);
   assert.match(admin, /enabled: target\.querySelector\(.*data-template-enabled/);
 });
