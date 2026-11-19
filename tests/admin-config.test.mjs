@@ -92,6 +92,7 @@ test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungs
   assert.match(app, /\.trim\(\)\.toLowerCase\(\) === 'veranstaltung'/);
   assert.match(app, /contactEmail = eventCategory \? null/);
   assert.match(app, /reminderDays = eventCategory \? 0/);
+  assert.match(app, /if \(!isEdit\)[\s\S]*followEndDateIfLinked\(previousStartDate, startDateInput\.value, endDateInput\.value\)/);
   assert.match(migration, /lower\(btrim\(c\.name\)\) = 'veranstaltung'/);
   assert.match(migration, /not public\.booking_is_event_category\(new\.category_id\)/);
   assert.match(migration, /not public\.booking_is_event_category\(bk\.category_id\)/);
