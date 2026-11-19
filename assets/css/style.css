@@ -557,3 +557,14 @@ textarea.input { resize: vertical; }
 .template-enabled { display: flex; align-items: flex-start; gap: .5rem; margin: .65rem 0; font-weight: 600; }
 .template-enabled input { margin-top: .25rem; }
 #bf-notification-fields[hidden], #bf-no-booking-mail[hidden] { display: none !important; }
+
+
+/* Inline editing for document display titles in the admin library. */
+.doc-title-cell { min-width: 15rem; }
+.doc-title-display-row { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; }
+.doc-title-display-row > span:first-child { overflow-wrap: anywhere; }
+.doc-title-editor { display: grid; grid-template-columns: minmax(150px, 1fr); gap: .4rem; margin: .5rem 0 0; padding: .55rem; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; }
+.doc-title-editor[hidden] { display: none; }
+.doc-title-editor-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.doc-title-editor .msg { margin-top: .1rem; }
+@media (max-width: 600px) { .doc-title-cell { min-width: 12rem; } }
