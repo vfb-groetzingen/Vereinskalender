@@ -111,6 +111,7 @@ export class DemoStore {
     this.userEmail = '';
     localStorage.removeItem(DEMO_SESSION);
   }
+  async getAnnualEventCalendarOccurrences() { return []; }
   async getBookings({ from, to }) {
     return expandResourceBookings(this.bookings
       .filter((b) => new Date(b.ends_at) > from && new Date(b.starts_at) < to))
@@ -449,6 +450,18 @@ export class SupabaseStore {
   async archiveEventDocument(id) {
     if (!this.isAdmin()) throw { code: '42501', message: 'Keine Berechtigung.' };
     return this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: { active: false }, prefer: 'return=representation' });
+  }
+
+  async getAnnualEventCalendarOccurrences({ from, to, resourceIds = null }) {
+    const localDate = (date) => ymd(date);
+    return this._req('/rest/v1/rpc/get_annual_event_calendar_occurrences', {
+      method: 'POST',
+      body: {
+        p_from: localDate(from),
+        p_to: localDate(to),
+        p_resource_ids: Array.isArray(resourceIds) && resourceIds.length ? resourceIds : null
+      }
+    });
   }
 
   async getBookings({ from, to }) {

@@ -6,6 +6,8 @@ let currentEvents = [];
 let rerenderPage = null;
 let siteConfiguration = null;
 let eventDocuments = [];
+let eventResources = [];
+let eventCategories = [];
 
 function safeHtml(input) {
   const parsed = new DOMParser().parseFromString(`<div>${input || ''}</div>`, 'text/html');
@@ -83,6 +85,12 @@ export async function renderAnnualEvents(app, store, setNotice) {
   currentEvents = await store.getAnnualEvents();
   try { siteConfiguration = await store.getSiteConfiguration(); } catch { siteConfiguration = null; }
   try { eventDocuments = await store.getEventDocuments({ activeOnly: false }); } catch { eventDocuments = []; }
+  try {
+    [eventResources, eventCategories] = await Promise.all([store.getResources(), store.getCategories()]);
+  } catch {
+    eventResources = [];
+    eventCategories = [];
+  }
   rerenderPage = () => renderAnnualEvents(app, store, setNotice);
   drawCalendar(app, store, setNotice);
 }
@@ -180,6 +188,11 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const selectedDocumentIds = new Set(event?.document_ids || []);
   const availableDocuments = eventDocuments.filter((document) => document.active || selectedDocumentIds.has(document.id));
   const documentOptions = availableDocuments.map((document) => `<label class="check annual-library-document"><input type="checkbox" data-library-document="${esc(document.id)}" ${selectedDocumentIds.has(document.id) ? 'checked' : ''}><span>${esc(document.title)} — ${esc(document.file_name)} (${(Number(document.file_size) / 1024).toFixed(0)} KB)${document.active ? '' : ' · archiviert'}</span></label>`).join('');
+  const selectedResourceIds = new Set(event?.resource_ids || []);
+  const resourceGroups = [['Räume', eventResources.filter((resource) => resource.type === 'raum')], ['Plätze', eventResources.filter((resource) => resource.type === 'platz')]];
+  const resourceOptions = resourceGroups.map(([label, resources]) => resources.length ? `<div class="annual-resource-group"><strong>${label}</strong>${resources.map((resource) => `<label class="check annual-event-resource-option"><input type="checkbox" data-event-resource="${esc(resource.id)}" ${selectedResourceIds.has(resource.id) ? 'checked' : ''}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label>`).join('')}</div>` : '').join('');
+  const selectedCategoryId = event?.category_id || eventCategories.find((category) => category.name?.toLocaleLowerCase('de-DE') === 'veranstaltung')?.id || eventCategories[0]?.id || '';
+  const categoryOptions = eventCategories.map((category) => `<option value="${esc(category.id)}" ${category.id === selectedCategoryId ? 'selected' : ''}>${esc(category.name)}</option>`).join('');
   const defaultSignature = siteConfiguration?.event_signature_html || '<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href="http://www.vfb-groetzingen.de/">http://www.vfb-groetzingen.de/</a></p>';
   const originalBody = event?.body_html || '';
   const initialBody = event
@@ -189,6 +202,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
       <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
       <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>
+      <div class="field-row annual-event-location-row"><fieldset class="field annual-resource-picker"><legend>Kalender / Plätze / Räume *</legend><label class="sr-only" for="ae-resource-search">Räume und Plätze suchen</label><input id="ae-resource-search" class="input" type="search" placeholder="Räume und Plätze suchen"><div id="ae-resource-list" class="annual-resource-list">${resourceOptions || '<p class="hint">Keine aktiven Räume oder Plätze gefunden.</p>'}</div><p id="ae-resource-count" class="hint" aria-live="polite">Keine Räume oder Plätze ausgewählt.</p><p class="hint">Mehrere Zuordnungen möglich. Das ganztägige Ereignis erscheint in jedem ausgewählten Kalender und blockiert keine Buchungen.</p></fieldset><div class="field"><label for="ae-category">Kategorie *</label><select id="ae-category" class="input" required>${categoryOptions || '<option value="">Keine Kategorien verfügbar</option>'}</select><p class="hint">Die Kategorie steuert die Farbe des Eintrags und den Kategorienfilter.</p></div></div>
       <div class="field-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${selectedRecurrence === 'once' ? 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet.' : 'Die aktivierte Erinnerung wird jährlich 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
@@ -363,6 +377,25 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     list.querySelectorAll('input')[count].focus();
   };
   bindRecipientRemove(q('#ae-recipients'));
+  const resourceList = q('#ae-resource-list');
+  const resourceSearch = q('#ae-resource-search');
+  const updateResourceSelection = () => {
+    const count = resourceList.querySelectorAll('[data-event-resource]:checked').length;
+    q('#ae-resource-count').textContent = count ? `${count} Kalender ausgewählt.` : 'Keine Räume oder Plätze ausgewählt.';
+  };
+  resourceList.querySelectorAll('[data-event-resource]').forEach((checkbox) => checkbox.addEventListener('change', updateResourceSelection));
+  resourceSearch.addEventListener('input', () => {
+    const query = resourceSearch.value.trim().toLocaleLowerCase('de-DE');
+    resourceList.querySelectorAll('.annual-resource-group').forEach((group) => {
+      let visible = 0;
+      group.querySelectorAll('.annual-event-resource-option').forEach((option) => {
+        option.hidden = Boolean(query && !option.textContent.toLocaleLowerCase('de-DE').includes(query));
+        if (!option.hidden) visible += 1;
+      });
+      group.hidden = visible === 0;
+    });
+  });
+  updateResourceSelection();
   dialog.querySelectorAll('[data-command]').forEach((button) => button.onclick = () => {
     q('#ae-body').focus(); document.execCommand(button.dataset.command, false, null);
   });
@@ -420,10 +453,14 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const date = q('#ae-date').value;
     const [year, month, day] = date.split('-').map(Number);
     const emails = [...q('#ae-recipients').querySelectorAll('input')].map((input) => input.value.trim()).filter(Boolean);
+    const resourceIds = [...q('#ae-resource-list').querySelectorAll('[data-event-resource]:checked')].map((input) => input.dataset.eventResource);
+    const categoryId = q('#ae-category').value;
     const body = safeHtml(q('#ae-body').innerHTML);
     if (!title || !subject || !date || !body.replace(/<[^>]*>/g, '').trim()) return msg('Bitte Name, Datum, Betreff und Nachricht ausfüllen.');
     if (!emails.length || emails.length > 10 || emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return msg('Bitte 1 bis 10 gültige E-Mail-Adressen eingeben.');
     if (new Set(emails.map((email) => email.toLowerCase())).size !== emails.length) return msg('Eine E-Mail-Adresse ist mehrfach eingetragen.');
+    if (!resourceIds.length) return msg('Bitte mindestens einen Raum oder Platz auswählen.');
+    if (!categoryId) return msg('Bitte eine Kategorie auswählen.');
     const documentIds = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')].map((input) => input.dataset.libraryDocument);
     const selectedDocs = documentIds.map((documentId) => eventDocuments.find((document) => document.id === documentId)).filter(Boolean);
     const totalBytes = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
@@ -437,6 +474,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       await store.saveAnnualEvent({
         id, title, recurrence, event_date: recurrence === 'once' ? date : null,
         event_month: month, event_day: day, recipients: emails, subject, body_html: body,
+        resource_ids: resourceIds, category_id: categoryId,
         assets, document_ids: documentIds, sender_profile_id: profile.id,
         sender_display_name: profile.display_name, reply_to_email: profile.reply_to,
         active: q('#ae-active').checked,

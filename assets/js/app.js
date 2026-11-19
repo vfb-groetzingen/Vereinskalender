@@ -29,6 +29,7 @@ const S = {
   allResources: [],
   categories: [],
   bookings: [],
+  calendarEvents: [],
   futureList: [],
   roomView: 'week',
   roomAnchor: new Date(),
@@ -106,6 +107,53 @@ const resById = (id) => S.resources.find((r) => r.id === id);
 const catById = (id) => S.categories.find((c) => c.id === id);
 const catColor = (id) => catById(id)?.color || '#4a5568';
 const dayName = (d) => d.toLocaleDateString('de-DE', { weekday: 'short' });
+
+async function loadCalendarEventOccurrences({ from, to, resourceIds = null }) {
+  try {
+    S.calendarEvents = await S.store.getAnnualEventCalendarOccurrences({ from, to, resourceIds });
+  } catch (error) {
+    // Calendar data remains usable if the optional event-calendar migration has not been applied yet.
+    console.warn('Ereignisse konnten für den Kalender nicht geladen werden.', error);
+    S.calendarEvents = [];
+  }
+}
+
+function calendarEventsForDay(day, resourceId = null, categoryId = '') {
+  const date = L.ymd(day);
+  return (S.calendarEvents || []).filter((marker) => String(marker.event_date).slice(0, 10) === date
+    && (!resourceId || marker.resource_id === resourceId)
+    && (!categoryId || marker.category_id === categoryId));
+}
+
+function calendarEventMarker(marker, resourceLabel = '') {
+  const title = `${resourceLabel ? `${resourceLabel} · ` : ''}${marker.title}`;
+  const category = catById(marker.category_id)?.name || marker.category_name || 'Kategorie nicht gesetzt';
+  return `<span class="calendar-marker" style="--marker-color:${esc(marker.category_color || catColor(marker.category_id))}" title="${esc(`${title} · ${category} · ganztägig, blockiert keine Buchung`)}">${esc(title)}</span>`;
+}
+
+function calendarEventMarkerList(markers, { max = 2, resourceLabel = (marker) => marker.resource_name || '' } = {}) {
+  if (!markers.length) return '';
+  const shown = markers.slice(0, max).map((marker) => calendarEventMarker(marker, resourceLabel(marker))).join('');
+  const more = markers.length > max ? `<span class="calendar-marker-more">+${markers.length - max} weitere</span>` : '';
+  return `${shown}${more}`;
+}
+
+function combinedCalendarEventsForDay(day, resourceIds, categoryId = '') {
+  const selected = new Set(resourceIds);
+  const grouped = new Map();
+  for (const marker of calendarEventsForDay(day, null, categoryId)) {
+    if (!selected.has(marker.resource_id)) continue;
+    const key = `${marker.event_id}:${String(marker.event_date).slice(0, 10)}`;
+    let item = grouped.get(key);
+    if (!item) {
+      item = { ...marker, _resources: new Set() };
+      grouped.set(key, item);
+    }
+    const resource = resById(marker.resource_id);
+    if (resource) item._resources.add(resource.name);
+  }
+  return [...grouped.values()].map((item) => ({ ...item, resource_name: [...item._resources].join(', ') }));
+}
 const dayLong = (d) => d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
 const monthLabel = (d) => d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
 const hhmm = (d) => L.fmtTime(d);
@@ -399,6 +447,7 @@ async function renderRoom(res) {
   const range = roomRange();
   const all = await S.store.getBookings({ from: range.from, to: range.to });
   S.bookings = all;
+  await loadCalendarEventOccurrences({ from: range.from, to: range.to, resourceIds: [res.id] });
   const mine = all.filter((b) => b.resource_id === res.id);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   S.futureList = await S.store.getAllFuture(today, 300, res.id);
@@ -435,7 +484,7 @@ async function renderRoom(res) {
       </div>
     </div>
     <div class="cal-wrap">
-      ${S.roomView === 'month' ? monthGrid(range, mine) : timeGrid(range, mine)}
+      ${S.roomView === 'month' ? monthGrid(range, mine, res.id) : timeGrid(range, mine, res.id)}
     </div>
     ${isEditor() ? '<p class="hint calendar-create-hint">Tipp: Doppelklick oder Rechtsklick auf eine freie Kalenderfläche legt einen Termin an. Im Zeitraster wird die angeklickte Uhrzeit übernommen.</p>' : ''}
     <section class="section">
@@ -448,13 +497,14 @@ async function renderRoom(res) {
   bindRoomControls(res);
 }
 
-function timeGrid(range, bookings) {
+function timeGrid(range, bookings, resourceId) {
   const hours = [...Array(DE - DS + 1)].map((_, i) => DS + i);
   const height = (DE - DS) * HOUR_PX;
   const colW = S.roomView === 'day' ? 1 : 7;
   const cols = range.days.map((d, idx) => {
     const segs = bookings.flatMap((b) => LY.segmentsForDays(b, [d], DS, DE).map((s) => ({ ...s, dayIndex: idx })));
     const blocks = LY.timeGridBlocks(segs, DS, HOUR_PX);
+    const dayMarkers = calendarEventsForDay(d, resourceId);
     const isToday = d.toDateString() === new Date().toDateString();
     const evs = blocks.map((bl) => {
       const b = bl.booking;
@@ -467,16 +517,17 @@ function timeGrid(range, bookings) {
     }).join('');
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}" role="group" aria-label="${esc(dayLong(d))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(d))}</span><span class="tg-date">${d.getDate()}.${d.getMonth() + 1}.</span></div>
+      <div class="calendar-all-day-slot" aria-label="${dayMarkers.length} ganztägige Ereignisse">${calendarEventMarkerList(dayMarkers) || '<span class="calendar-all-day-empty">–</span>'}</div>
       <div class="tg-body" style="height:${height}px">${hours.map((h) => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${evs}</div>
     </div>`;
   }).join('');
   return `<div class="tg" style="--cols:${colW}">
-    <div class="tg-axis" aria-hidden="true"><div class="tg-head"></div><div class="tg-body" style="height:${height}px">${hours.map((h) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(h).padStart(2, '0')}:00</div>`).join('')}</div></div>
+    <div class="tg-axis" aria-hidden="true"><div class="tg-head"></div><div class="tg-all-day-axis">Ganztägig</div><div class="tg-body" style="height:${height}px">${hours.map((h) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(h).padStart(2, '0')}:00</div>`).join('')}</div></div>
     <div class="tg-cols">${cols}</div>
   </div>`;
 }
 
-function monthGrid(range, bookings) {
+function monthGrid(range, bookings, resourceId) {
   const names = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((n) => `<div class="mg-dow">${n}</div>`).join('');
   const cells = range.days.map((d) => {
     const inMonth = d.getMonth() === range.month;
@@ -484,12 +535,14 @@ function monthGrid(range, bookings) {
     const dayEnd = L.addDays(dayStart, 1);
     const list = bookings.filter((b) => new Date(b.ends_at) > dayStart && new Date(b.starts_at) < dayEnd)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const dayMarkers = calendarEventsForDay(d, resourceId);
+    const markerHtml = calendarEventMarkerList(dayMarkers, { max: 2 });
     const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</button>`).join('');
     const more = list.length > 3 ? `<button type="button" class="link-btn" data-goto="${L.ymd(d)}">+${list.length - 3} weitere</button>` : '';
     const isToday = d.toDateString() === new Date().toDateString();
     return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}">
       <button type="button" class="mg-date" data-goto="${L.ymd(d)}" aria-label="${esc(dayLong(d))} in Tagesansicht öffnen">${d.getDate()}</button>
-      ${shown}${more}</div>`;
+      ${markerHtml}${shown}${more}</div>`;
   }).join('');
   return `<div class="mg"><div class="mg-head">${names}</div><div class="mg-grid">${cells}</div></div>`;
 }
@@ -583,6 +636,12 @@ function planMonthGrid(range, bookings) {
     const rows = bookings.filter((b) => !S.hiddenRes.has(b.resource_id) && (!S.catFilter || b.category_id === S.catFilter)
       && new Date(b.ends_at) > start && new Date(b.starts_at) < end)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const dayMarkers = S.calendarEvents.filter((marker) => String(marker.event_date).slice(0, 10) === L.ymd(day)
+      && !S.hiddenRes.has(marker.resource_id) && (!S.catFilter || marker.category_id === S.catFilter));
+    const markerHtml = calendarEventMarkerList(dayMarkers, {
+      max: 3,
+      resourceLabel: (marker) => resById(marker.resource_id)?.name || ''
+    });
     const shown = rows.slice(0, 4).map((b) => {
       const resource = resById(b.resource_id);
       return `<button type="button" class="plan-month-event" data-id="${esc(b.id)}" style="--resource-color:${esc(resource?.color || '#4a5568')}" title="${esc(resource?.name || '')}: ${esc(b.title)}">${hhmm(new Date(b.starts_at))} · ${esc(resource?.name || '')}: ${seriesMark(b)}${esc(b.title)}</button>`;
@@ -591,7 +650,7 @@ function planMonthGrid(range, bookings) {
     const out = day.getMonth() !== range.month;
     const today = day.toDateString() === new Date().toDateString();
     return `<div class="mg-cell ${out ? 'is-out' : ''} ${today ? 'is-today' : ''}" data-date="${L.ymd(day)}">
-      <button type="button" class="mg-date" data-plan-goto="${L.ymd(day)}" aria-label="${esc(dayLong(day))} in Tagesansicht öffnen">${day.getDate()}</button>${shown}${more}</div>`;
+      <button type="button" class="mg-date" data-plan-goto="${L.ymd(day)}" aria-label="${esc(dayLong(day))} in Tagesansicht öffnen">${day.getDate()}</button>${markerHtml}${shown}${more}</div>`;
   }).join('');
   return `<div class="mg plan-month-grid"><div class="mg-head">${weekdays}</div><div class="mg-grid">${cells}</div></div>`;
 }
@@ -613,6 +672,8 @@ function planWeekBoard(range, groups) {
       const cells = range.days.map((day, dayIndex) => {
         const daySegments = segments.filter((segment) => segment.dayIndex === dayIndex)
           .sort((a, b) => a.start - b.start);
+        const dayMarkers = calendarEventsForDay(day, resource.id, S.catFilter);
+        const markerHtml = calendarEventMarkerList(dayMarkers, { max: 2 });
         const events = daySegments.map((segment) => {
           const booking = segment.booking;
           const category = catById(booking.category_id)?.name || 'Sonstige';
@@ -625,7 +686,9 @@ function planWeekBoard(range, groups) {
             <span class="week-booking-title">${seriesMark(booking)}${esc(booking.title)}</span>
           </button>`;
         }).join('');
-        return `<div class="week-day-cell" data-date="${L.ymd(day)}" data-resource-id="${esc(resource.id)}" role="cell" aria-label="${esc(dayLong(day))}: ${daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei'}">${events || '<span class="week-free">Frei</span>'}</div>`;
+        const status = daySegments.length ? `${daySegments.length} Belegung(en)` : 'frei';
+        const markerCount = dayMarkers.length ? `; ${dayMarkers.length} ganztägige Ereignis(se)` : '';
+        return `<div class="week-day-cell" data-date="${L.ymd(day)}" data-resource-id="${esc(resource.id)}" role="cell" aria-label="${esc(dayLong(day))}: ${status}${markerCount}">${markerHtml}${events || '<span class="week-free">Frei</span>'}</div>`;
       }).join('');
       return `<div class="week-resource-row" role="row">
         <div class="week-resource-label" role="rowheader"><span class="chip" style="background:${esc(resource.color)}" aria-hidden="true"></span><span>${esc(resource.name)}</span></div>
@@ -672,12 +735,15 @@ function combinedTimeGrid(range, resources) {
     ...booking,
     _selectedResources: [...booking._selectedResourceIds].map(resById).filter(Boolean)
   }));
+  const calendarMarkers = (S.calendarEvents || []).filter((marker) => selectedIds.has(marker.resource_id));
   const segments = bookings.flatMap((booking) => LY.segmentsForDays(booking, range.days, DS, DE));
   const blocks = LY.timeGridBlocks(segments, DS, HOUR_PX);
   const hours = [...Array(DE - DS + 1)].map((_, i) => DS + i);
   const height = (DE - DS) * HOUR_PX;
   const byDay = range.days.map((_, dayIndex) => blocks.filter((block) => block.dayIndex === dayIndex));
   const cols = range.days.map((day, dayIndex) => {
+    const dayMarkers = combinedCalendarEventsForDay(day, selectedIds);
+    const markerHtml = calendarEventMarkerList(dayMarkers, { max: 2 });
     const events = byDay[dayIndex].map((block) => {
       const booking = block.booking;
       const colors = booking._selectedResources.map((resource) => resource.color || '#4a5568');
@@ -695,13 +761,14 @@ function combinedTimeGrid(range, resources) {
     const isToday = day.toDateString() === new Date().toDateString();
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" role="group" aria-label="${esc(dayLong(day))}">
       <div class="tg-head"><span class="tg-dow">${esc(dayName(day))}</span><span class="tg-date">${day.getDate()}. ${esc(day.toLocaleDateString('de-DE', { month: 'short' }))}</span></div>
+      <div class="calendar-all-day-slot" aria-label="${dayMarkers.length} ganztägige Ereignisse">${markerHtml || '<span class="calendar-all-day-empty">–</span>'}</div>
       <div class="tg-body" data-date="${L.ymd(day)}" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
     </div>`;
   }).join('');
   return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
-    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
+    <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-all-day-axis">Ganztägig</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
     <div class="tg-cols">${cols}</div>
-  </div>${bookings.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
+  </div>${bookings.length || calendarMarkers.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
 }
 
 async function renderCombinedPlan() {
@@ -709,12 +776,13 @@ async function renderCombinedPlan() {
   const range = { from: firstDay, to: L.addDays(firstDay, 7), days: [...Array(7)].map((_, i) => L.addDays(firstDay, i)) };
   S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
   const visible = S.resources.filter((resource) => !S.hiddenRes.has(resource.id));
+  await loadCalendarEventOccurrences({ from: range.from, to: range.to, resourceIds: visible.map((resource) => resource.id) });
   const dateLabel = combinedRangeLabel(range.days);
   const resourceGroups = [['Räume', S.resources.filter((r) => r.type === 'raum')], ['Plätze', S.resources.filter((r) => r.type === 'platz')]];
   const filters = resourceGroups.map(([title, list]) => list.length ? `<fieldset class="combined-filter-group"><legend>${title}</legend><ul class="check-list">${list.map((resource) => `<li><label class="check"><input type="checkbox" data-combined-resource="${esc(resource.id)}" ${S.hiddenRes.has(resource.id) ? '' : 'checked'}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label></li>`).join('')}</ul></fieldset>` : '').join('');
   const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
   app.innerHTML = `
-    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster: Tage als Spalten, Uhrzeiten links. Die Farbe kennzeichnet die Ressource.</p></div>
+    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster. Ereignisse erscheinen ganztägig, ohne Buchungen zu blockieren.</p></div>
       <div class="page-actions combined-actions"><a class="btn btn-ghost" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a><button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>${isEditor() ? '<button type="button" class="btn" id="combined-import">Spiele importieren</button>' : ''}${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button></div>
     </header>
     <div class="combined-layout">
@@ -770,6 +838,7 @@ async function renderCombinedPlan() {
 async function renderPlan() {
   const range = planRange();
   S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
+  await loadCalendarEventOccurrences({ from: range.from, to: range.to, resourceIds: S.resources.map((resource) => resource.id) });
   if (S.planRange === 'month') {
     const visible = S.resources.filter((r) => !S.hiddenRes.has(r.id));
     const rubriken = S.resources.map((r) => `<li><label class="check"><input type="checkbox" data-res-toggle="${esc(r.id)}" ${S.hiddenRes.has(r.id) ? '' : 'checked'}><span class="chip" style="background:${esc(r.color)}" aria-hidden="true"></span><span>${esc(r.name)}</span></label></li>`).join('');
