@@ -84,3 +84,6 @@ revoke all on function public.get_annual_event_calendar_occurrences(date, date, 
 grant execute on function public.get_annual_event_calendar_occurrences(date, date, uuid[]) to anon, authenticated;
 
 commit;
+
+-- Refresh PostgREST's schema cache so the new columns are immediately available.
+notify pgrst, 'reload schema';
