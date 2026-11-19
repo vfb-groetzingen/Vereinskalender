@@ -339,10 +339,12 @@ textarea.input { resize: vertical; }
 .annual-resource-group > strong { display: block; margin: .15rem 0; font-size: .85rem; }
 .annual-event-resource-option { margin: .2rem 0; }
 .annual-event-resource-option[hidden], .annual-resource-group[hidden] { display: none !important; }
-.calendar-all-day-slot { box-sizing: border-box; height: 54px; overflow: hidden; padding: .15rem .2rem; border-bottom: 1px solid var(--border); background: #fbfcfd; }
-.tg-all-day-axis { box-sizing: border-box; height: 54px; display: flex; align-items: center; justify-content: center; padding: .15rem; border-bottom: 1px solid var(--border); color: var(--muted); font-size: .65rem; line-height: 1.1; text-align: center; }
+.calendar-all-day-slot { box-sizing: border-box; height: 82px; overflow: hidden; padding: .15rem .2rem; border-bottom: 1px solid var(--border); background: #fbfcfd; }
+.tg-all-day-axis { box-sizing: border-box; height: 82px; display: flex; align-items: center; justify-content: center; padding: .15rem; border-bottom: 1px solid var(--border); color: var(--muted); font-size: .65rem; line-height: 1.1; text-align: center; }
 .calendar-marker { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .08rem 0; padding: .08rem .25rem; border-left: 3px solid var(--marker-color, #4a5568); border-radius: 3px; background: #f1f4f8; color: var(--text); font-size: .68rem; line-height: 1.35; }
 .calendar-marker-more { display: block; color: var(--muted); font-size: .65rem; line-height: 1.25; }
+.calendar-all-day-slot .calendar-marker { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; padding: .15rem .35rem; font-size: .82rem; font-weight: 600; line-height: 1.2; }
+.calendar-all-day-slot .calendar-marker-more { font-size: .72rem; line-height: 1.2; }
 .calendar-all-day-empty { color: #a4adba; font-size: .7rem; }
 .annual-message-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
 .annual-message-heading > label:first-child { margin: 0; }
