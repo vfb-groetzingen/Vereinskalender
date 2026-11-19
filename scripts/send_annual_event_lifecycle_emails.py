@@ -163,13 +163,17 @@ def html_to_text(source):
 
 def format_event_date(payload):
     recurrence = payload.get("recurrence") or "annual"
-    if recurrence == "once" and payload.get("event_date"):
-        try:
-            return dt.date.fromisoformat(str(payload["event_date"])[:10]).strftime("%d.%m.%Y")
-        except ValueError:
-            return ""
     try:
-        return f"{int(payload['event_day']):02d}.{int(payload['event_month']):02d}."
+        if recurrence == "once" and payload.get("event_date"):
+            start = dt.date.fromisoformat(str(payload["event_date"])[:10])
+            end = dt.date.fromisoformat(str(payload.get("event_end_date") or payload["event_date"])[:10])
+            start_text = start.strftime("%d.%m.%Y")
+            return start_text if end == start else f"{start_text}–{end.strftime('%d.%m.%Y')}"
+        start = f"{int(payload['event_day']):02d}.{int(payload['event_month']):02d}."
+        end_day = int(payload.get("event_end_day") or payload['event_day'])
+        end_month = int(payload.get("event_end_month") or payload['event_month'])
+        end = f"{end_day:02d}.{end_month:02d}."
+        return start if end == start else f"{start}–{end}"
     except (KeyError, TypeError, ValueError):
         return ""
 

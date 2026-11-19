@@ -78,9 +78,9 @@ def expired_events(cutoff):
     offset = 0
     while True:
         path = (
-            "annual_email_events?select=id,event_date,assets"
-            f"&recurrence=eq.once&event_date=lt.{cutoff.isoformat()}"
-            f"&order=event_date.asc&limit={PAGE_SIZE}&offset={offset}"
+            "annual_email_events?select=id,event_date,event_end_date,assets"
+            f"&recurrence=eq.once&event_end_date=lt.{cutoff.isoformat()}"
+            f"&order=event_end_date.asc&limit={PAGE_SIZE}&offset={offset}"
         )
         page = request_json("GET", path) or []
         result.extend(page)
@@ -108,7 +108,7 @@ def delete_event(event, cutoff):
     event_id = quote(event["id"], safe="")
     path = (
         f"annual_email_events?id=eq.{event_id}&recurrence=eq.once"
-        f"&event_date=lt.{cutoff.isoformat()}"
+        f"&event_end_date=lt.{cutoff.isoformat()}"
     )
     deleted = request_json("DELETE", path, prefer="return=representation") or []
     return bool(deleted)
@@ -124,7 +124,7 @@ def main():
     for event in events:
         try:
             if delete_event(event, cutoff):
-                print(f"Abgelaufenes Ereignis samt Dateien gelöscht: {event['id']} ({event.get('event_date')})")
+                print(f"Abgelaufenes Ereignis samt Dateien gelöscht: {event['id']} ({event.get('event_date')}–{event.get('event_end_date')})")
             else:
                 print(f"Ereignis wurde inzwischen geändert oder entfernt: {event['id']}")
         except Exception as exc:
