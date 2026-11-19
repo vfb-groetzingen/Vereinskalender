@@ -136,6 +136,15 @@ test('Ereignisse werden Ressourcen und Kategorien zugeordnet und datensparsam im
   const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
   const css = readFileSync(new URL('../assets/css/style.css', import.meta.url), 'utf-8');
   const migration = readFileSync(new URL('../supabase/migration-event-calendar-resources.sql', import.meta.url), 'utf-8');
+  const multiDay = readFileSync(new URL('../supabase/migration-multiday-calendar-entries.sql', import.meta.url), 'utf-8');
+  assert.match(annual, /id="ae-end-date"/);
+  assert.match(annual, /event_end_date: recurrence === 'once' \? endDate : null/);
+  assert.match(annual, /annualOccurrenceRange/);
+  assert.match(multiDay, /event_end_date date/);
+  assert.match(multiDay, /end_day_offset integer not null default 0/);
+  assert.match(multiDay, /ends_at < now\(\) - interval '3 years'/);
+  assert.match(multiDay, /generate_series\([\s\S]*interval '1 day'/);
+  assert.match(multiDay, /'event_end_month', p_event->>'event_end_month'/);
   assert.match(annual, /id="ae-resource-search"/);
   assert.match(annual, /data-event-resource/);
   assert.match(annual, /id="ae-category"/);

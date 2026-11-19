@@ -31,6 +31,10 @@ class AnnualEventLifecycleMailerTests(unittest.TestCase):
             "signature_text": "Mit freundlichen Grüßen\nVfB Grötzingen",
         }
 
+    def test_event_date_formatter_shows_multi_day_ranges(self):
+        self.assertEqual(mailer.format_event_date({"recurrence": "once", "event_date": "2026-12-30", "event_end_date": "2027-01-02"}), "30.12.2026–02.01.2027")
+        self.assertEqual(mailer.format_event_date({"recurrence": "annual", "event_day": 30, "event_month": 12, "event_end_day": 2, "event_end_month": 1}), "30.12.–02.01.")
+
     def test_event_template_ignores_global_booking_enabled_switch(self):
         item = {
             "kind": "confirmation", "recipient": "person@example.org",

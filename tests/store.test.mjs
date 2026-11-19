@@ -169,3 +169,30 @@ test('Fortlaufende Buchungsserien unterstützen alle Frequenzen und erhalten E-M
   await s.endRecurringSeries(ids.weekly, 4);
   assert.ok((await s.getSeriesBookings(ids.weekly)).every((row) => row.series_occurrence < 4));
 });
+
+
+test('Mehrtagesterminserie behält Tagesoffset in allen Demo-Vorkommen', async () => {
+  const s = fresh();
+  await s.signIn({ role: 'bearbeiter' });
+  const starts_on = L.ymd(L.addDays(new Date(), 1));
+  const seriesId = await s.createRecurringSeries({
+    resource_id: res, resource_ids: [res], category_id: 'cat-training', title: 'Mehrtägig',
+    notes: null, contact_email: null, reminder_days: 0, starts_on,
+    start_time: '22:00', end_time: '02:00', end_day_offset: 2, frequency: 'weekly'
+  });
+  const rows = await s.getSeriesBookings(seriesId);
+  assert.ok(rows.length >= 2);
+  for (const row of rows) {
+    assert.equal(L.dateDifference(L.ymd(new Date(row.starts_at)), L.ymd(new Date(row.ends_at))), 2);
+    assert.equal(L.fmtTime(new Date(row.starts_at)), '22:00');
+    assert.equal(L.fmtTime(new Date(row.ends_at)), '02:00');
+  }
+  const selected = rows.find((row) => row.series_occurrence === 1);
+  await s.updateRecurringSeries(seriesId, 1, 'following', {
+    starts_on: L.ymd(new Date(selected.starts_at)), start_time: '20:00', end_time: '01:00', end_day_offset: 3,
+    title: 'Aktualisiert', resource_id: res, resource_ids: [res], category_id: 'cat-training',
+    notes: null, contact_email: null, reminder_days: 0
+  });
+  const updated = (await s.getSeriesBookings(seriesId)).filter((row) => row.series_occurrence >= 1);
+  assert.ok(updated.every((row) => L.dateDifference(L.ymd(new Date(row.starts_at)), L.ymd(new Date(row.ends_at))) === 3));
+});

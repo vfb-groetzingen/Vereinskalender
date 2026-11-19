@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from '../assets/js/logic.js';
+import { annualOccurrenceRange } from '../assets/js/annual-events.js';
 
 const resources = [
   { id: 'r1', slug: 'trainingsplatz-a', name: 'Trainingsplatz A' },
@@ -218,4 +219,30 @@ test('Serien: fortlaufende Frequenzen verankern Monatsende und Schalttag korrekt
     '2026-04-06', '2026-04-20', '2026-05-04'
   ]);
   assert.equal(L.recurrenceDate('2026-03-31', -1, 'monthly'), '2026-02-28');
+});
+
+
+test('Mehrtagestermine: Tagesabstand und Serienende bleiben bei Wiederholung erhalten', () => {
+  assert.equal(L.dateDifference('2026-12-30', '2027-01-02'), 3);
+  const seriesId = 'multi-day-series';
+  const bookings = [
+    { id: 'one', series_id: seriesId, starts_at: L.combine('2026-12-30', '22:00').toISOString() },
+    { id: 'two', series_id: seriesId, starts_at: L.combine('2027-01-06', '22:00').toISOString() }
+  ];
+  const updates = L.buildFollowingSeriesUpdates(bookings, bookings[0], {
+    dateStr: '2026-12-31', startTime: '21:00', endTime: '02:00', endDayOffset: 2
+  });
+  assert.deepEqual(updates.map((item) => L.ymd(new Date(item.patch.starts_at))), ['2026-12-31', '2027-01-07']);
+  assert.deepEqual(updates.map((item) => L.ymd(new Date(item.patch.ends_at))), ['2027-01-02', '2027-01-09']);
+  assert.ok(updates.every((item) => L.fmtTime(new Date(item.patch.starts_at)) === '21:00'));
+  assert.ok(updates.every((item) => L.fmtTime(new Date(item.patch.ends_at)) === '02:00'));
+});
+
+
+test('Ereigniszeiträume: Jahreswechsel und Schaltjahr', () => {
+  const wrap = annualOccurrenceRange({ recurrence: 'annual', event_month: 12, event_day: 30, event_end_month: 1, event_end_day: 2 }, 2026);
+  assert.deepEqual(wrap, { start: '2026-12-30', end: '2027-01-02' });
+  assert.equal(annualOccurrenceRange({ recurrence: 'annual', event_month: 2, event_day: 29, event_end_month: 2, event_end_day: 29 }, 2025), null);
+  assert.deepEqual(annualOccurrenceRange({ recurrence: 'annual', event_month: 2, event_day: 29, event_end_month: 3, event_end_day: 1 }, 2024), { start: '2024-02-29', end: '2024-03-01' });
+  assert.deepEqual(annualOccurrenceRange({ recurrence: 'once', event_date: '2026-12-30', event_end_date: '2027-01-02' }, 2026), { start: '2026-12-30', end: '2027-01-02' });
 });

@@ -24,14 +24,16 @@ cleanup_spec.loader.exec_module(cleanup)
 
 class AnnualEventMailerTests(unittest.TestCase):
     def test_one_time_event_only_matches_its_exact_date(self):
-        event = {"recurrence": "once", "event_date": "2026-06-10"}
+        event = {"recurrence": "once", "event_date": "2026-06-10", "event_end_date": "2026-06-12"}
         self.assertTrue(mailer.event_occurs_on(event, dt.date(2026, 6, 10)))
+        self.assertFalse(mailer.event_occurs_on(event, dt.date(2026, 6, 12)))
         self.assertFalse(mailer.event_occurs_on(event, dt.date(2027, 6, 10)))
 
     def test_annual_event_matches_month_and_day_in_any_year(self):
-        event = {"recurrence": "annual", "event_month": 6, "event_day": 10}
+        event = {"recurrence": "annual", "event_month": 6, "event_day": 10, "event_end_month": 6, "event_end_day": 12}
         self.assertTrue(mailer.event_occurs_on(event, dt.date(2026, 6, 10)))
         self.assertTrue(mailer.event_occurs_on(event, dt.date(2027, 6, 10)))
+        self.assertFalse(mailer.event_occurs_on(event, dt.date(2026, 6, 12)))
         self.assertFalse(mailer.event_occurs_on(event, dt.date(2027, 6, 11)))
 
     def test_february_29_only_matches_leap_day(self):
@@ -142,6 +144,22 @@ class AnnualEventMailerTests(unittest.TestCase):
     def test_retention_cutoff_is_three_calendar_years(self):
         self.assertEqual(cleanup.cutoff_date(dt.date(2026, 11, 11)), dt.date(2023, 11, 11))
         self.assertEqual(cleanup.cutoff_date(dt.date(2028, 2, 29)), dt.date(2025, 2, 28))
+
+    def test_one_time_event_retention_waits_until_end_date_is_expired(self):
+        cutoff = dt.date(2023, 11, 11)
+        event = {"id": "event-1", "event_date": "2020-12-01", "event_end_date": "2024-01-02", "assets": []}
+        requests = []
+        original = cleanup.request_json
+        def fake_request(method, path, body=None, prefer=None):
+            requests.append((method, path))
+            return [event] if len(requests) == 1 else []
+        cleanup.request_json = fake_request
+        try:
+            self.assertEqual(cleanup.expired_events(cutoff), [event])
+        finally:
+            cleanup.request_json = original
+        self.assertIn("event_end_date=lt.2023-11-11", requests[0][1])
+        self.assertIn("select=id,event_date,event_end_date,assets", requests[0][1])
 
     def test_storage_cleanup_rejects_paths_outside_event_folder(self):
         with self.assertRaisesRegex(RuntimeError, "Ungültiger Dateipfad"):
