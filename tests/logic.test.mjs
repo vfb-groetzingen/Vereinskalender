@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from '../assets/js/logic.js';
-import { annualOccurrenceRange } from '../assets/js/annual-events.js';
+import { annualOccurrenceRange, endDateAfterStartChange } from '../assets/js/annual-events.js';
 
 const resources = [
   { id: 'r1', slug: 'trainingsplatz-a', name: 'Trainingsplatz A' },
@@ -245,4 +245,7 @@ test('Ereigniszeiträume: Jahreswechsel und Schaltjahr', () => {
   assert.equal(annualOccurrenceRange({ recurrence: 'annual', event_month: 2, event_day: 29, event_end_month: 2, event_end_day: 29 }, 2025), null);
   assert.deepEqual(annualOccurrenceRange({ recurrence: 'annual', event_month: 2, event_day: 29, event_end_month: 3, event_end_day: 1 }, 2024), { start: '2024-02-29', end: '2024-03-01' });
   assert.deepEqual(annualOccurrenceRange({ recurrence: 'once', event_date: '2026-12-30', event_end_date: '2027-01-02' }, 2026), { start: '2026-12-30', end: '2027-01-02' });
+  assert.equal(endDateAfterStartChange('2000-11-17', '2000-11-25', '2000-11-17', 'annual'), '2000-11-25');
+  assert.equal(endDateAfterStartChange('2000-11-17', '2000-11-25', '2000-12-01', 'annual'), '2000-12-01');
+  assert.equal(endDateAfterStartChange('2026-11-17', '2026-11-25', '2026-11-17', 'once'), '2026-11-25');
 });
