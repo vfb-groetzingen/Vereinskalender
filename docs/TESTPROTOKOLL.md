@@ -15,12 +15,12 @@ Befehl: `npm test`
 | `tests/logic.test.mjs` | Datums- und Uhrzeitprüfung, Import mit Zeilenfehlern, Kalenderzuordnung und Standardkalender-Fallback, erlaubte Überschneidungen, wöchentliche, zweiwöchentliche, monatliche und jährliche Serien einschließlich Monatsende und Schalttag, Layout | 23 von 23 bestanden |
 | `tests/layout.test.mjs` | Positionen in Tages-/Wochenansicht und Zeitleiste, Termine über Mitternacht, überlappende Termine | 6 von 6 bestanden |
 | `tests/store.test.mjs` | Demo-Speicher: Schreibrechte, erlaubte Überschneidungen, Mehrfachressourcen, vollständiges Laden aller Zeiträume und einer Serie, fortlaufende Serien mit allen Frequenzen, Kontakt- und Erinnerungsdaten sowie Bearbeiten/Löschen/Beenden | 12 von 12 bestanden |
-| `tests/admin-config.test.mjs` | Navigationspflege, getrennte Speicheraktionen, Einzelvorlagen-RPC, Audit-Trigger-Regression, Wiederfreischaltung bestehender Konten, Gesamtbelegungsplan-Navigation und Klickpfad, Kategorie-Unterdrückung, Ereignis-Mailsteuerung, Checkbox-Versand nach Speichern, optionale Ereignis-Ressourcen, exklusive Ereigniskalender-Auswahl/Kategorien und Passwort-Reset-Redirect | 10 von 10 bestanden |
+| `tests/admin-config.test.mjs` | Navigationspflege, getrennte Speicheraktionen, Einzelvorlagen-RPC, Audit-Trigger-Regression, Wiederfreischaltung bestehender Konten, Gesamtbelegungsplan-Navigation und Klickpfad, Kategorie-Unterdrückung, Ereignis-Mailsteuerung, Checkbox-Versand nach Speichern, optionale Ereignis-Ressourcen, exklusive Ereigniskalender-Auswahl/Kategorien, Dokumententitel-Änderung und Passwort-Reset-Redirect | 11 von 11 bestanden |
 | `tests/test_annual_event_mailer.py` | Einmalige und jährliche Fälligkeit, Schalttag, 1/2/7-Tage-Erinnerungszeitpunkt, optionale Erinnerungssignatur, Versand mit ausgewählten Anhängen, `Reply-To`, SMTP-Ablehnung, Aufbewahrungsgrenze und sichere Dateipfade | 12 von 12 bestanden |
 | `tests/test_annual_event_lifecycle_mailer.py` | Template-Rendering mit Vorher-Nachher-Datum, optionale Alt-Signatur, individuelle Nachricht mit gespeicherten Inhalten, Aktiv-/Versionsprüfung, Ereignis-Schalter, gelöschte Absagen, Sanitizing und `skipped`-Status | 10 von 10 bestanden |
 | `tests/test_booking_notification_mailer.py` | fester Strato-Absender, konfigurierbares Reply-To, Vorlagenersetzung, deaktivierte Vorlagen, Signaturformat und Wiederholungslogik | 6 von 6 bestanden |
 
-**Testlauf: 51 JavaScript- und 28 Python-Tests bestanden.**
+**Testlauf: 52 JavaScript- und 28 Python-Tests bestanden.**
 
 Zusätzlich geprüft:
 - Die JavaScript-Dateien sind syntaktisch gültig (`node --check`); CSS, HTML und die TypeScript-Syntax der Edge Function wurden statisch geparst.
@@ -145,7 +145,7 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Administrator: Benutzer/Einladungen, Ressourcen und Änderungsprotokoll über die Admin-Unterseiten bedienen
 - [ ] Konfiguration: Mailprofile und Antwortadressen speichern; im Ereignis prüfen, dass Reply-To an die ausgewählte Adresse geht und From `vfb-app@vfb-groetzingen.de` bleibt
 - [ ] Konfiguration: Vorlagenvorschau, Klartextsignatur, Besucher-/Rechtstexte und Navigation speichern
-- [ ] Dokumentablage: Bild komprimieren, PDF laden, 5-MB-Grenze prüfen; zugeordnetes Original kann nicht endgültig gelöscht werden; Ereignislöschung erhält Original
+- [ ] Dokumentablage: Anzeigenamen nachträglich ändern (Dateiname bleibt unverändert), Bild komprimieren, PDF laden, 5-MB-Grenze prüfen; zugeordnetes Original kann nicht endgültig gelöscht werden; Ereignislöschung erhält Original
 - [ ] iCalendar-Feed für alle Ressourcen und einzelne Ressource abrufen; keine internen Notizen oder Kontaktdaten enthalten
 - [ ] Administrator: Termine aus verschiedenen Zeiträumen markieren und mehrfach löschen
 - [ ] QR-Code wird als SVG geladen und führt auf die richtige Adresse (mit Telefon-Kamera prüfen)
