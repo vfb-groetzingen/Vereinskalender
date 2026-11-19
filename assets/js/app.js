@@ -1284,6 +1284,15 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   };
   categorySelect.onchange = updateNotificationFields;
   updateNotificationFields();
+  if (!isEdit) {
+    const startDateInput = $('#bf-date', d);
+    const endDateInput = $('#bf-end-date', d);
+    let previousStartDate = startDateInput.value;
+    startDateInput.addEventListener('change', () => {
+      endDateInput.value = L.followEndDateIfLinked(previousStartDate, startDateInput.value, endDateInput.value);
+      previousStartDate = startDateInput.value;
+    });
+  }
   const updateRepeatControls = () => {
     if (!repeat) return;
     const recurring = repeat.value !== 'none';

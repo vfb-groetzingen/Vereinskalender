@@ -132,6 +132,10 @@ export function shiftDateString(dateStr, days) {
   return new Date(dateOrdinal(dateStr) + days * 86400000).toISOString().slice(0, 10);
 }
 
+export function followEndDateIfLinked(previousStart, nextStart, currentEnd) {
+  return currentEnd === previousStart ? nextStart : currentEnd;
+}
+
 export function dateDifference(fromDate, toDate) {
   const difference = (dateOrdinal(toDate) - dateOrdinal(fromDate)) / 86400000;
   if (!Number.isInteger(difference)) throw new RangeError('Ungültiger Datumsbereich.');
