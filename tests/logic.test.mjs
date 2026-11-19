@@ -224,6 +224,8 @@ test('Serien: fortlaufende Frequenzen verankern Monatsende und Schalttag korrekt
 
 test('Mehrtagestermine: Tagesabstand und Serienende bleiben bei Wiederholung erhalten', () => {
   assert.equal(L.dateDifference('2026-12-30', '2027-01-02'), 3);
+  assert.equal(L.followEndDateIfLinked('2026-11-17', '2026-11-25', '2026-11-17'), '2026-11-25');
+  assert.equal(L.followEndDateIfLinked('2026-11-17', '2026-11-25', '2026-12-01'), '2026-12-01');
   const seriesId = 'multi-day-series';
   const bookings = [
     { id: 'one', series_id: seriesId, starts_at: L.combine('2026-12-30', '22:00').toISOString() },
