@@ -334,6 +334,7 @@ textarea.input { resize: vertical; }
 .annual-resource-picker legend { padding: 0 .25rem; font-weight: 700; }
 .annual-resource-list { max-height: 230px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: .35rem .5rem; }
 .annual-resource-group { padding: .2rem 0 .45rem; border-bottom: 1px solid #edf1f6; }
+.annual-event-only-option { padding: .15rem 0 .4rem; border-bottom: 1px solid #edf1f6; }
 .annual-resource-group:last-child { border-bottom: 0; }
 .annual-resource-group > strong { display: block; margin: .15rem 0; font-size: .85rem; }
 .annual-event-resource-option { margin: .2rem 0; }
