@@ -49,6 +49,11 @@ function bodyIncludesSignature(bodyHtml, signatureHtml) {
 }
 function fileTotal(assets) { return assets.reduce((sum, asset) => sum + Number(asset.size || 0), 0); }
 function monthName(date) { return date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); }
+export function endDateAfterStartChange(previousStart, nextStart, currentEnd, recurrence) {
+  const dayKey = (value) => recurrence === 'annual' ? String(value || '').slice(5) : String(value || '');
+  return dayKey(currentEnd) === dayKey(previousStart) ? nextStart : currentEnd;
+}
+
 function eventLabel(event) {
   const format = (date) => `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
   if (event.recurrence === 'once' && event.event_date) {
@@ -218,17 +223,32 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   dialog.className = 'dialog dialog-wide';
   dialog.id = 'annual-event-dialog';
   const selectedRecurrence = event?.recurrence || 'annual';
-  const selectedMonth = event?.event_month || initialDate?.month || (monthCursor.getMonth() + 1);
-  const selectedDay = event?.event_day || initialDate?.day || 1;
+  const today = new Date();
+  const selectedMonth = event?.event_month || initialDate?.month || (today.getMonth() + 1);
+  const selectedDay = event?.event_day || initialDate?.day || today.getDate();
   const selectedEndMonth = event?.event_end_month || selectedMonth;
   const selectedEndDay = event?.event_end_day || selectedDay;
-  const defaultYear = selectedRecurrence === 'once' ? monthCursor.getFullYear() : 2000;
+  const validDateYear = (month, day, firstYear) => {
+    let year = firstYear;
+    let date = new Date(year, month - 1, day);
+    while (date.getMonth() !== month - 1 || date.getDate() !== day) {
+      year++;
+      date = new Date(year, month - 1, day);
+    }
+    return year;
+  };
+  const defaultYear = selectedRecurrence === 'once'
+    ? monthCursor.getFullYear() : validDateYear(selectedMonth, selectedDay, today.getFullYear());
+  const annualEndWraps = selectedEndMonth < selectedMonth || (selectedEndMonth === selectedMonth && selectedEndDay < selectedDay);
+  const endDefaultYear = selectedRecurrence === 'annual'
+    ? validDateYear(selectedEndMonth, selectedEndDay, defaultYear + (annualEndWraps ? 1 : 0))
+    : defaultYear + (annualEndWraps ? 1 : 0);
   const dateValue = selectedRecurrence === 'once' && event?.event_date
     ? event.event_date
     : `${defaultYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
   const endDateValue = selectedRecurrence === 'once' && event?.event_end_date
     ? event.event_end_date
-    : `${defaultYear + ((selectedEndMonth < selectedMonth || (selectedEndMonth === selectedMonth && selectedEndDay < selectedDay)) ? 1 : 0)}-${String(selectedEndMonth).padStart(2, '0')}-${String(selectedEndDay).padStart(2, '0')}`;
+    : `${endDefaultYear}-${String(selectedEndMonth).padStart(2, '0')}-${String(selectedEndDay).padStart(2, '0')}`;
   const recipients = event?.recipients?.length ? event.recipients : [''];
   const profiles = Array.isArray(siteConfiguration?.mail_profiles) && siteConfiguration.mail_profiles.length
     ? siteConfiguration.mail_profiles : [{ id: 'default', label: 'VfB Grötzingen', display_name: 'VfB Grötzingen', reply_to: 'vfb-app@vfb-groetzingen.de' }];
@@ -301,7 +321,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       const [, month, day] = startParts;
       const [, endMonth, endDay] = endParts;
       if (month && day) {
-        let year = recurrence === 'annual' ? 2000 : monthCursor.getFullYear();
+        let year = recurrence === 'annual' ? today.getFullYear() : monthCursor.getFullYear();
         let date = new Date(year, month - 1, day);
         while (date.getMonth() !== month - 1 || date.getDate() !== day) { year++; date = new Date(year, month - 1, day); }
         dateInput.value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -322,6 +342,17 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   };
   q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
   syncRecurrenceUI();
+  if (!event) {
+    const startInput = q('#ae-date');
+    const endInput = q('#ae-end-date');
+    let previousStart = startInput.value;
+    startInput.addEventListener('change', () => {
+      const recurrence = q('#ae-recurrence').value;
+      endInput.value = endDateAfterStartChange(previousStart, startInput.value, endInput.value, recurrence);
+      previousStart = startInput.value;
+    });
+    q('#ae-recurrence').addEventListener('change', () => { previousStart = startInput.value; });
+  }
   const updateAssets = () => {
     q('#ae-assets').innerHTML = assets.map((asset, i) => `<li><span>${esc(asset.inline ? 'Eingebettetes Bild' : 'Anhang')}: ${esc(asset.filename)} (${(asset.size / 1024).toFixed(0)} KB)</span><button class="link-btn" type="button" data-remove-asset="${i}">Entfernen</button></li>`).join('') || '<li>Keine Dateien hinzugefügt.</li>';
     const selectedDocs = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')].map((input) => eventDocuments.find((document) => document.id === input.dataset.libraryDocument)).filter(Boolean);
