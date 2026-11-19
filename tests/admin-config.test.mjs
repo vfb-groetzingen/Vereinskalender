@@ -171,6 +171,31 @@ test('Einmaliger Ereignisversand nutzt gespeicherte Empfänger, Outbox und aktiv
   assert.match(worker, /get\("active"\) is not True/);
 });
 
+test('Dokumententitel können inline geändert werden, ohne den Dateinamen anzutasten', async () => {
+  const adminConfig = readFileSync(new URL('../assets/js/admin-config.js', import.meta.url), 'utf-8');
+  const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
+  assert.match(adminConfig, /data-doc-title-edit/);
+  assert.match(adminConfig, /data-doc-title-form/);
+  assert.match(adminConfig, /updateEventDocumentTitle\(doc\.id, title\)/);
+  assert.match(adminConfig, /const canManageDocs = Boolean\(store\.isAdmin\?\.\(\)\)/);
+  assert.match(data, /async updateEventDocumentTitle\(id, title\)/);
+  const store = Object.create(SupabaseStore.prototype);
+  store.role = 'admin';
+  let request;
+  store._req = async (path, options) => {
+    request = { path, options };
+    return [{ id: 'doc-1', title: 'Neuer Anzeigename', file_name: 'original.pdf' }];
+  };
+  const row = await store.updateEventDocumentTitle('doc-1', '  Neuer Anzeigename  ');
+  assert.equal(row.title, 'Neuer Anzeigename');
+  assert.equal(request.path, '/rest/v1/event_documents?id=eq.doc-1');
+  assert.equal(request.options.method, 'PATCH');
+  assert.deepEqual(request.options.body, { title: 'Neuer Anzeigename' });
+  await assert.rejects(() => store.updateEventDocumentTitle('doc-1', '   '), /Titel muss zwischen 1 und 160 Zeichen lang sein/);
+  store.role = 'bearbeiter';
+  await assert.rejects(() => store.updateEventDocumentTitle('doc-1', 'Neuer Titel'), (error) => error?.code === '42501');
+});
+
 test('Passwort-Reset nutzt den konfigurierten Redirect und protokolliert Fehler ohne E-Mail-Adresse', () => {
   const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
   const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
