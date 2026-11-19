@@ -512,7 +512,7 @@ function timeGrid(range, bookings, resourceId) {
       return `<button type="button" class="event" data-id="${esc(b.id)}"
         style="top:${bl.top}px;height:${bl.height}px;left:${bl.left}%;width:calc(${bl.width}% - 4px);background:${catColor(b.category_id)}"
         aria-label="${esc(b.title)}, ${hhmm(new Date(b.starts_at))} bis ${hhmm(new Date(b.ends_at))}${note}">
-        <span class="ev-time">${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</span>
+        <span class="ev-time">${hhmm(bl.startDate)}–${hhmm(bl.endDate)}</span>
         <span class="ev-title">${seriesMark(b)}${esc(b.title)}</span></button>`;
     }).join('');
     return `<div class="tg-col ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}" role="group" aria-label="${esc(dayLong(d))}">
@@ -537,7 +537,12 @@ function monthGrid(range, bookings, resourceId) {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     const dayMarkers = calendarEventsForDay(d, resourceId);
     const markerHtml = calendarEventMarkerList(dayMarkers, { max: 2 });
-    const shown = list.slice(0, 3).map((b) => `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)} um ${hhmm(new Date(b.starts_at))}">${hhmm(new Date(b.starts_at))} ${seriesMark(b)}${esc(b.title)}</button>`).join('');
+    const shown = list.slice(0, 3).map((b) => {
+      const starts = new Date(b.starts_at), ends = new Date(b.ends_at);
+      const startDay = L.ymd(starts), endDay = L.ymd(ends), currentDay = L.ymd(d);
+      const timeLabel = startDay === endDay ? hhmm(starts) : currentDay === startDay ? `ab ${hhmm(starts)}` : currentDay === endDay ? `bis ${hhmm(ends)}` : 'ganztägig';
+      return `<button type="button" class="chip-ev" data-id="${esc(b.id)}" style="background:${catColor(b.category_id)}" aria-label="${esc(b.title)}, ${timeLabel}">${timeLabel} ${seriesMark(b)}${esc(b.title)}</button>`;
+    }).join('');
     const more = list.length > 3 ? `<button type="button" class="link-btn" data-goto="${L.ymd(d)}">+${list.length - 3} weitere</button>` : '';
     const isToday = d.toDateString() === new Date().toDateString();
     return `<div class="mg-cell ${inMonth ? '' : 'is-out'} ${isToday ? 'is-today' : ''}" data-date="${L.ymd(d)}">
@@ -549,14 +554,21 @@ function monthGrid(range, bookings, resourceId) {
 
 function futureTable(list) {
   if (!list.length) return '<p class="empty">Keine kommenden Termine eingetragen.</p>';
-  const rows = list.map((b) => `<tr>
-      <td>${esc(new Date(b.starts_at).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }))}</td>
-      <td>${hhmm(new Date(b.starts_at))}–${hhmm(new Date(b.ends_at))}</td>
+  const rows = list.map((b) => {
+    const starts = new Date(b.starts_at), ends = new Date(b.ends_at);
+    const dateFormat = { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' };
+    const startDate = starts.toLocaleDateString('de-DE', dateFormat);
+    const endDate = ends.toLocaleDateString('de-DE', dateFormat);
+    const dateLabel = L.ymd(starts) === L.ymd(ends) ? startDate : `${startDate}–${endDate}`;
+    return `<tr>
+      <td>${esc(dateLabel)}</td>
+      <td>${hhmm(starts)}–${hhmm(ends)}</td>
       <td><span class="chip" style="background:${catColor(b.category_id)}" aria-hidden="true"></span>${seriesMark(b)}${esc(b.title)}</td>
       <td>${esc(catById(b.category_id)?.name || '')}</td>
       ${isEditor() ? `<td>${esc(b.notes || '')}</td>` : ''}
       ${isEditor() ? `<td><button type="button" class="btn btn-small btn-ghost" data-id="${esc(b.id)}">Bearbeiten</button></td>` : ''}
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th scope="col">Datum</th><th scope="col">Zeit</th><th scope="col">Titel</th><th scope="col">Kategorie</th>${isEditor() ? '<th scope="col">Notiz</th><th scope="col"><span class="sr-only">Aktion</span></th>' : ''}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
@@ -1203,6 +1215,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
   const start = booking ? new Date(booking.starts_at) : null;
   const end = booking ? new Date(booking.ends_at) : null;
   const dateVal = booking ? L.ymd(start) : L.ymd(date);
+  const endDateVal = booking ? L.ymd(end) : dateVal;
   const initialStartTime = start ? hhmm(start) : (startTime || '17:00');
   const initialEndTime = end ? hhmm(end) : (endTime || defaultEndClock(initialStartTime));
   const d = makeDialog(isEdit ? 'Termin bearbeiten' : 'Neuer Termin', `
@@ -1218,10 +1231,12 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
           <select id="bf-cat" class="input">${catOptions(booking?.category_id)}</select></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="bf-date">Datum <span class="req">*</span></label>
+        <div class="field"><label for="bf-date">Startdatum <span class="req">*</span></label>
           <input id="bf-date" type="date" class="input" value="${dateVal}" required></div>
         <div class="field"><label for="bf-start">Startzeit <span class="req">*</span></label>
           <input id="bf-start" type="time" class="input" value="${initialStartTime}" required></div>
+        <div class="field"><label for="bf-end-date">Enddatum <span class="req">*</span></label>
+          <input id="bf-end-date" type="date" class="input" value="${endDateVal}" required></div>
         <div class="field"><label for="bf-end">Endzeit <span class="req">*</span></label>
           <input id="bf-end" type="time" class="input" value="${initialEndTime}" required></div>
       </div>
@@ -1290,6 +1305,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     const resId = resourceIds[0];
     const catId = $('#bf-cat', d).value;
     const dateStr = $('#bf-date', d).value;
+    const endDateStr = $('#bf-end-date', d).value;
     const s = $('#bf-start', d).value;
     const en = $('#bf-end', d).value;
     const notes = $('#bf-note', d).value.trim() || null;
@@ -1301,9 +1317,11 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
     if (reminderDays && !contactEmail) return msg('Für eine Erinnerung bitte eine Kontakt-E-Mail-Adresse eingeben.');
     if (!title) return msg('Bitte einen Titel eingeben.');
     if (!resourceIds.length) return msg('Bitte mindestens einen Kalender, Platz oder Raum auswählen.');
-    if (!dateStr || !s || !en) return msg('Bitte Datum, Start- und Endzeit eingeben.');
-    const parsedS = L.combine(dateStr, s), parsedE = L.combine(dateStr, en);
-    if (parsedE <= parsedS) return msg('Die Endzeit muss nach der Startzeit liegen.');
+    if (!dateStr || !endDateStr || !s || !en) return msg('Bitte Startdatum, Startzeit, Enddatum und Endzeit eingeben.');
+    if (endDateStr < dateStr) return msg('Das Enddatum darf nicht vor dem Startdatum liegen.');
+    const endDayOffset = L.dateDifference(dateStr, endDateStr);
+    const parsedS = L.combine(dateStr, s), parsedE = L.combine(endDateStr, en);
+    if (parsedE <= parsedS) return msg('Der Endzeitpunkt muss nach dem Startzeitpunkt liegen.');
     const frequency = repeat?.value || 'none';
     const continuous = frequency !== 'none' && !!continuousInput?.checked;
     const countInput = Number($('#bf-count', d)?.value);
@@ -1317,7 +1335,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
       category_id: catId,
       title,
       starts_at: L.combine(ds, s).toISOString(),
-      ends_at: L.combine(ds, en).toISOString(),
+      ends_at: L.combine(L.shiftDateString(ds, endDayOffset), en).toISOString(),
       notes,
       contact_email: contactEmail,
       reminder_days: reminderDays,
@@ -1330,7 +1348,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
           && booking.series_occurrence !== null && booking.series_occurrence !== undefined) {
         const occurrenceIndex = Number(booking.series_occurrence);
         await S.store.updateRecurringSeries(booking.series_id, occurrenceIndex, seriesScope, {
-          starts_on: dateStr, start_time: s, end_time: en, title, resource_id: resId, resource_ids: resourceIds,
+          starts_on: dateStr, start_time: s, end_time: en, end_day_offset: endDayOffset, title, resource_id: resId, resource_ids: resourceIds,
           category_id: catId, notes, contact_email: contactEmail, reminder_days: reminderDays
         });
         successMessage = seriesScope === 'all' ? 'Die gesamte Serie wurde angepasst.' : 'Die Serie wurde ab diesem Termin angepasst.';
@@ -1340,6 +1358,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
           dateStr,
           startTime: s,
           endTime: en,
+          endDayOffset,
           fields: { title, resource_id: resId, resource_ids: resourceIds, category_id: catId, notes, contact_email: contactEmail, reminder_days: reminderDays }
         });
         if (!updates.length) { saveButton.disabled = false; return msg('Ab diesem Termin wurden keine weiteren Serien-Termine gefunden.'); }
@@ -1354,7 +1373,7 @@ function openBookingForm({ booking = null, resource_id = null, date = new Date()
         await S.store.createRecurringSeries({
           resource_id: resId, resource_ids: resourceIds, category_id: catId, title, notes,
           contact_email: contactEmail, reminder_days: reminderDays, starts_on: dateStr,
-          start_time: s, end_time: en, frequency, timezone: 'Europe/Berlin'
+          start_time: s, end_time: en, end_day_offset: endDayOffset, frequency, timezone: 'Europe/Berlin'
         });
         successMessage = `Fortlaufende ${{ weekly: 'wöchentliche', biweekly: 'zweiwöchentliche', monthly: 'monatliche', yearly: 'jährliche' }[frequency]} Serie wurde angelegt.`;
       } else {

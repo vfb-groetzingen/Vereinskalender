@@ -50,21 +50,60 @@ function bodyIncludesSignature(bodyHtml, signatureHtml) {
 function fileTotal(assets) { return assets.reduce((sum, asset) => sum + Number(asset.size || 0), 0); }
 function monthName(date) { return date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); }
 function eventLabel(event) {
+  const format = (date) => `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
   if (event.recurrence === 'once' && event.event_date) {
-    const [year, month, day] = event.event_date.split('-');
-    return `${day}.${month}.${year} · einmalig · ${event.title}`;
+    const start = new Date(`${event.event_date}T00:00:00`);
+    const end = new Date(`${event.event_end_date || event.event_date}T00:00:00`);
+    const span = event.event_end_date && event.event_end_date !== event.event_date ? `${format(start)}–${format(end)}` : format(start);
+    return `${span} · einmalig · ${event.title}`;
   }
-  return `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}. · jährlich · ${event.title}`;
+  const start = `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}.`;
+  const end = `${String(event.event_end_day || event.event_day).padStart(2, '0')}.${String(event.event_end_month || event.event_month).padStart(2, '0')}.`;
+  return `${start}${start === end ? '' : `–${end}`} · jährlich · ${event.title}`;
+}
+
+export function annualOccurrenceRange(event, startYear) {
+  if (event.recurrence === 'once') {
+    return event.event_date ? { start: event.event_date, end: event.event_end_date || event.event_date } : null;
+  }
+  const startMonth = Number(event.event_month), startDay = Number(event.event_day);
+  const endMonth = Number(event.event_end_month || startMonth), endDay = Number(event.event_end_day || startDay);
+  const make = (year, month, day) => {
+    const d = new Date(year, month - 1, day);
+    return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day
+      ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null;
+  };
+  const start = make(startYear, startMonth, startDay);
+  const wraps = endMonth < startMonth || (endMonth === startMonth && endDay < startDay);
+  const end = make(startYear + (wraps ? 1 : 0), endMonth, endDay);
+  return start && end && end >= start ? { start, end } : null;
 }
 
 function eventDateFromLog(row, fallback = null) {
   if (row.event_date) {
-    const [year, month, day] = String(row.event_date).slice(0, 10).split('-');
-    return `${day}.${month}.${year}`;
+    const startDate = String(row.event_date).slice(0, 10);
+    let endDate = row.event_end_date ? String(row.event_end_date).slice(0, 10) : fallback?.event_end_date || startDate;
+    if (!row.event_end_date && row.recurrence === 'annual' && fallback?.event_end_month && fallback?.event_end_day) {
+      const [year, month, day] = startDate.split('-').map(Number);
+      const endMonth = Number(fallback.event_end_month), endDay = Number(fallback.event_end_day);
+      const wraps = endMonth < month || (endMonth === month && endDay < day);
+      const endYear = year + (wraps ? 1 : 0);
+      const candidate = new Date(endYear, endMonth - 1, endDay);
+      if (candidate.getFullYear() === endYear && candidate.getMonth() === endMonth - 1 && candidate.getDate() === endDay) {
+        endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+      }
+    }
+    const format = (value) => { const [year, month, day] = value.split('-'); return `${day}.${month}.${year}`; };
+    return endDate === startDate ? format(startDate) : `${format(startDate)}–${format(endDate)}`;
   }
   const month = Number(row.event_month ?? fallback?.event_month);
   const day = Number(row.event_day ?? fallback?.event_day);
-  return month && day ? `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}. (jährlich)` : 'Datum nicht erfasst';
+  const endMonth = Number(row.event_end_month ?? fallback?.event_end_month ?? month);
+  const endDay = Number(row.event_end_day ?? fallback?.event_end_day ?? day);
+  if (!month || !day) return 'Datum nicht erfasst';
+  const start = `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.`;
+  const end = `${String(endDay).padStart(2, '0')}.${String(endMonth).padStart(2, '0')}.`;
+  return `${start}${start === end ? '' : `–${end}`} (jährlich)`;
 }
 
 function eventLogHtml(rows, fallbackEvent = null) {
@@ -96,18 +135,23 @@ export async function renderAnnualEvents(app, store, setNotice) {
 }
 
 function drawCalendar(app, store, setNotice) {
-  const monthEvents = currentEvents.filter((event) => {
-    if (Number(event.event_month) !== monthCursor.getMonth() + 1) return false;
-    return event.recurrence !== 'once' || Number(String(event.event_date || '').slice(0, 4)) === monthCursor.getFullYear();
-  }).sort((a, b) => Number(a.event_day) - Number(b.event_day));
   const firstDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+  const lastDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+  const monthStartStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`;
+  const monthEndStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+  const monthEvents = currentEvents.map((event) => {
+    const years = event.recurrence === 'once' ? [monthCursor.getFullYear()] : [monthCursor.getFullYear() - 1, monthCursor.getFullYear()];
+    const range = years.map((year) => annualOccurrenceRange(event, year)).find((candidate) => candidate && candidate.start <= monthEndStr && candidate.end >= monthStartStr);
+    return range ? { event, range } : null;
+  }).filter(Boolean).sort((a, b) => a.range.start.localeCompare(b.range.start));
   const startOffset = (firstDay.getDay() + 6) % 7;
   const days = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0).getDate();
   const cells = [];
   for (let i = 0; i < startOffset; i++) cells.push('<div class="annual-day annual-day-empty" aria-hidden="true"></div>');
   for (let day = 1; day <= days; day++) {
-    const events = monthEvents.filter((event) => Number(event.event_day) === day);
-    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map((event) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
+    const dateStr = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const events = monthEvents.filter(({ range }) => range.start <= dateStr && range.end >= dateStr);
+    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map(({ event }) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
   }
   app.innerHTML = `
     <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div>
@@ -120,7 +164,7 @@ function drawCalendar(app, store, setNotice) {
         ${cells.join('')}
       </div>
       <h2 class="annual-list-heading">Ereignisse im ${esc(monthName(monthCursor))}</h2>
-      ${monthEvents.length ? `<ul class="annual-event-list">${monthEvents.map((event) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse in diesem Monat.</p>'}
+      ${monthEvents.length ? `<ul class="annual-event-list">${monthEvents.map(({ event }) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse in diesem Monat.</p>'}
     </section>
     <section class="section annual-error-panel" aria-labelledby="annual-errors-title">
       <div class="annual-error-head"><div><h2 id="annual-errors-title">Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler bei Test-, Lifecycle- und Erinnerungsmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div>
@@ -176,10 +220,15 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const selectedRecurrence = event?.recurrence || 'annual';
   const selectedMonth = event?.event_month || initialDate?.month || (monthCursor.getMonth() + 1);
   const selectedDay = event?.event_day || initialDate?.day || 1;
+  const selectedEndMonth = event?.event_end_month || selectedMonth;
+  const selectedEndDay = event?.event_end_day || selectedDay;
   const defaultYear = selectedRecurrence === 'once' ? monthCursor.getFullYear() : 2000;
   const dateValue = selectedRecurrence === 'once' && event?.event_date
     ? event.event_date
     : `${defaultYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
+  const endDateValue = selectedRecurrence === 'once' && event?.event_end_date
+    ? event.event_end_date
+    : `${defaultYear + ((selectedEndMonth < selectedMonth || (selectedEndMonth === selectedMonth && selectedEndDay < selectedDay)) ? 1 : 0)}-${String(selectedEndMonth).padStart(2, '0')}-${String(selectedEndDay).padStart(2, '0')}`;
   const recipients = event?.recipients?.length ? event.recipients : [''];
   const profiles = Array.isArray(siteConfiguration?.mail_profiles) && siteConfiguration.mail_profiles.length
     ? siteConfiguration.mail_profiles : [{ id: 'default', label: 'VfB Grötzingen', display_name: 'VfB Grötzingen', reply_to: 'vfb-app@vfb-groetzingen.de' }];
@@ -204,7 +253,8 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
       <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
       <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>
       <div class="field-row annual-event-location-row"><fieldset class="field annual-resource-picker"><legend>Kalender / Plätze / Räume</legend><label class="sr-only" for="ae-resource-search">Räume und Plätze suchen</label><input id="ae-resource-search" class="input" type="search" placeholder="Räume und Plätze suchen"><div id="ae-resource-list" class="annual-resource-list">${eventOnlyOption}${resourceOptions || '<p class="hint">Keine aktiven Räume oder Plätze gefunden.</p>'}</div><p id="ae-resource-count" class="hint" aria-live="polite">${selectedResourceIds.size ? `${selectedResourceIds.size} Kalender ausgewählt.` : 'Nur im Ereigniskalender.'}</p><p class="hint">„Ereignis“ oder keine Raum-/Platz-Auswahl bedeutet nur Ereigniskalender. Eine oder mehrere echte Ressourcen zeigen den ganztägigen, nicht blockierenden Hinweis in den jeweiligen Kalendern.</p></fieldset><div class="field"><label for="ae-category">Kategorie *</label><select id="ae-category" class="input" required>${categoryOptions || '<option value="">Keine Kategorien verfügbar</option>'}</select><p class="hint">Die Kategorie steuert die Farbe des Eintrags und den Kategorienfilter.</p></div></div>
-      <div class="field-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${selectedRecurrence === 'once' ? 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet.' : 'Die aktivierte Erinnerung wird jährlich 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
+      <div class="field-row annual-event-date-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Startdatum *' : 'Jährlicher Starttag *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.</p></div>
+      <div class="field"><label id="ae-end-date-label" for="ae-end-date">${selectedRecurrence === 'once' ? 'Enddatum *' : 'Jährlicher Endtag *'}</label><input id="ae-end-date" class="input" type="date" value="${endDateValue}" required><p id="ae-end-date-hint" class="hint">Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.</p></div>
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
@@ -213,7 +263,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         <label class="check"><input id="ae-confirmation-enabled" type="checkbox" ${event?.confirmation_enabled === true ? 'checked' : ''}> Buchungsbestätigung beim erstmaligen Speichern oder Aktivieren</label>
         <label class="check"><input id="ae-changed-enabled" type="checkbox" ${event?.changed_enabled === true ? 'checked' : ''}> Änderungsmitteilung bei inhaltlichen Änderungen</label>
         <label class="check"><input id="ae-cancelled-enabled" type="checkbox" ${event?.cancelled_enabled === true ? 'checked' : ''}> Absage beim Deaktivieren oder Löschen</label>
-        <label class="check"><input id="ae-reminder-enabled" type="checkbox" ${event?.reminder_enabled === true ? 'checked' : ''}> Erinnerung vor dem Ereignisdatum</label>
+        <label class="check"><input id="ae-reminder-enabled" type="checkbox" ${event?.reminder_enabled === true ? 'checked' : ''}> Erinnerung vor dem Starttag</label>
         <div class="field-row"><div class="field"><label for="ae-reminder-days">Erinnerungsvorlauf</label><select id="ae-reminder-days" class="input"><option value="1" ${Number(event?.reminder_days || 1) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(event?.reminder_days || 1) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(event?.reminder_days || 1) === 7 ? 'selected' : ''}>7 Tage vorher</option></select></div></div>
         <p class="hint">Die Standardsignatur steht bei neuen Ereignissen direkt im Nachrichtentext und kann dort bearbeitet oder entfernt werden. Bei älteren Ereignissen wird eine bisherige Versand-Signatur beim Bearbeiten in den Text übernommen. Die globale Aktivierung der Buchungsvorlagen steuert diese Ereignis-Schalter nicht. „Ereignis aktiv“ ist zusätzlich der Master.</p>
       </fieldset>
@@ -244,25 +294,31 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const syncRecurrenceUI = () => {
     const recurrence = q('#ae-recurrence').value;
     const dateInput = q('#ae-date');
-    const [currentYear, month, day] = (dateInput.value || dateValue).split('-').map(Number);
-    if (recurrence !== previousRecurrence && month && day) {
-      if (recurrence === 'annual') dateInput.value = `2000-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      else {
-        let year = monthCursor.getFullYear();
+    const endInput = q('#ae-end-date');
+    const startParts = (dateInput.value || dateValue).split('-').map(Number);
+    const endParts = (endInput.value || endDateValue).split('-').map(Number);
+    if (recurrence !== previousRecurrence) {
+      const [, month, day] = startParts;
+      const [, endMonth, endDay] = endParts;
+      if (month && day) {
+        let year = recurrence === 'annual' ? 2000 : monthCursor.getFullYear();
         let date = new Date(year, month - 1, day);
-        while (date.getMonth() !== month - 1 || date.getDate() !== day) {
-          year++;
-          date = new Date(year, month - 1, day);
-        }
+        while (date.getMonth() !== month - 1 || date.getDate() !== day) { year++; date = new Date(year, month - 1, day); }
         dateInput.value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        let endYear = recurrence === 'annual' ? year : year;
+        const wraps = endMonth < month || (endMonth === month && endDay < day);
+        if (wraps) endYear++;
+        let endDate = new Date(endYear, endMonth - 1, endDay);
+        while (endDate.getMonth() !== endMonth - 1 || endDate.getDate() !== endDay) { endYear++; endDate = new Date(endYear, endMonth - 1, endDay); }
+        endInput.value = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
       }
       previousRecurrence = recurrence;
     }
     const once = recurrence === 'once';
-    q('#ae-date-label').textContent = once ? 'Ereignisdatum *' : 'Jährliches Datum (Tag und Monat) *';
-    q('#ae-date-hint').textContent = once
-      ? 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet.'
-      : 'Die aktivierte Erinnerung wird jährlich 1, 2 oder 7 Tage vorher um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.';
+    q('#ae-date-label').textContent = once ? 'Startdatum *' : 'Jährlicher Starttag *';
+    q('#ae-end-date-label').textContent = once ? 'Enddatum *' : 'Jährlicher Endtag *';
+    q('#ae-date-hint').textContent = 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.';
+    q('#ae-end-date-hint').textContent = 'Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.';
   };
   q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
   syncRecurrenceUI();
@@ -460,12 +516,20 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const title = q('#ae-title').value.trim();
     const subject = q('#ae-subject').value.trim();
     const date = q('#ae-date').value;
+    const endDate = q('#ae-end-date').value;
     const [year, month, day] = date.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
     const emails = [...q('#ae-recipients').querySelectorAll('input')].map((input) => input.value.trim()).filter(Boolean);
     const resourceIds = [...q('#ae-resource-list').querySelectorAll('[data-event-resource]:checked')].map((input) => input.dataset.eventResource);
     const categoryId = q('#ae-category').value;
     const body = safeHtml(q('#ae-body').innerHTML);
-    if (!title || !subject || !date || !body.replace(/<[^>]*>/g, '').trim()) return msg('Bitte Name, Datum, Betreff und Nachricht ausfüllen.');
+    const recurrence = q('#ae-recurrence').value;
+    if (!title || !subject || !date || !endDate || !body.replace(/<[^>]*>/g, '').trim()) return msg('Bitte Name, Start- und Enddatum, Betreff und Nachricht ausfüllen.');
+    if (recurrence === 'once' && endDate < date) return msg('Das Enddatum darf nicht vor dem Startdatum liegen.');
+    if (recurrence === 'annual') {
+      const endCheck = new Date(2000, endMonth - 1, endDay);
+      if (endMonth < 1 || endMonth > 12 || endDay < 1 || endDay > 31 || endCheck.getMonth() !== endMonth - 1 || endCheck.getDate() !== endDay) return msg('Bitte einen gültigen jährlichen Endtag eingeben.');
+    }
     if (!emails.length || emails.length > 10 || emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return msg('Bitte 1 bis 10 gültige E-Mail-Adressen eingeben.');
     if (new Set(emails.map((email) => email.toLowerCase())).size !== emails.length) return msg('Eine E-Mail-Adresse ist mehrfach eingetragen.');
     if (!categoryId) return msg('Bitte eine Kategorie auswählen.');
@@ -477,11 +541,13 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const sendAfterSave = q('#ae-send-after-save').checked;
     const eventActive = q('#ae-active').checked;
     try {
-      const recurrence = q('#ae-recurrence').value;
       const profile = profiles.find((item) => item.id === q('#ae-mail-profile').value) || profiles[0];
       await store.saveAnnualEvent({
         id, title, recurrence, event_date: recurrence === 'once' ? date : null,
-        event_month: month, event_day: day, recipients: emails, subject, body_html: body,
+        event_end_date: recurrence === 'once' ? endDate : null,
+        event_month: month, event_day: day,
+        event_end_month: endMonth, event_end_day: endDay,
+        recipients: emails, subject, body_html: body,
         resource_ids: resourceIds, category_id: categoryId,
         assets, document_ids: documentIds, sender_profile_id: profile.id,
         sender_display_name: profile.display_name, reply_to_email: profile.reply_to,

@@ -132,6 +132,12 @@ export function shiftDateString(dateStr, days) {
   return new Date(dateOrdinal(dateStr) + days * 86400000).toISOString().slice(0, 10);
 }
 
+export function dateDifference(fromDate, toDate) {
+  const difference = (dateOrdinal(toDate) - dateOrdinal(fromDate)) / 86400000;
+  if (!Number.isInteger(difference)) throw new RangeError('Ungültiger Datumsbereich.');
+  return difference;
+}
+
 // Select the current occurrence and all later occurrences, leaving earlier ones untouched.
 export function followingSeriesBookings(bookings, selected) {
   if (!selected?.series_id) return [];
@@ -143,16 +149,17 @@ export function followingSeriesBookings(bookings, selected) {
 
 // Build changes for the selected occurrence and all later occurrences of its series.
 // Date shifts use calendar days; start/end times remain local wall-clock times across DST.
-export function buildFollowingSeriesUpdates(bookings, selected, { dateStr, startTime, endTime, fields = {} } = {}) {
+export function buildFollowingSeriesUpdates(bookings, selected, { dateStr, startTime, endTime, endDayOffset = 0, fields = {} } = {}) {
   if (!selected?.series_id) return [];
+  if (!Number.isInteger(Number(endDayOffset)) || Number(endDayOffset) < 0) throw new RangeError('Ungültiger Enddatum-Abstand.');
   const oldDate = ymd(new Date(selected.starts_at));
   const dayShift = Math.round((dateOrdinal(dateStr) - dateOrdinal(oldDate)) / 86400000);
   return followingSeriesBookings(bookings, selected)
     .map((booking) => {
       const occurrenceDate = shiftDateString(ymd(new Date(booking.starts_at)), dayShift);
       const startsAt = combine(occurrenceDate, startTime);
-      const endsAt = combine(occurrenceDate, endTime);
-      if (endsAt <= startsAt) throw new Error('Die Endzeit muss nach der Startzeit liegen.');
+      const endsAt = combine(shiftDateString(occurrenceDate, Number(endDayOffset)), endTime);
+      if (endsAt <= startsAt) throw new Error('Der Endzeitpunkt muss nach dem Startzeitpunkt liegen.');
       return {
         id: booking.id,
         patch: { ...fields, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() }

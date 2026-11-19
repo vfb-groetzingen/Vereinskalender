@@ -189,7 +189,7 @@ export class DemoStore {
         category_id: series.category_id, title: series.title, notes: series.notes || null,
         contact_email: series.contact_email || null, reminder_days: Number(series.reminder_days || 0),
         starts_at: combine(date, series.start_time).toISOString(),
-        ends_at: combine(date, series.end_time).toISOString()
+        ends_at: combine(shiftDateString(date, Number(series.end_day_offset || 0)), series.end_time).toISOString()
       });
     }
   }
@@ -214,7 +214,8 @@ export class DemoStore {
       title: patch.title, resource_id: patch.resource_id, resource_ids: [...patch.resource_ids],
       category_id: patch.category_id, notes: patch.notes || null,
       contact_email: patch.contact_email || null, reminder_days: Number(patch.reminder_days || 0),
-      start_time: patch.start_time, end_time: patch.end_time
+      start_time: patch.start_time, end_time: patch.end_time,
+      end_day_offset: Number(patch.end_day_offset || 0)
     });
     for (const booking of this.bookings.filter((item) => item.series_id === seriesId
         && (scope === 'all' || item.series_occurrence >= occurrenceIndex))) {
@@ -224,7 +225,7 @@ export class DemoStore {
         title: series.title, resource_id: series.resource_id, resource_ids: [...series.resource_ids],
         category_id: series.category_id, notes: series.notes, contact_email: series.contact_email,
         reminder_days: series.reminder_days, starts_at: combine(date, series.start_time).toISOString(),
-        ends_at: combine(date, series.end_time).toISOString()
+        ends_at: combine(shiftDateString(date, Number(series.end_day_offset || 0)), series.end_time).toISOString()
       });
     }
     this._fillDemoSeries(series);
@@ -530,6 +531,7 @@ export class SupabaseStore {
         p_category_id: rule.category_id, p_title: rule.title, p_notes: rule.notes || null,
         p_contact_email: rule.contact_email || null, p_reminder_days: Number(rule.reminder_days || 0),
         p_starts_on: rule.starts_on, p_start_time: rule.start_time, p_end_time: rule.end_time,
+        p_end_day_offset: Number(rule.end_day_offset || 0),
         p_frequency: rule.frequency, p_timezone: rule.timezone || 'Europe/Berlin'
       }
     });
@@ -539,6 +541,7 @@ export class SupabaseStore {
       method: 'POST', body: {
         p_series_id: seriesId, p_occurrence_index: occurrenceIndex, p_scope: scope,
         p_starts_on: rule.starts_on, p_start_time: rule.start_time, p_end_time: rule.end_time,
+        p_end_day_offset: Number(rule.end_day_offset || 0),
         p_title: rule.title, p_resource_id: rule.resource_id, p_resource_ids: rule.resource_ids,
         p_category_id: rule.category_id, p_notes: rule.notes || null,
         p_contact_email: rule.contact_email || null, p_reminder_days: Number(rule.reminder_days || 0)
@@ -581,7 +584,7 @@ export class SupabaseStore {
     const [annual, tests, lifecycle] = await Promise.all([
       this._req(`/rest/v1/annual_email_deliveries?select=event_title,recurrence,event_date,occurrence_year,recipient,status,sent_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`),
       this._req(`/rest/v1/annual_email_test_requests?select=event_title,recurrence,event_date,event_month,event_day,recipient,status,requested_at,processed_at,error,updated_at&event_id=eq.${encodeURIComponent(id)}&order=requested_at.desc&limit=50`),
-      this._req(`/rest/v1/annual_event_mail_outbox?select=event_title,kind,event_date,event_month,event_day,recipient,status,sent_at,error,created_at,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`)
+      this._req(`/rest/v1/annual_event_mail_outbox?select=event_title,kind,event_date,event_month,event_day,event_end_date,event_end_month,event_end_day,recipient,status,sent_at,error,created_at,updated_at&event_id=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`)
     ]);
     return [
       ...annual.map((row) => ({ ...row, kind: 'annual', log_time: row.sent_at || row.updated_at })),
