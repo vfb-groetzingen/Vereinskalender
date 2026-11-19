@@ -130,6 +130,25 @@ test('Ereignisformular speichert getrennte automatische Versandregeln mit sicher
 });
 
 
+test('Ereignisse werden Ressourcen und Kategorien zugeordnet und datensparsam im Kalender angezeigt', () => {
+  const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
+  const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
+  const app = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
+  const migration = readFileSync(new URL('../supabase/migration-event-calendar-resources.sql', import.meta.url), 'utf-8');
+  assert.match(annual, /id="ae-resource-search"/);
+  assert.match(annual, /data-event-resource/);
+  assert.match(annual, /id="ae-category"/);
+  assert.match(annual, /resource_ids: resourceIds, category_id: categoryId/);
+  assert.match(data, /get_annual_event_calendar_occurrences/);
+  assert.match(app, /calendar-all-day-slot/);
+  assert.match(app, /blockiert keine Buchung/);
+  assert.match(migration, /resource_ids uuid\[\] not null default/);
+  assert.match(migration, /category_id uuid references public\.categories/);
+  assert.match(migration, /security definer/);
+  assert.match(migration, /grant execute .* to anon, authenticated/);
+  assert.doesNotMatch(migration, /returns table \([\s\S]*recipients|body_html/);
+});
+
 test('Einmaliger Ereignisversand nutzt gespeicherte Empfänger, Outbox und aktive Versionsprüfung', () => {
   const annual = readFileSync(new URL('../assets/js/annual-events.js', import.meta.url), 'utf-8');
   const data = readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf-8');
