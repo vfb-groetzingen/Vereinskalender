@@ -330,6 +330,19 @@ textarea.input { resize: vertical; }
 .annual-recipients legend { font-weight: 600; margin-bottom: .35rem; }
 .annual-recipient-row { display: grid; grid-template-columns: 75px minmax(0, 1fr) auto; align-items: center; gap: .5rem; margin-bottom: .45rem; }
 .annual-recipient-row label { font-size: .9rem; }
+.annual-resource-picker { min-width: 0; border: 1px solid var(--border) !important; border-radius: 8px; padding: .65rem !important; }
+.annual-resource-picker legend { padding: 0 .25rem; font-weight: 700; }
+.annual-resource-list { max-height: 230px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: .35rem .5rem; }
+.annual-resource-group { padding: .2rem 0 .45rem; border-bottom: 1px solid #edf1f6; }
+.annual-resource-group:last-child { border-bottom: 0; }
+.annual-resource-group > strong { display: block; margin: .15rem 0; font-size: .85rem; }
+.annual-event-resource-option { margin: .2rem 0; }
+.annual-event-resource-option[hidden], .annual-resource-group[hidden] { display: none !important; }
+.calendar-all-day-slot { box-sizing: border-box; height: 54px; overflow: hidden; padding: .15rem .2rem; border-bottom: 1px solid var(--border); background: #fbfcfd; }
+.tg-all-day-axis { box-sizing: border-box; height: 54px; display: flex; align-items: center; justify-content: center; padding: .15rem; border-bottom: 1px solid var(--border); color: var(--muted); font-size: .65rem; line-height: 1.1; text-align: center; }
+.calendar-marker { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .08rem 0; padding: .08rem .25rem; border-left: 3px solid var(--marker-color, #4a5568); border-radius: 3px; background: #f1f4f8; color: var(--text); font-size: .68rem; line-height: 1.35; }
+.calendar-marker-more { display: block; color: var(--muted); font-size: .65rem; line-height: 1.25; }
+.calendar-all-day-empty { color: #a4adba; font-size: .7rem; }
 .annual-message-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
 .annual-message-heading > label:first-child { margin: 0; }
 .annual-message-heading .annual-send-after-save { margin: 0; font-weight: 400; }
@@ -341,6 +354,8 @@ textarea.input { resize: vertical; }
 .annual-assets li { display: flex; justify-content: space-between; gap: .75rem; padding: .25rem 0; }
 
 @media (max-width: 640px) {
+  .annual-event-location-row { grid-template-columns: minmax(0, 1fr); }
+  .annual-resource-list { max-height: 200px; }
   .annual-message-heading { align-items: flex-start; flex-direction: column; gap: .2rem; }
   .annual-day { min-height: 72px; padding: .2rem; }
   .annual-event-chip { font-size: .68rem; padding: .12rem .2rem; }
