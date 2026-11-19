@@ -146,6 +146,7 @@ test('Ereignisse werden Ressourcen und Kategorien zugeordnet und datensparsam im
   assert.match(migration, /category_id uuid references public\.categories/);
   assert.match(migration, /security definer/);
   assert.match(migration, /grant execute .* to anon, authenticated/);
+  assert.match(migration, /notify pgrst, 'reload schema'/);
   assert.doesNotMatch(migration, /returns table \([\s\S]*recipients|body_html/);
 });
 
