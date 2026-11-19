@@ -151,6 +151,7 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] QR-Code wird als SVG geladen und führt auf die richtige Adresse (mit Telefon-Kamera prüfen)
 - [ ] „Link kopieren“ funktioniert
 - [ ] Zeitumstellung 25.10.2026: Ein Termin am 25.10. um 18:00 Uhr erscheint um 18:00 Uhr
+- [ ] Ganztägige Ereignismarker in Wochen- und Gesamtbelegungsplan sind gut lesbar; lange Titel umbrechen bis zu zwei Zeilen.
 - [ ] Texte sind gut lesbar, Tastatur-Navigation mit Tab funktioniert
 - [ ] Impressum und Datenschutz sind vollständig ausgefüllt
 
