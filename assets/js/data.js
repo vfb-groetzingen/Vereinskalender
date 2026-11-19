@@ -447,6 +447,16 @@ export class SupabaseStore {
     const deletedPath = await this._req('/rest/v1/rpc/admin_delete_event_document', { method: 'POST', body: { p_document_id: id } });
     await this.deleteEventDocumentObject(typeof deletedPath === 'string' ? deletedPath : path);
   }
+  async updateEventDocumentTitle(id, title) {
+    if (!this.isAdmin()) throw { code: '42501', message: 'Nur Administratoren können Dokumenttitel ändern.' };
+    const cleanTitle = String(title ?? '').trim();
+    if (!cleanTitle || cleanTitle.length > 160) throw new Error('Der Titel muss zwischen 1 und 160 Zeichen lang sein.');
+    const rows = await this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: { title: cleanTitle }, prefer: 'return=representation'
+    });
+    if (!Array.isArray(rows) || !rows[0]) throw new Error('Dokument wurde nicht gefunden oder der Titel wurde nicht gespeichert.');
+    return rows[0];
+  }
   async archiveEventDocument(id) {
     if (!this.isAdmin()) throw { code: '42501', message: 'Keine Berechtigung.' };
     return this._req(`/rest/v1/event_documents?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: { active: false }, prefer: 'return=representation' });

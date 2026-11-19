@@ -266,9 +266,17 @@ export async function mountConfiguration(target, { subpage, config, publicConten
   }
 
   if (subpage === 'documents') {
+    const canManageDocs = Boolean(store.isAdmin?.());
     const docRows = activeDocs.map((doc) => {
       const usedBy = eventRows.filter((event) => (event.document_ids || []).includes(doc.id));
-      return `<tr><td>${esc(doc.title)}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
+      const titleEditButton = canManageDocs ? `<button class="btn btn-small" type="button" data-doc-title-edit="${esc(doc.id)}" aria-label="Titel von ${esc(doc.title)} bearbeiten">Titel ändern</button>` : '';
+      const titleEditForm = canManageDocs ? `<form class="doc-title-editor" data-doc-title-form="${esc(doc.id)}" hidden>
+        <label class="sr-only" for="doc-title-edit-${esc(doc.id)}">Titel für ${esc(doc.file_name)}</label>
+        <input id="doc-title-edit-${esc(doc.id)}" class="input" maxlength="160" required value="${esc(doc.title)}">
+        <div class="doc-title-editor-actions"><button class="btn btn-primary btn-small" type="submit">Speichern</button><button class="btn btn-small" type="button" data-doc-title-cancel>Abbrechen</button></div>
+        <p class="msg" data-doc-title-msg role="alert"></p>
+      </form>` : '';
+      return `<tr><td class="doc-title-cell"><div class="doc-title-display-row"><span data-doc-title-display>${esc(doc.title)}</span>${titleEditButton}</div>${titleEditForm}</td><td>${esc(doc.file_name)}</td><td>${(Number(doc.file_size) / 1024).toFixed(0)} KB</td><td>${doc.active ? 'Aktiv' : 'Archiviert'}${usedBy.length ? ` · in ${usedBy.length} Ereignis(en)` : ''}</td><td>${doc.active ? `<button class="btn btn-small" type="button" data-doc-archive="${esc(doc.id)}">Archivieren</button>` : ''}${usedBy.length ? '' : `<button class="btn btn-small btn-danger" type="button" data-doc-delete="${esc(doc.id)}" data-doc-path="${esc(doc.storage_path)}">Endgültig löschen</button>`}</td></tr>`;
     }).join('');
     target.innerHTML = `<section class="section admin-section"><h2>Dokumentenablage</h2><p>Bilder und PDFs können bei Ereignissen ausgewählt und als E-Mail-Anhang versendet werden. Bilder werden auf höchstens 1600 Pixel verkleinert und als WebP komprimiert. Das Gesamtlimit pro E-Mail bleibt 5 MB. Wird ein Ereignis gelöscht, wird nur seine Auswahl entfernt; das Original in der Ablage bleibt erhalten.</p>
       <form id="document-upload-form" class="form"><div class="field"><label for="doc-title">Anzeigename</label><input id="doc-title" class="input" maxlength="160" required></div><div class="field"><label for="doc-file">Bild oder PDF</label><input id="doc-file" class="input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div><button class="btn btn-primary" type="submit">Dokument hochladen</button><p class="hint">Einzeldatei höchstens 5 MB. Unterstützt: JPEG, PNG, WebP und PDF.</p><p class="msg" id="doc-msg" role="alert"></p></form>
@@ -288,6 +296,44 @@ export async function mountConfiguration(target, { subpage, config, publicConten
         await refresh();
       } catch (error) { msg.textContent = error.message || 'Dokument konnte nicht hochgeladen werden.'; button.disabled = false; }
     };
+    target.querySelectorAll('[data-doc-title-edit]').forEach((button) => button.onclick = () => {
+      const row = button.closest('tr');
+      row.querySelector('[data-doc-title-display]').hidden = true;
+      button.hidden = true;
+      const editor = row.querySelector('[data-doc-title-form]');
+      editor.hidden = false;
+      editor.querySelector('input').focus();
+      editor.querySelector('input').select();
+    });
+    target.querySelectorAll('[data-doc-title-cancel]').forEach((button) => button.onclick = () => {
+      const row = button.closest('tr');
+      const editor = row.querySelector('[data-doc-title-form]');
+      editor.reset();
+      editor.hidden = true;
+      editor.querySelector('[data-doc-title-msg]').textContent = '';
+      row.querySelector('[data-doc-title-display]').hidden = false;
+      row.querySelector('[data-doc-title-edit]').hidden = false;
+    });
+    target.querySelectorAll('[data-doc-title-form]').forEach((editor) => editor.onsubmit = async (event) => {
+      event.preventDefault();
+      const row = editor.closest('tr');
+      const title = editor.querySelector('input').value.trim();
+      const msg = editor.querySelector('[data-doc-title-msg]');
+      const saveButton = editor.querySelector('button[type="submit"]');
+      if (!title) { msg.textContent = 'Bitte einen Titel eingeben.'; editor.querySelector('input').focus(); return; }
+      const doc = activeDocs.find((item) => item.id === editor.dataset.docTitleForm);
+      if (!doc) { msg.textContent = 'Dokument wurde nicht gefunden. Bitte die Seite neu laden.'; return; }
+      saveButton.disabled = true;
+      msg.textContent = '';
+      try {
+        await store.updateEventDocumentTitle(doc.id, title);
+        setNotice('ok', 'Dokumenttitel wurde geändert.');
+        await refresh();
+      } catch (error) {
+        msg.textContent = error.message || 'Dokumenttitel konnte nicht geändert werden.';
+        saveButton.disabled = false;
+      }
+    });
     target.querySelectorAll('[data-doc-archive]').forEach((button) => button.onclick = async () => {
       try { await store.archiveEventDocument(button.dataset.docArchive); setNotice('ok', 'Dokument wurde archiviert. Bestehende Ereignisse können es weiterhin versenden.'); await refresh(); }
       catch (error) { setNotice('error', error.message || 'Dokument konnte nicht archiviert werden.'); }
