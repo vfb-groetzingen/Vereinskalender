@@ -570,3 +570,9 @@ textarea.input { resize: vertical; }
 .doc-title-editor-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .doc-title-editor .msg { margin-top: .1rem; }
 @media (max-width: 600px) { .doc-title-cell { min-width: 12rem; } }
+
+/* Flexible day/week/month toolbars and event ranges */
+.annual-range-calendar { grid-template-columns: repeat(var(--annual-cols, 7), minmax(0, 1fr)); }
+.annual-range-calendar .annual-day { min-height: 7rem; }
+.annual-range-calendar .annual-weekday { text-align: center; }
+@media (max-width: 700px) { .annual-toolbar { flex-wrap: wrap; } .annual-toolbar h2 { order: 2; flex-basis: 100%; } .annual-range-calendar .annual-day { min-height: 5rem; } }
