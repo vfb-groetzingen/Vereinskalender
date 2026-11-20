@@ -35,6 +35,8 @@ const S = {
   roomAnchor: new Date(),
   planRange: 'week',
   planAnchor: new Date(),
+  combinedRange: 'week',
+  combinedAnchor: new Date(),
   hiddenRes: new Set(),
   catFilter: '',
   notice: null,
@@ -441,6 +443,13 @@ function planRange() {
   const f = L.weekStart(a);
   return { from: f, to: L.addDays(f, 7), days: [...Array(7)].map((_, i) => L.addDays(f, i)) };
 }
+function combinedRange() {
+  const a = S.combinedAnchor;
+  if (S.combinedRange === 'day') { const f = new Date(a.getFullYear(), a.getMonth(), a.getDate()); return { from: f, to: L.addDays(f, 1), days: [f] }; }
+  if (S.combinedRange === 'month') { const first = L.monthStart(a); const from = L.weekStart(first); return { from, to: L.addDays(from, 42), days: [...Array(42)].map((_, i) => L.addDays(from, i)), month: first.getMonth() }; }
+  const f = L.weekStart(a); return { from: f, to: L.addDays(f, 7), days: [...Array(7)].map((_, i) => L.addDays(f, i)) };
+}
+
 
 // ---------- Raumseite ----------
 async function renderRoom(res) {
@@ -640,16 +649,17 @@ function bindRoomControls(res) {
   const ib = $('#btn-import-room'); if (ib) ib.onclick = () => openImport(res);
 }
 
-function planMonthGrid(range, bookings) {
+function planMonthGrid(range, bookings, useCategoryFilter = true) {
   const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((name) => `<div class="mg-dow">${name}</div>`).join('');
   const cells = range.days.map((day) => {
     const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
     const end = L.addDays(start, 1);
     const rows = bookings.filter((b) => !S.hiddenRes.has(b.resource_id) && (!S.catFilter || b.category_id === S.catFilter)
+      && (!useCategoryFilter || !S.catFilter || b.category_id === S.catFilter)
       && new Date(b.ends_at) > start && new Date(b.starts_at) < end)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     const dayMarkers = S.calendarEvents.filter((marker) => String(marker.event_date).slice(0, 10) === L.ymd(day)
-      && !S.hiddenRes.has(marker.resource_id) && (!S.catFilter || marker.category_id === S.catFilter));
+      && !S.hiddenRes.has(marker.resource_id) && (!useCategoryFilter || !S.catFilter || marker.category_id === S.catFilter));
     const markerHtml = calendarEventMarkerList(dayMarkers, {
       max: 3,
       resourceLabel: (marker) => resById(marker.resource_id)?.name || ''
@@ -724,7 +734,8 @@ function isoWeekNumber(date) {
 }
 
 function combinedRangeLabel(days) {
-  const first = days[0], last = days[6];
+  const first = days[0], last = days[days.length - 1];
+  if (days.length === 1) return first.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
   if (first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear()) {
     return `${first.getDate()}. – ${last.getDate()}. ${last.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}`;
   }
@@ -777,24 +788,25 @@ function combinedTimeGrid(range, resources) {
       <div class="tg-body" data-date="${L.ymd(day)}" style="height:${height}px">${hours.map(() => `<div class="tg-hour" style="height:${HOUR_PX}px"></div>`).join('')}${events}</div>
     </div>`;
   }).join('');
-  return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:7">
+  return `<div class="combined-calendar-wrap"><div class="tg combined-time-grid" style="--cols:${range.days.length}">
     <div class="tg-axis" aria-hidden="true"><div class="tg-head combined-week-number">W${String(isoWeekNumber(range.days[0])).padStart(2, '0')}</div><div class="tg-all-day-axis">Ganztägig</div><div class="tg-body" style="height:${height}px">${hours.map((hour) => `<div class="tg-label" style="height:${HOUR_PX}px">${String(hour).padStart(2, '0')}:00</div>`).join('')}</div></div>
-    <div class="tg-cols">${cols}</div>
-  </div>${bookings.length || calendarMarkers.length ? '' : '<p class="combined-no-bookings">Keine Termine in dieser Woche für die ausgewählten Rubriken.</p>'}</div>`;
+    <div class="tg-cols" style="grid-template-columns:repeat(${range.days.length},minmax(110px,1fr))">${cols}</div>
+  </div>${bookings.length || calendarMarkers.length ? '' : '<p class="combined-no-bookings">Keine Termine im gewählten Zeitraum für die ausgewählten Rubriken.</p>'}</div>`;
 }
 
 async function renderCombinedPlan() {
-  const firstDay = L.weekStart(S.planAnchor);
-  const range = { from: firstDay, to: L.addDays(firstDay, 7), days: [...Array(7)].map((_, i) => L.addDays(firstDay, i)) };
+  const range = combinedRange();
   S.bookings = await S.store.getBookings({ from: range.from, to: range.to });
   const visible = S.resources.filter((resource) => !S.hiddenRes.has(resource.id));
   await loadCalendarEventOccurrences({ from: range.from, to: range.to, resourceIds: visible.map((resource) => resource.id) });
-  const dateLabel = combinedRangeLabel(range.days);
+  const dateLabel = S.combinedRange === 'month'
+    ? S.combinedAnchor.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+    : combinedRangeLabel(range.days);
   const resourceGroups = [['Räume', S.resources.filter((r) => r.type === 'raum')], ['Plätze', S.resources.filter((r) => r.type === 'platz')]];
   const filters = resourceGroups.map(([title, list]) => list.length ? `<fieldset class="combined-filter-group"><legend>${title}</legend><ul class="check-list">${list.map((resource) => `<li><label class="check"><input type="checkbox" data-combined-resource="${esc(resource.id)}" ${S.hiddenRes.has(resource.id) ? '' : 'checked'}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label></li>`).join('')}</ul></fieldset>` : '').join('');
   const legend = visible.map((resource) => `<li><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span>${esc(resource.name)}</li>`).join('');
   app.innerHTML = `
-    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam im Wochen-Zeitraster. Ereignisse erscheinen ganztägig, ohne Buchungen zu blockieren.</p></div>
+    <header class="page-head combined-page-head"><div><p class="crumbs">Belegungsplan</p><h1>Gesamtbelegungsplan</h1><p class="muted">Alle ausgewählten Räume und Plätze gemeinsam in der gewählten Ansicht. Ereignisse erscheinen ganztägig, ohne Buchungen zu blockieren.</p></div>
       <div class="page-actions combined-actions"><a class="btn btn-ghost" href="${BASE}/belegungsplan" data-link="/belegungsplan">Zum Belegungsplan</a><button type="button" class="btn btn-ghost" data-export-target="all">Kalender exportieren</button>${isEditor() ? '<button type="button" class="btn" id="combined-import">Spiele importieren</button>' : ''}${S.store.isAdmin() ? '<button type="button" class="btn btn-danger" data-bulk-delete>Mehrere löschen</button>' : ''}${isEditor() ? '<button type="button" class="btn btn-primary" id="combined-new">Neuer Termin</button>' : ''}<button type="button" class="btn btn-ghost" data-print-view>Drucken / als PDF speichern</button></div>
     </header>
     <div class="combined-layout">
@@ -802,14 +814,15 @@ async function renderCombinedPlan() {
         <section class="filter-box"><h2>Rubriken auswählen</h2><div class="filter-actions"><button type="button" class="link-btn" id="combined-show-all">Alle einblenden</button><button type="button" class="link-btn" id="combined-hide-all">Alle ausblenden</button></div>${filters || '<p class="muted">Keine Ressourcen vorhanden.</p>'}</section>
       </aside>
       <section class="combined-main">
-        <div class="toolbar combined-toolbar" role="toolbar" aria-label="Woche auswählen">
-          <div class="btn-group"><button type="button" class="btn" id="combined-prev" aria-label="Vorherige Woche">‹</button><button type="button" class="btn" id="combined-today">Heute</button><button type="button" class="btn" id="combined-next" aria-label="Nächste Woche">›</button></div>
-          <label class="date-pick"><span class="sr-only">Datum in der Woche wählen</span><input type="date" id="combined-date" class="input" value="${L.ymd(S.planAnchor)}"></label>
+        <div class="toolbar combined-toolbar" role="toolbar" aria-label="Zeitraum steuern">
+          <div class="btn-group"><button type="button" class="btn" id="combined-prev" aria-label="Zurück">‹</button><button type="button" class="btn" id="combined-today">Heute</button><button type="button" class="btn" id="combined-next" aria-label="Weiter">›</button></div>
+          <label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="combined-date" class="input" value="${L.ymd(S.combinedAnchor)}"></label>
           <p class="range-label" aria-live="polite">${esc(dateLabel)}</p>
+          <div class="btn-group" role="group" aria-label="Zeitraum">${['day','week','month'].map((v) => `<button type="button" class="btn ${S.combinedRange === v ? 'btn-active' : ''}" data-combined-range="${v}" aria-pressed="${S.combinedRange === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div>
         </div>
-        <p class="combined-print-period">Woche ${String(isoWeekNumber(range.days[0])).padStart(2, '0')}: ${esc(dateLabel)}</p>
+        <p class="combined-print-period">${S.combinedRange === 'week' ? `Woche ${String(isoWeekNumber(range.days[0])).padStart(2, '0')}: ` : ''}${esc(dateLabel)}</p>
         <section class="combined-legend" aria-label="Farblegende"><h2>Farblegende</h2><ul>${legend || '<li>Keine Rubriken ausgewählt</li>'}</ul></section>
-        ${combinedTimeGrid(range, visible)}
+        ${S.combinedRange === 'month' ? planMonthGrid(range, S.bookings, false) : combinedTimeGrid(range, visible)}
       </section>
     </div>`;
 
@@ -818,7 +831,7 @@ async function renderCombinedPlan() {
   if (newButton) newButton.onclick = () => {
     const resource_id = defaultResourceId();
     if (!resource_id) return setNotice('error', 'Bitte zuerst eine Ressource anlegen.');
-    openBookingForm({ resource_id, date: S.planAnchor, startTime: '17:00' });
+    openBookingForm({ resource_id, date: S.combinedAnchor, startTime: '17:00' });
   };
   const combinedImport = $('#combined-import');
   if (combinedImport) combinedImport.onclick = () => openImport(null);
@@ -826,14 +839,27 @@ async function renderCombinedPlan() {
     resource_id: defaultResourceId(), date: L.parseISODate(body.dataset.date),
     startTime: snappedTimeFromY(event, body, HOUR_PX)
   }));
-  const move = (days) => { S.planAnchor = L.addDays(S.planAnchor, days); render(); };
-  $('#combined-prev').onclick = () => move(-7);
-  $('#combined-next').onclick = () => move(7);
-  $('#combined-today').onclick = () => { S.planAnchor = new Date(); render(); };
+  bindCalendarCreate('.combined-main .plan-month-grid .mg-cell', (event, cell) => ({
+    resource_id: defaultResourceId(), date: L.parseISODate(cell.dataset.date), startTime: '17:00'
+  }));
+  document.querySelectorAll('.combined-main .plan-month-event').forEach((button) => button.onclick = () => openDetail(button.dataset.id));
+  document.querySelectorAll('.combined-main [data-plan-goto]').forEach((button) => button.onclick = () => {
+    const [year, month, day] = button.dataset.planGoto.split('-').map(Number);
+    S.combinedAnchor = new Date(year, month - 1, day); S.combinedRange = 'day'; render();
+  });
+  const move = (amount) => {
+    if (S.combinedRange === 'month') S.combinedAnchor = new Date(S.combinedAnchor.getFullYear(), S.combinedAnchor.getMonth() + amount, 1);
+    else S.combinedAnchor = L.addDays(S.combinedAnchor, (S.combinedRange === 'day' ? 1 : 7) * amount);
+    render();
+  };
+  $('#combined-prev').onclick = () => move(-1);
+  $('#combined-next').onclick = () => move(1);
+  $('#combined-today').onclick = () => { S.combinedAnchor = new Date(); render(); };
+  document.querySelectorAll('[data-combined-range]').forEach((button) => button.onclick = () => { S.combinedRange = button.dataset.combinedRange; render(); });
   $('#combined-date').onchange = (event) => {
     if (!event.target.value) return;
     const [year, month, day] = event.target.value.split('-').map(Number);
-    S.planAnchor = new Date(year, month - 1, day);
+    S.combinedAnchor = new Date(year, month - 1, day);
     render();
   };
   document.querySelectorAll('[data-combined-resource]').forEach((checkbox) => checkbox.onchange = () => {

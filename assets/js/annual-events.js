@@ -2,6 +2,7 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':
 const MAX_BYTES = 5 * 1024 * 1024;
 const BUCKET = 'annual-event-files';
 let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let annualView = 'month';
 let currentEvents = [];
 let rerenderPage = null;
 let siteConfiguration = null;
@@ -139,7 +140,32 @@ export async function renderAnnualEvents(app, store, setNotice) {
   drawCalendar(app, store, setNotice);
 }
 
+function drawAnnualRangeView(app, store, setNotice) {
+  const base = new Date(monthCursor);
+  const start = annualView === 'day' ? base : new Date(base.getFullYear(), base.getMonth(), base.getDate() - ((base.getDay() + 6) % 7));
+  const days = annualView === 'day' ? [start] : Array.from({ length: 7 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  const keys = days.map((d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  const visible = currentEvents.map((event) => {
+    const years = event.recurrence === 'once' ? [start.getFullYear()] : [start.getFullYear() - 1, start.getFullYear()];
+    const range = years.map((year) => annualOccurrenceRange(event, year)).find((r) => r && r.start <= keys[keys.length - 1] && r.end >= keys[0]);
+    return range ? { event, range } : null;
+  }).filter(Boolean);
+  const cells = days.map((day, i) => `<div class="annual-day" data-date="${keys[i]}"><span class="annual-day-number">${day.getDate()}.${day.getMonth() + 1}.</span>${visible.filter(({ range }) => range.start <= keys[i] && range.end >= keys[i]).map(({ event }) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`).join('');
+  const title = annualView === 'day' ? start.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : `${days[0].toLocaleDateString('de-DE')} – ${days[6].toLocaleDateString('de-DE')}`;
+  const inputDate = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(monthCursor.getDate()).padStart(2, '0')}`;
+  app.innerHTML = `<section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div><button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section><section class="section annual-section"><div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(title)}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${inputDate}"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day','week','month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div><div class="annual-calendar annual-range-calendar" style="--annual-cols:${days.length}" role="grid">${days.map((day) => `<div class="annual-weekday">${day.toLocaleDateString('de-DE', { weekday: 'short' })}</div>`).join('')}${cells}</div><h2 class="annual-list-heading">Ereignisse im gewählten Zeitraum</h2>${visible.length ? `<ul class="annual-event-list">${visible.map(({ event }) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse im gewählten Zeitraum.</p>'}</section><section class="section annual-error-panel"><div class="annual-error-head"><div><h2>Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler bei Test-, Lifecycle- und Erinnerungsmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div><div id="annual-errors-list"><p class="muted">Fehlerprotokoll wird geladen …</p></div></section>`;
+  app.querySelector('#annual-prev').onclick = () => { monthCursor.setDate(monthCursor.getDate() - (annualView === 'day' ? 1 : 7)); drawCalendar(app, store, setNotice); };
+  app.querySelector('#annual-next').onclick = () => { monthCursor.setDate(monthCursor.getDate() + (annualView === 'day' ? 1 : 7)); drawCalendar(app, store, setNotice); };
+  app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(); drawCalendar(app, store, setNotice); };
+  app.querySelector('#annual-date').onchange = (e) => { if (!e.target.value) return; monthCursor = new Date(`${e.target.value}T00:00:00`); drawCalendar(app, store, setNotice); };
+  app.querySelectorAll('[data-annual-view]').forEach((b) => b.onclick = () => { annualView = b.dataset.annualView; if (annualView === 'month') monthCursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1); drawCalendar(app, store, setNotice); });
+  app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
+  app.querySelectorAll('[data-edit-event]').forEach((b) => b.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((e) => e.id === b.dataset.editEvent)));
+  app.querySelector('#annual-errors-refresh').onclick = () => loadErrorLog(app, store); loadErrorLog(app, store);
+}
+
 function drawCalendar(app, store, setNotice) {
+  if (annualView !== 'month') return drawAnnualRangeView(app, store, setNotice);
   const firstDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
   const lastDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
   const monthStartStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`;
@@ -162,7 +188,7 @@ function drawCalendar(app, store, setNotice) {
     <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div>
       <button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section>
     <section class="section annual-section">
-      <div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Vorheriger Monat">‹</button><h2>${esc(monthName(monthCursor))}</h2><button type="button" class="btn" id="annual-next" aria-label="Nächster Monat">›</button><button type="button" class="btn btn-small" id="annual-today">Heute</button></div>
+      <div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(monthName(monthCursor))}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-01"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day', 'week', 'month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div>
       <p class="hint">Doppelklick oder Rechtsklick auf einen Tag legt dort ein neues Ereignis an.</p>
       <div class="annual-calendar" role="grid" aria-label="Kalender für ${esc(monthName(monthCursor))}">
         ${['Mo','Di','Mi','Do','Fr','Sa','So'].map((day) => `<div class="annual-weekday" role="columnheader">${day}</div>`).join('')}
@@ -178,9 +204,11 @@ function drawCalendar(app, store, setNotice) {
   app.querySelector('#annual-prev').onclick = () => { monthCursor.setMonth(monthCursor.getMonth() - 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-next').onclick = () => { monthCursor.setMonth(monthCursor.getMonth() + 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); drawCalendar(app, store, setNotice); };
+  app.querySelector('#annual-date').onchange = (e) => { if (!e.target.value) return; const d = new Date(`${e.target.value}T00:00:00`); monthCursor = new Date(d.getFullYear(), d.getMonth(), 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
   app.querySelectorAll('[data-edit-event]').forEach((button) => button.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((event) => event.id === button.dataset.editEvent)));
   app.querySelector('#annual-errors-refresh').onclick = () => loadErrorLog(app, store);
+  app.querySelectorAll('[data-annual-view]').forEach((b) => b.onclick = () => { annualView = b.dataset.annualView; if (annualView === 'month') monthCursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1); drawCalendar(app, store, setNotice); });
   loadErrorLog(app, store);
   const calendar = app.querySelector('.annual-calendar');
   const createFromCell = (event) => {
