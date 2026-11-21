@@ -116,8 +116,8 @@ test('Ereignisformular speichert getrennte automatische Versandregeln mit sicher
   assert.match(annual, /<option value="1"/);
   assert.match(annual, /<option value="2"/);
   assert.match(annual, /<option value="7"/);
-  assert.match(annual, /confirmation_enabled: q\('#ae-confirmation-enabled'\)\.checked/);
-  assert.match(annual, /reminder_days: Number\(q\('#ae-reminder-days'\)\.value\)/);
+  assert.match(annual, /confirmation_enabled: reminderMode \? false : q\('#ae-confirmation-enabled'\)\.checked/);
+  assert.match(annual, /reminder_days: reminderMode \? 1 : Number\(q\('#ae-reminder-days'\)\.value\)/);
   assert.match(migration, /confirmation_enabled boolean not null default false/);
   assert.match(migration, /reminder_enabled boolean not null default false/);
   assert.match(migration, /check \(reminder_days in \(1, 2, 7\)\)/);
@@ -174,7 +174,7 @@ test('Einmaliger Ereignisversand nutzt gespeicherte Empfänger, Outbox und aktiv
   const worker = readFileSync(new URL('../scripts/send_annual_event_lifecycle_emails.py', import.meta.url), 'utf-8');
   assert.match(annual, /id="ae-send-individual"/);
   assert.match(annual, /id="ae-send-after-save" type="checkbox"/);
-  assert.match(annual, /const sendAfterSave = q\('#ae-send-after-save'\)\.checked/);
+  assert.match(annual, /const sendAfterSave = !reminderMode && q\('#ae-send-after-save'\)\.checked/);
   assert.match(annual, /sendAnnualEventIndividualMessage\(id\)/);
   assert.match(annual, /zuletzt gespeicherte Betreff und Nachricht/);
   assert.match(annual, /confirm\(`Die zuletzt gespeicherte Nachricht/);

@@ -54,6 +54,24 @@ class AnnualEventMailerTests(unittest.TestCase):
         event["active"] = False
         self.assertFalse(mailer.event_reminder_due_on(event, today))
 
+    def test_annual_email_on_date_is_due_only_on_the_annual_date(self):
+        event = {"active": True, "email_on_date": True, "recurrence": "annual", "event_month": 11, "event_day": 21}
+        self.assertTrue(mailer.event_email_on_date_due_on(event, dt.date(2026, 11, 21)))
+        self.assertFalse(mailer.event_email_on_date_due_on(event, dt.date(2026, 11, 20)))
+        self.assertFalse(mailer.event_email_on_date_due_on(event, dt.date(2027, 11, 20)))
+        event["active"] = False
+        self.assertFalse(mailer.event_email_on_date_due_on(event, dt.date(2026, 11, 21)))
+
+    def test_send_event_recipients_accepts_on_date_mode_without_pre_event_switch(self):
+        event = {"id": "reminder-1", "title": "Test", "active": True, "email_on_date": True,
+                 "reminder_enabled": False, "recipients": []}
+        original_statuses = mailer.previous_delivery_statuses
+        mailer.previous_delivery_statuses = lambda *_args: []
+        try:
+            self.assertIsNone(mailer.send_event_recipients(event, dt.date(2026, 11, 21), object(), send_on_date=True))
+        finally:
+            mailer.previous_delivery_statuses = original_statuses
+
     def test_reminder_due_date_supports_annual_occurrences(self):
         event = {"recurrence": "annual", "event_month": 6, "event_day": 10,
                  "active": True, "reminder_enabled": True, "reminder_days": 2}
