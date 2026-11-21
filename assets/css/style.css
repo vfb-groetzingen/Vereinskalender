@@ -576,3 +576,8 @@ textarea.input { resize: vertical; }
 .annual-range-calendar .annual-day { min-height: 7rem; }
 .annual-range-calendar .annual-weekday { text-align: center; }
 @media (max-width: 700px) { .annual-toolbar { flex-wrap: wrap; } .annual-toolbar h2 { order: 2; flex-basis: 100%; } .annual-range-calendar .annual-day { min-height: 5rem; } }
+
+
+.annual-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.annual-reminder-hidden { display: none !important; }
+@media (max-width: 640px) { .annual-hero-actions { width: 100%; } .annual-hero-actions .btn { flex: 1 1 auto; } }
