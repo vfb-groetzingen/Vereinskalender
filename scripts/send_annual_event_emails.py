@@ -407,8 +407,18 @@ def event_reminder_due_on(event, today):
     return days is not None and event_occurs_on(event, today + dt.timedelta(days=days))
 
 
-def send_event_recipients(event, event_date, smtp):
-    if event.get("active") is not True or event.get("reminder_enabled") is not True:
+def event_email_on_date_due_on(event, today):
+    return (event.get("active") is True
+            and event.get("email_on_date") is True
+            and event.get("recurrence") == "annual"
+            and event_occurs_on(event, today))
+
+
+def send_event_recipients(event, event_date, smtp, send_on_date=False):
+    enabled = event.get("active") is True and (
+        event.get("email_on_date") is True if send_on_date else event.get("reminder_enabled") is True
+    )
+    if not enabled:
         print(f"Erinnerung für Ereignis {event.get('id')} deaktiviert; kein Versand.")
         return
     previous = previous_delivery_statuses(event["id"], event_date.year)
@@ -456,18 +466,17 @@ def main():
         print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
         return
     query = (
-        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id,active,reminder_enabled,reminder_days,append_signature"
-        "&active=eq.true&reminder_enabled=eq.true"
+        "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id,active,email_on_date,reminder_enabled,reminder_days,append_signature"
+        "&active=eq.true"
     )
     candidates = api("GET", query) or []
     due_events = []
     for event in candidates:
-        days = reminder_days(event)
-        if days is None or event.get("active") is not True or event.get("reminder_enabled") is not True:
-            continue
-        event_date = now.date() + dt.timedelta(days=days)
-        if event_occurs_on(event, event_date):
-            due_events.append((event, event_date))
+        if event_email_on_date_due_on(event, now.date()):
+            due_events.append((event, now.date(), True))
+        if event_reminder_due_on(event, now.date()):
+            event_date = now.date() + dt.timedelta(days=reminder_days(event))
+            due_events.append((event, event_date, False))
     if not due_events:
         print(f"Keine aktivierten Ereignis-Erinnerungen am Fälligkeitstag {now.strftime('%d.%m.%Y')}.")
         return
@@ -476,7 +485,7 @@ def main():
         smtp = smtp_connect()
     except Exception as exc:
         error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
-        for event, event_date in due_events:
+        for event, event_date, _send_on_date in due_events:
             try:
                 previous = previous_delivery_statuses(event["id"], event_date.year)
                 handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
@@ -489,9 +498,9 @@ def main():
         return
 
     try:
-        for event, event_date in due_events:
+        for event, event_date, send_on_date in due_events:
             try:
-                send_event_recipients(event, event_date, smtp)
+                send_event_recipients(event, event_date, smtp, send_on_date=send_on_date)
             except Exception as exc:
                 print(f"FEHLER für Ereignis {event.get('id')}: {exc}", file=sys.stderr)
     finally:
