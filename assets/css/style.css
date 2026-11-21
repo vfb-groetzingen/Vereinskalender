@@ -320,8 +320,8 @@ textarea.input { resize: vertical; }
 .annual-day { min-height: 95px; min-width: 0; padding: .35rem; background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .annual-day-empty { background: #f8fafc; }
 .annual-day-number { display: block; font-size: .85rem; font-weight: 700; margin-bottom: .2rem; }
-.annual-event-chip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .18rem 0; padding: .18rem .35rem; border: 0; border-left: 3px solid var(--primary); border-radius: 3px; color: var(--text); background: var(--primary-soft); font: inherit; font-size: .78rem; text-align: left; cursor: pointer; }
-.annual-event-chip:hover { background: #d5e7f8; }
+.annual-event-chip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .18rem 0; padding: .18rem .35rem; border: 0; border-left: 3px solid var(--annual-event-color, var(--primary)); border-radius: 3px; color: var(--text); background: var(--annual-event-background, var(--primary-soft)); font: inherit; font-size: .78rem; text-align: left; cursor: pointer; }
+.annual-event-chip:hover { filter: brightness(.97); }
 .annual-list-heading { margin-top: 1.25rem; }
 .annual-event-list { list-style: none; margin: 0; padding: 0; }
 .annual-event-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem .2rem; border-bottom: 1px solid #edf1f6; }
@@ -341,7 +341,7 @@ textarea.input { resize: vertical; }
 .annual-event-resource-option[hidden], .annual-resource-group[hidden] { display: none !important; }
 .calendar-all-day-slot { box-sizing: border-box; height: 82px; overflow: hidden; padding: .15rem .2rem; border-bottom: 1px solid var(--border); background: #fbfcfd; }
 .tg-all-day-axis { box-sizing: border-box; height: 82px; display: flex; align-items: center; justify-content: center; padding: .15rem; border-bottom: 1px solid var(--border); color: var(--muted); font-size: .65rem; line-height: 1.1; text-align: center; }
-.calendar-marker { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .08rem 0; padding: .08rem .25rem; border-left: 3px solid var(--marker-color, #4a5568); border-radius: 3px; background: #f1f4f8; color: var(--text); font-size: .68rem; line-height: 1.35; }
+.calendar-marker { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .08rem 0; padding: .08rem .25rem; border-left: 3px solid var(--marker-color, #4a5568); border-radius: 3px; background: var(--marker-background, #f1f4f8); color: var(--text); font-size: .68rem; line-height: 1.35; }
 .calendar-marker-more { display: block; color: var(--muted); font-size: .65rem; line-height: 1.25; }
 .calendar-all-day-slot .calendar-marker { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; padding: .15rem .35rem; font-size: .82rem; font-weight: 600; line-height: 1.2; }
 .calendar-all-day-slot .calendar-marker-more { font-size: .72rem; line-height: 1.2; }
