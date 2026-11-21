@@ -1,3 +1,4 @@
+import { calendarColorsForResources, calendarColorStyles } from './calendar-colors.js';
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const MAX_BYTES = 5 * 1024 * 1024;
 const BUCKET = 'annual-event-files';
@@ -50,6 +51,13 @@ function bodyIncludesSignature(bodyHtml, signatureHtml) {
 }
 function fileTotal(assets) { return assets.reduce((sum, asset) => sum + Number(asset.size || 0), 0); }
 function monthName(date) { return date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); }
+function eventCalendarStyle(event) {
+  const colors = calendarColorsForResources(event?.resource_ids, eventResources);
+  if (!colors.length) return '';
+  const style = calendarColorStyles(colors);
+  return `style="--annual-event-color:${style.border};--annual-event-background:${style.background}"`;
+}
+
 export function endDateAfterStartChange(previousStart, nextStart, currentEnd, recurrence) {
   const dayKey = (value) => recurrence === 'annual' ? String(value || '').slice(5) : String(value || '');
   return dayKey(currentEnd) === dayKey(previousStart) ? nextStart : currentEnd;
@@ -150,7 +158,7 @@ function drawAnnualRangeView(app, store, setNotice) {
     const range = years.map((year) => annualOccurrenceRange(event, year)).find((r) => r && r.start <= keys[keys.length - 1] && r.end >= keys[0]);
     return range ? { event, range } : null;
   }).filter(Boolean);
-  const cells = days.map((day, i) => `<div class="annual-day" data-date="${keys[i]}"><span class="annual-day-number">${day.getDate()}.${day.getMonth() + 1}.</span>${visible.filter(({ range }) => range.start <= keys[i] && range.end >= keys[i]).map(({ event }) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`).join('');
+  const cells = days.map((day, i) => `<div class="annual-day" data-date="${keys[i]}"><span class="annual-day-number">${day.getDate()}.${day.getMonth() + 1}.</span>${visible.filter(({ range }) => range.start <= keys[i] && range.end >= keys[i]).map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`).join('');
   const title = annualView === 'day' ? start.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : `${days[0].toLocaleDateString('de-DE')} – ${days[6].toLocaleDateString('de-DE')}`;
   const inputDate = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(monthCursor.getDate()).padStart(2, '0')}`;
   app.innerHTML = `<section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div><button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section><section class="section annual-section"><div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(title)}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${inputDate}"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day','week','month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div><div class="annual-calendar annual-range-calendar" style="--annual-cols:${days.length}" role="grid">${days.map((day) => `<div class="annual-weekday">${day.toLocaleDateString('de-DE', { weekday: 'short' })}</div>`).join('')}${cells}</div><h2 class="annual-list-heading">Ereignisse im gewählten Zeitraum</h2>${visible.length ? `<ul class="annual-event-list">${visible.map(({ event }) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse im gewählten Zeitraum.</p>'}</section><section class="section annual-error-panel"><div class="annual-error-head"><div><h2>Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler bei Test-, Lifecycle- und Erinnerungsmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div><div id="annual-errors-list"><p class="muted">Fehlerprotokoll wird geladen …</p></div></section>`;
@@ -182,7 +190,7 @@ function drawCalendar(app, store, setNotice) {
   for (let day = 1; day <= days; day++) {
     const dateStr = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const events = monthEvents.filter(({ range }) => range.start <= dateStr && range.end >= dateStr);
-    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map(({ event }) => `<button class="annual-event-chip" type="button" data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
+    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
   }
   app.innerHTML = `
     <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div>

@@ -4,6 +4,7 @@ import * as LY from './layout.js';
 import { ROOT, loadSeed, createStore, friendlyError } from './data.js';
 import { createQrMatrix, qrMatrixToSvgDataUrl, qrMatrixToPngDataUrl } from './qr-generator.js';
 import { renderAnnualEvents } from './annual-events.js';
+import { calendarColorsForResources, calendarColorStyles, normalizeCalendarColor } from './calendar-colors.js';
 import { DEFAULT_ADMIN_NAV, DEFAULT_CONFIG_NAV, normaliseMenu, mountConfiguration } from './admin-config.js';
 
 const HOUR_PX = 48;          // Kalender: Pixel je Stunde
@@ -130,7 +131,13 @@ function calendarEventsForDay(day, resourceId = null, categoryId = '') {
 function calendarEventMarker(marker, resourceLabel = '') {
   const title = `${resourceLabel ? `${resourceLabel} · ` : ''}${marker.title}`;
   const category = catById(marker.category_id)?.name || marker.category_name || 'Kategorie nicht gesetzt';
-  return `<span class="calendar-marker" style="--marker-color:${esc(marker.category_color || catColor(marker.category_id))}" title="${esc(`${title} · ${category} · ganztägig, blockiert keine Buchung`)}">${esc(title)}</span>`;
+  const resourceColors = Array.isArray(marker.resource_colors) && marker.resource_colors.length
+    ? marker.resource_colors.map((color) => normalizeCalendarColor(color)).filter(Boolean)
+    : calendarColorsForResources([marker.resource_id], S.resources);
+  const style = resourceColors.length
+    ? calendarColorStyles(resourceColors)
+    : { border: normalizeCalendarColor(marker.category_color || catColor(marker.category_id), '#4a5568'), background: '#f1f4f8' };
+  return `<span class="calendar-marker" style="--marker-color:${style.border};--marker-background:${style.background}" title="${esc(`${title} · ${category} · ganztägig, blockiert keine Buchung`)}">${esc(title)}</span>`;
 }
 
 function calendarEventMarkerList(markers, { max = 2, resourceLabel = (marker) => marker.resource_name || '' } = {}) {
@@ -148,13 +155,16 @@ function combinedCalendarEventsForDay(day, resourceIds, categoryId = '') {
     const key = `${marker.event_id}:${String(marker.event_date).slice(0, 10)}`;
     let item = grouped.get(key);
     if (!item) {
-      item = { ...marker, _resources: new Set() };
+      item = { ...marker, _resources: new Map() };
       grouped.set(key, item);
     }
     const resource = resById(marker.resource_id);
-    if (resource) item._resources.add(resource.name);
+    if (resource) item._resources.set(resource.id, { name: resource.name, color: normalizeCalendarColor(resource.color) });
   }
-  return [...grouped.values()].map((item) => ({ ...item, resource_name: [...item._resources].join(', ') }));
+  return [...grouped.values()].map((item) => {
+    const resources = [...item._resources.values()];
+    return { ...item, resource_name: resources.map((resource) => resource.name).join(', '), resource_colors: resources.map((resource) => resource.color).filter(Boolean) };
+  });
 }
 const dayLong = (d) => d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
 const monthLabel = (d) => d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
