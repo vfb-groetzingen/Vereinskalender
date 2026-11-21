@@ -65,6 +65,10 @@ export function endDateAfterStartChange(previousStart, nextStart, currentEnd, re
 
 function eventLabel(event) {
   const format = (date) => `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
+  if (event.email_on_date === true) {
+    const date = `${String(event.event_day).padStart(2, '0')}.${String(event.event_month).padStart(2, '0')}.`;
+    return `${date} · jährliche Erinnerung · ${event.title}`;
+  }
   if (event.recurrence === 'once' && event.event_date) {
     const start = new Date(`${event.event_date}T00:00:00`);
     const end = new Date(`${event.event_end_date || event.event_date}T00:00:00`);
@@ -158,15 +162,16 @@ function drawAnnualRangeView(app, store, setNotice) {
     const range = years.map((year) => annualOccurrenceRange(event, year)).find((r) => r && r.start <= keys[keys.length - 1] && r.end >= keys[0]);
     return range ? { event, range } : null;
   }).filter(Boolean);
-  const cells = days.map((day, i) => `<div class="annual-day" data-date="${keys[i]}"><span class="annual-day-number">${day.getDate()}.${day.getMonth() + 1}.</span>${visible.filter(({ range }) => range.start <= keys[i] && range.end >= keys[i]).map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`).join('');
+  const cells = days.map((day, i) => `<div class="annual-day" data-date="${keys[i]}"><span class="annual-day-number">${day.getDate()}.${day.getMonth() + 1}.</span>${visible.filter(({ range }) => range.start <= keys[i] && range.end >= keys[i]).map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.email_on_date ? `Erinnerung: ${event.title}` : event.title)}</button>`).join('')}</div>`).join('');
   const title = annualView === 'day' ? start.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : `${days[0].toLocaleDateString('de-DE')} – ${days[6].toLocaleDateString('de-DE')}`;
   const inputDate = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(monthCursor.getDate()).padStart(2, '0')}`;
-  app.innerHTML = `<section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div><button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section><section class="section annual-section"><div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(title)}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${inputDate}"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day','week','month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div><div class="annual-calendar annual-range-calendar" style="--annual-cols:${days.length}" role="grid">${days.map((day) => `<div class="annual-weekday">${day.toLocaleDateString('de-DE', { weekday: 'short' })}</div>`).join('')}${cells}</div><h2 class="annual-list-heading">Ereignisse im gewählten Zeitraum</h2>${visible.length ? `<ul class="annual-event-list">${visible.map(({ event }) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse im gewählten Zeitraum.</p>'}</section><section class="section annual-error-panel"><div class="annual-error-head"><div><h2>Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler bei Test-, Lifecycle- und Erinnerungsmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div><div id="annual-errors-list"><p class="muted">Fehlerprotokoll wird geladen …</p></div></section>`;
+  app.innerHTML = `<section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div><div class="annual-hero-actions"><button type="button" class="btn" id="annual-reminder-new">Erinnerung anlegen</button><button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></div></section><section class="section annual-section"><div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(title)}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${inputDate}"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day','week','month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div><div class="annual-calendar annual-range-calendar" style="--annual-cols:${days.length}" role="grid">${days.map((day) => `<div class="annual-weekday">${day.toLocaleDateString('de-DE', { weekday: 'short' })}</div>`).join('')}${cells}</div><h2 class="annual-list-heading">Ereignisse im gewählten Zeitraum</h2>${visible.length ? `<ul class="annual-event-list">${visible.map(({ event }) => `<li><button type="button" class="link-btn" data-edit-event="${esc(event.id)}">${esc(eventLabel(event))}</button><span>${event.recipients.length} Empfänger · ${event.active ? 'aktiv' : 'pausiert'}</span></li>`).join('')}</ul>` : '<p class="empty">Keine Ereignisse im gewählten Zeitraum.</p>'}</section><section class="section annual-error-panel"><div class="annual-error-head"><div><h2>Fehlerprotokoll</h2><p class="hint">Hier stehen SMTP-Ablehnungen und Fehler bei Test-, Lifecycle- und Erinnerungsmails.</p></div><button class="btn btn-small" id="annual-errors-refresh" type="button">Aktualisieren</button></div><div id="annual-errors-list"><p class="muted">Fehlerprotokoll wird geladen …</p></div></section>`;
   app.querySelector('#annual-prev').onclick = () => { monthCursor.setDate(monthCursor.getDate() - (annualView === 'day' ? 1 : 7)); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-next').onclick = () => { monthCursor.setDate(monthCursor.getDate() + (annualView === 'day' ? 1 : 7)); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-date').onchange = (e) => { if (!e.target.value) return; monthCursor = new Date(`${e.target.value}T00:00:00`); drawCalendar(app, store, setNotice); };
   app.querySelectorAll('[data-annual-view]').forEach((b) => b.onclick = () => { annualView = b.dataset.annualView; if (annualView === 'month') monthCursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1); drawCalendar(app, store, setNotice); });
+  app.querySelector('#annual-reminder-new').onclick = () => openEventForm(app, store, setNotice, null, null, true);
   app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
   app.querySelectorAll('[data-edit-event]').forEach((b) => b.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((e) => e.id === b.dataset.editEvent)));
   app.querySelector('#annual-errors-refresh').onclick = () => loadErrorLog(app, store); loadErrorLog(app, store);
@@ -190,11 +195,11 @@ function drawCalendar(app, store, setNotice) {
   for (let day = 1; day <= days; day++) {
     const dateStr = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const events = monthEvents.filter(({ range }) => range.start <= dateStr && range.end >= dateStr);
-    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.title)}</button>`).join('')}</div>`);
+    cells.push(`<div class="annual-day" data-month="${monthCursor.getMonth() + 1}" data-day="${day}"><span class="annual-day-number">${day}</span>${events.map(({ event }) => `<button class="annual-event-chip" type="button" ${eventCalendarStyle(event)} data-edit-event="${esc(event.id)}">${esc(event.email_on_date ? `Erinnerung: ${event.title}` : event.title)}</button>`).join('')}</div>`);
   }
   app.innerHTML = `
     <section class="hero annual-hero"><div><p class="crumbs">Verwaltung</p><h1>Ereignisse</h1><p>Einmalige und jährlich wiederkehrende Ereignisse mit automatischen E-Mail-Erinnerungen.</p></div>
-      <button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></section>
+      <div class="annual-hero-actions"><button type="button" class="btn" id="annual-reminder-new">Erinnerung anlegen</button><button type="button" class="btn btn-primary" id="annual-new">Ereignis anlegen</button></div></section>
     <section class="section annual-section">
       <div class="annual-toolbar"><button type="button" class="btn" id="annual-prev" aria-label="Zurück">‹</button><button type="button" class="btn btn-small" id="annual-today">Heute</button><button type="button" class="btn" id="annual-next" aria-label="Weiter">›</button><h2>${esc(monthName(monthCursor))}</h2><label class="date-pick"><span class="sr-only">Datum wählen</span><input type="date" id="annual-date" class="input" value="${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}-01"></label><div class="btn-group" role="group" aria-label="Ansicht">${['day', 'week', 'month'].map((v) => `<button type="button" class="btn ${annualView === v ? 'btn-active' : ''}" data-annual-view="${v}" aria-pressed="${annualView === v}">${{day:'Tag',week:'Woche',month:'Monat'}[v]}</button>`).join('')}</div></div>
       <p class="hint">Doppelklick oder Rechtsklick auf einen Tag legt dort ein neues Ereignis an.</p>
@@ -213,6 +218,7 @@ function drawCalendar(app, store, setNotice) {
   app.querySelector('#annual-next').onclick = () => { monthCursor.setMonth(monthCursor.getMonth() + 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-today').onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); drawCalendar(app, store, setNotice); };
   app.querySelector('#annual-date').onchange = (e) => { if (!e.target.value) return; const d = new Date(`${e.target.value}T00:00:00`); monthCursor = new Date(d.getFullYear(), d.getMonth(), 1); drawCalendar(app, store, setNotice); };
+  app.querySelector('#annual-reminder-new').onclick = () => openEventForm(app, store, setNotice, null, null, true);
   app.querySelector('#annual-new').onclick = () => openEventForm(app, store, setNotice, null);
   app.querySelectorAll('[data-edit-event]').forEach((button) => button.onclick = () => openEventForm(app, store, setNotice, currentEvents.find((event) => event.id === button.dataset.editEvent)));
   app.querySelector('#annual-errors-refresh').onclick = () => loadErrorLog(app, store);
@@ -249,7 +255,7 @@ async function loadErrorLog(app, store) {
   }
 }
 
-function openEventForm(app, store, setNotice, event, initialDate = null) {
+function openEventForm(app, store, setNotice, event, initialDate = null, reminderMode = event?.email_on_date === true) {
   const id = event?.id || crypto.randomUUID();
   let assets = (event?.assets || []).map((asset) => ({ ...asset }));
   const newlyUploaded = [];
@@ -258,7 +264,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const dialog = document.createElement('dialog');
   dialog.className = 'dialog dialog-wide';
   dialog.id = 'annual-event-dialog';
-  const selectedRecurrence = event?.recurrence || 'annual';
+  const selectedRecurrence = reminderMode ? 'annual' : (event?.recurrence || 'annual');
   const today = new Date();
   const selectedMonth = event?.event_month || initialDate?.month || (today.getMonth() + 1);
   const selectedDay = event?.event_day || initialDate?.day || today.getDate();
@@ -304,17 +310,17 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
   const initialBody = event
     ? (event.append_signature === true && !bodyIncludesSignature(originalBody, defaultSignature) ? `${originalBody}${safeHtml(defaultSignature)}` : originalBody)
     : defaultSignature;
-  dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${event ? 'Ereignis bearbeiten' : 'Ereignis anlegen'}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
+  dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${reminderMode ? (event ? 'Erinnerung bearbeiten' : 'Erinnerung anlegen') : (event ? 'Ereignis bearbeiten' : 'Ereignis anlegen')}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
-      <div class="field"><label for="ae-title">Ereignisname *</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
-      <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>
+      <div class="field"><label for="ae-title">${reminderMode ? 'Erinnerungsname *' : 'Ereignisname *'}</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
+      <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input">${reminderMode ? '<option value="annual" selected>Jährliche Wiederholung</option>' : `<option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option>`}</select><p class="hint">${reminderMode ? 'Die Erinnerung wird jedes Jahr am gewählten Datum versendet.' : 'Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.'}</p></div>
       <div class="field-row annual-event-location-row"><fieldset class="field annual-resource-picker"><legend>Kalender / Plätze / Räume</legend><label class="sr-only" for="ae-resource-search">Räume und Plätze suchen</label><input id="ae-resource-search" class="input" type="search" placeholder="Räume und Plätze suchen"><div id="ae-resource-list" class="annual-resource-list">${eventOnlyOption}${resourceOptions || '<p class="hint">Keine aktiven Räume oder Plätze gefunden.</p>'}</div><p id="ae-resource-count" class="hint" aria-live="polite">${selectedResourceIds.size ? `${selectedResourceIds.size} Kalender ausgewählt.` : 'Nur im Ereigniskalender.'}</p><p class="hint">„Ereignis“ oder keine Raum-/Platz-Auswahl bedeutet nur Ereigniskalender. Eine oder mehrere echte Ressourcen zeigen den ganztägigen, nicht blockierenden Hinweis in den jeweiligen Kalendern.</p></fieldset><div class="field"><label for="ae-category">Kategorie *</label><select id="ae-category" class="input" required>${categoryOptions || '<option value="">Keine Kategorien verfügbar</option>'}</select><p class="hint">Die Kategorie steuert die Farbe des Eintrags und den Kategorienfilter.</p></div></div>
-      <div class="field-row annual-event-date-row"><div class="field"><label id="ae-date-label" for="ae-date">${selectedRecurrence === 'once' ? 'Startdatum *' : 'Jährlicher Starttag *'}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.</p></div>
-      <div class="field"><label id="ae-end-date-label" for="ae-end-date">${selectedRecurrence === 'once' ? 'Enddatum *' : 'Jährlicher Endtag *'}</label><input id="ae-end-date" class="input" type="date" value="${endDateValue}" required><p id="ae-end-date-hint" class="hint">Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.</p></div>
+      <div class="field-row annual-event-date-row"><div class="field"><label id="ae-date-label" for="ae-date">${reminderMode ? 'Datum *' : (selectedRecurrence === 'once' ? 'Startdatum *' : 'Jährlicher Starttag *')}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${reminderMode ? 'Die E-Mail wird jährlich am gewählten Datum gegen 06:00 Uhr deutscher Zeit an die eingetragenen Empfänger versendet. Der 29. Februar gilt nur in Schaltjahren.' : 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
+      <div class="field ${reminderMode ? 'annual-reminder-hidden' : ''}"><label id="ae-end-date-label" for="ae-end-date">${selectedRecurrence === 'once' ? 'Enddatum *' : 'Jährlicher Endtag *'}</label><input id="ae-end-date" class="input" type="date" value="${endDateValue}" required><p id="ae-end-date-hint" class="hint">Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.</p></div>
       <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
-      <fieldset class="field annual-automation"><legend>Automatische Ereignis-E-Mails</legend>
+      ${reminderMode ? `<fieldset class="field annual-automation"><legend>Automatischer jährlicher Versand</legend><p class="hint">Die E-Mail wird am gewählten Datum jedes Jahr automatisch an alle hinterlegten Empfänger versendet. Deaktiviere die Erinnerung, wenn sie nicht mehr versendet werden soll.</p></fieldset>` : `<fieldset class="field annual-automation"><legend>Automatische Ereignis-E-Mails</legend>
         <p class="hint">Jeder Versandtyp ist einzeln steuerbar. Neue Ereignisse starten mit allen Schaltern aus. Der Ereignistext unten wird an die passende Mailvorlage angehängt.</p>
         <label class="check"><input id="ae-confirmation-enabled" type="checkbox" ${event?.confirmation_enabled === true ? 'checked' : ''}> Buchungsbestätigung beim erstmaligen Speichern oder Aktivieren</label>
         <label class="check"><input id="ae-changed-enabled" type="checkbox" ${event?.changed_enabled === true ? 'checked' : ''}> Änderungsmitteilung bei inhaltlichen Änderungen</label>
@@ -322,16 +328,16 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         <label class="check"><input id="ae-reminder-enabled" type="checkbox" ${event?.reminder_enabled === true ? 'checked' : ''}> Erinnerung vor dem Starttag</label>
         <div class="field-row"><div class="field"><label for="ae-reminder-days">Erinnerungsvorlauf</label><select id="ae-reminder-days" class="input"><option value="1" ${Number(event?.reminder_days || 1) === 1 ? 'selected' : ''}>1 Tag vorher</option><option value="2" ${Number(event?.reminder_days || 1) === 2 ? 'selected' : ''}>2 Tage vorher</option><option value="7" ${Number(event?.reminder_days || 1) === 7 ? 'selected' : ''}>7 Tage vorher</option></select></div></div>
         <p class="hint">Die Standardsignatur steht bei neuen Ereignissen direkt im Nachrichtentext und kann dort bearbeitet oder entfernt werden. Bei älteren Ereignissen wird eine bisherige Versand-Signatur beim Bearbeiten in den Text übernommen. Die globale Aktivierung der Buchungsvorlagen steuert diese Ereignis-Schalter nicht. „Ereignis aktiv“ ist zusätzlich der Master.</p>
-      </fieldset>
-      <div class="field"><div class="annual-message-heading"><label>Nachricht *</label><label class="check annual-send-after-save"><input id="ae-send-after-save" type="checkbox"> Wird direkt nach dem Speichern verschickt.</label></div><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
+      </fieldset>`}
+      <div class="field"><div class="annual-message-heading"><label>Nachricht *</label>${reminderMode ? '' : '<label class="check annual-send-after-save"><input id="ae-send-after-save" type="checkbox"> Wird direkt nach dem Speichern verschickt.</label>'}</div><div class="annual-editor-toolbar" role="toolbar" aria-label="Text formatieren">
         <button type="button" class="btn btn-small" data-command="bold" aria-label="Fett">Fett</button><button type="button" class="btn btn-small" data-command="italic" aria-label="Kursiv">Kursiv</button><button type="button" class="btn btn-small" data-command="underline" aria-label="Unterstrichen">Unterstrichen</button><button type="button" class="btn btn-small" data-command="insertUnorderedList">Aufzählung</button><button type="button" class="btn btn-small" data-command="insertOrderedList">Nummerierung</button>
         <button type="button" class="btn btn-small" id="ae-add-link">Link</button><button type="button" class="btn btn-small" id="ae-add-image">Bild einbetten</button><button type="button" class="btn btn-small" id="ae-add-file">Anhang hinzufügen</button><button type="button" class="btn btn-small" id="ae-insert-signature">Signatur einfügen</button></div>
-        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(initialBody)}</div><p class="hint">Die Standardsignatur ist bei neuen Ereignissen bereits eingefügt. Wenn das Kästchen aktiviert ist, wird die Nachricht nach erfolgreichem Speichern einmalig eingereiht; der tatsächliche Versand erfolgt beim nächsten Workflow-Lauf (üblicherweise innerhalb von etwa 5 Minuten). Ohne Häkchen wird beim Speichern nichts zusätzlich versendet. Bilder werden auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen höchstens 5 MB.</p>
+        <div id="ae-body" class="annual-editor" contenteditable="true" role="textbox" aria-label="Formatierte E-Mail-Nachricht" aria-multiline="true">${safeHtml(initialBody)}</div><p class="hint">${reminderMode ? 'Die Nachricht wird am jährlichen Fälligkeitstag automatisch an die gespeicherten Empfänger gesendet. Bilder werden auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen höchstens 5 MB.' : 'Die Standardsignatur ist bei neuen Ereignissen bereits eingefügt. Wenn das Kästchen aktiviert ist, wird die Nachricht nach erfolgreichem Speichern einmalig eingereiht; der tatsächliche Versand erfolgt beim nächsten Workflow-Lauf (üblicherweise innerhalb von etwa 5 Minuten). Ohne Häkchen wird beim Speichern nichts zusätzlich versendet. Bilder werden auf maximal 1600 Pixel verkleinert; Bilder und Anhänge zusammen höchstens 5 MB.'}</p>
       </div>
       <input type="file" id="ae-image-file" accept="image/*" hidden><input type="file" id="ae-attach-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
       <div class="field"><strong>Dateien des Ereignisses</strong><ul id="ae-assets" class="annual-assets"></ul><p id="ae-size" class="hint"></p></div>
       <fieldset class="field annual-document-picker"><legend>Dokumente aus der Ablage</legend><div id="ae-library-documents">${documentOptions || '<p class="hint">Keine aktiven Dokumente in der Ablage.</p>'}</div><p class="hint">Ausgewählte Originale bleiben in der Ablage erhalten, auch wenn das Ereignis gelöscht wird. Gesamtlimit mit allen Anhängen: 5 MB.</p></fieldset>
-      <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> Ereignis aktiv – Masterfreigabe für automatische E-Mails</label>
+      <label class="check"><input id="ae-active" type="checkbox" ${event?.active === false ? '' : 'checked'}> ${reminderMode ? 'Erinnerung aktiv – Masterfreigabe für den jährlichen Versand' : 'Ereignis aktiv – Masterfreigabe für automatische E-Mails'}</label>
       ${event ? `<section class="annual-test-mail annual-individual-mail"><h3>Individuelle Nachricht versenden</h3><p class="hint">Der zuletzt gespeicherte Betreff und Nachrichtentext werden einmalig an alle gespeicherten Ereignis-Empfänger jeweils separat gesendet. Speichere Änderungen zuerst; das Ereignis muss aktiv sein.</p><button class="btn btn-small btn-primary" type="button" id="ae-send-individual">Individuelle Nachricht an alle senden</button><p id="ae-individual-status" class="hint" role="status" aria-live="polite"></p></section>` : ''}
       ${event ? `<section class="annual-test-mail"><h3>Testmail versenden</h3><div class="field-row"><div class="field"><label for="ae-test-recipient">Test-Empfängeradresse</label><input id="ae-test-recipient" class="input" type="email" maxlength="254" placeholder="name@example.org"></div><div class="field annual-test-action"><span class="hint">Es wird der zuletzt gespeicherte Ereignisstand verwendet.</span><button class="btn btn-small btn-primary" type="button" id="ae-send-test">Testmail senden</button></div></div><p id="ae-test-status" class="hint" role="status" aria-live="polite"></p></section>` : '<p class="hint">Eine Testmail ist verfügbar, sobald das Ereignis gespeichert wurde.</p>'}
       ${event ? '<details class="annual-log"><summary>Letzte Versandversuche</summary><div id="ae-log" class="hint">Versandprotokoll wird geladen …</div></details>' : ''}
@@ -373,8 +379,10 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const once = recurrence === 'once';
     q('#ae-date-label').textContent = once ? 'Startdatum *' : 'Jährlicher Starttag *';
     q('#ae-end-date-label').textContent = once ? 'Enddatum *' : 'Jährlicher Endtag *';
-    q('#ae-date-hint').textContent = 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.';
-    q('#ae-end-date-hint').textContent = 'Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.';
+    q('#ae-date-hint').textContent = reminderMode
+      ? 'Die E-Mail wird jährlich am gewählten Datum gegen 06:00 Uhr deutscher Zeit an die eingetragenen Empfänger versendet. Der 29. Februar gilt nur in Schaltjahren.'
+      : 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.';
+    if (!reminderMode) q('#ae-end-date-hint').textContent = 'Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.';
   };
   q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
   syncRecurrenceUI();
@@ -605,7 +613,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
     const totalBytes = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
     if (totalBytes > MAX_BYTES) return msg('Bilder und Anhänge dürfen zusammen höchstens 5 MB groß sein.');
     q('#ae-save').disabled = true;
-    const sendAfterSave = q('#ae-send-after-save').checked;
+    const sendAfterSave = !reminderMode && q('#ae-send-after-save').checked;
     const eventActive = q('#ae-active').checked;
     try {
       const profile = profiles.find((item) => item.id === q('#ae-mail-profile').value) || profiles[0];
@@ -613,17 +621,18 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         id, title, recurrence, event_date: recurrence === 'once' ? date : null,
         event_end_date: recurrence === 'once' ? endDate : null,
         event_month: month, event_day: day,
-        event_end_month: endMonth, event_end_day: endDay,
+        event_end_month: reminderMode ? month : endMonth, event_end_day: reminderMode ? day : endDay,
         recipients: emails, subject, body_html: body,
         resource_ids: resourceIds, category_id: categoryId,
         assets, document_ids: documentIds, sender_profile_id: profile.id,
         sender_display_name: profile.display_name, reply_to_email: profile.reply_to,
         active: q('#ae-active').checked,
-        confirmation_enabled: q('#ae-confirmation-enabled').checked,
-        changed_enabled: q('#ae-changed-enabled').checked,
-        cancelled_enabled: q('#ae-cancelled-enabled').checked,
-        reminder_enabled: q('#ae-reminder-enabled').checked,
-        reminder_days: Number(q('#ae-reminder-days').value),
+        email_on_date: reminderMode,
+        confirmation_enabled: reminderMode ? false : q('#ae-confirmation-enabled').checked,
+        changed_enabled: reminderMode ? false : q('#ae-changed-enabled').checked,
+        cancelled_enabled: reminderMode ? false : q('#ae-cancelled-enabled').checked,
+        reminder_enabled: reminderMode ? false : q('#ae-reminder-enabled').checked,
+        reminder_days: reminderMode ? 1 : Number(q('#ae-reminder-days').value),
         append_signature: false
       });
       saved = true;
@@ -650,7 +659,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null) {
         }
       }
       dialog.close();
-      const successMessage = queuedCount ? `Ereignis gespeichert; ${queuedCount} individuelle Nachricht${queuedCount === 1 ? '' : 'en'} für den nächsten Workflow-Lauf eingereiht.` : 'Ereignis wurde gespeichert.';
+      const successMessage = queuedCount ? `Ereignis gespeichert; ${queuedCount} individuelle Nachricht${queuedCount === 1 ? '' : 'en'} für den nächsten Workflow-Lauf eingereiht.` : (reminderMode ? 'Erinnerung wurde gespeichert. Der jährliche Versand ist aktiviert.' : 'Ereignis wurde gespeichert.');
       setNotice('ok', cleanupWarning ? `${successMessage} Eine entfernte Datei konnte nicht bereinigt werden.` : successMessage);
       monthCursor = new Date(recurrence === 'once' ? year : monthCursor.getFullYear(), month - 1, 1);
       await rerenderPage();
