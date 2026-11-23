@@ -579,5 +579,6 @@ textarea.input { resize: vertical; }
 
 
 .annual-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.annual-reminder-date { width: max-content; min-width: min(100%, 16rem); max-width: 100%; box-sizing: border-box; }
 .annual-reminder-hidden { display: none !important; }
 @media (max-width: 640px) { .annual-hero-actions { width: 100%; } .annual-hero-actions .btn { flex: 1 1 auto; } }
