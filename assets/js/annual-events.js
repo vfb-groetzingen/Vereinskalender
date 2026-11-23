@@ -303,7 +303,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
   const resourceGroups = [['Räume', eventResources.filter((resource) => resource.type === 'raum')], ['Plätze', eventResources.filter((resource) => resource.type === 'platz')]];
   const resourceOptions = resourceGroups.map(([label, resources]) => resources.length ? `<div class="annual-resource-group"><strong>${label}</strong>${resources.map((resource) => `<label class="check annual-event-resource-option"><input type="checkbox" data-event-resource="${esc(resource.id)}" ${selectedResourceIds.has(resource.id) ? 'checked' : ''}><span class="combined-color-swatch" style="--resource-color:${esc(resource.color || '#4a5568')}" aria-hidden="true"></span><span>${esc(resource.name)}</span></label>`).join('')}</div>` : '').join('');
   const eventOnlyOption = `<div class="annual-event-only-option"><label class="check"><input id="ae-event-only" type="radio" name="ae-calendar-target" value="event" ${selectedResourceIds.size ? '' : 'checked'}><span>Ereignis (nur im Ereigniskalender)</span></label></div>`;
-  const selectedCategoryId = event?.category_id || eventCategories.find((category) => category.name?.toLocaleLowerCase('de-DE') === 'veranstaltung')?.id || eventCategories[0]?.id || '';
+  const selectedCategoryId = reminderMode ? '' : (event?.category_id || eventCategories.find((category) => category.name?.toLocaleLowerCase('de-DE') === 'veranstaltung')?.id || eventCategories[0]?.id || '');
   const categoryOptions = eventCategories.map((category) => `<option value="${esc(category.id)}" ${category.id === selectedCategoryId ? 'selected' : ''}>${esc(category.name)}</option>`).join('');
   const defaultSignature = siteConfiguration?.event_signature_html || '<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href="http://www.vfb-groetzingen.de/">http://www.vfb-groetzingen.de/</a></p>';
   const originalBody = event?.body_html || '';
@@ -313,11 +313,12 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
   dialog.innerHTML = `<div class="dialog-inner"><header class="dialog-head"><h2>${reminderMode ? (event ? 'Erinnerung bearbeiten' : 'Erinnerung anlegen') : (event ? 'Ereignis bearbeiten' : 'Ereignis anlegen')}</h2><button class="btn btn-ghost" type="button" data-close aria-label="Schließen">×</button></header>
     <div class="dialog-body"><form id="annual-event-form" class="form" novalidate>
       <div class="field"><label for="ae-title">${reminderMode ? 'Erinnerungsname *' : 'Ereignisname *'}</label><input id="ae-title" class="input" maxlength="160" required value="${esc(event?.title || '')}"></div>
-      <div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input">${reminderMode ? '<option value="annual" selected>Jährliche Wiederholung</option>' : `<option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option>`}</select><p class="hint">${reminderMode ? 'Die Erinnerung wird jedes Jahr am gewählten Datum versendet.' : 'Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.'}</p></div>
-      <div class="field-row annual-event-location-row"><fieldset class="field annual-resource-picker"><legend>Kalender / Plätze / Räume</legend><label class="sr-only" for="ae-resource-search">Räume und Plätze suchen</label><input id="ae-resource-search" class="input" type="search" placeholder="Räume und Plätze suchen"><div id="ae-resource-list" class="annual-resource-list">${eventOnlyOption}${resourceOptions || '<p class="hint">Keine aktiven Räume oder Plätze gefunden.</p>'}</div><p id="ae-resource-count" class="hint" aria-live="polite">${selectedResourceIds.size ? `${selectedResourceIds.size} Kalender ausgewählt.` : 'Nur im Ereigniskalender.'}</p><p class="hint">„Ereignis“ oder keine Raum-/Platz-Auswahl bedeutet nur Ereigniskalender. Eine oder mehrere echte Ressourcen zeigen den ganztägigen, nicht blockierenden Hinweis in den jeweiligen Kalendern.</p></fieldset><div class="field"><label for="ae-category">Kategorie *</label><select id="ae-category" class="input" required>${categoryOptions || '<option value="">Keine Kategorien verfügbar</option>'}</select><p class="hint">Die Kategorie steuert die Farbe des Eintrags und den Kategorienfilter.</p></div></div>
-      <div class="field-row annual-event-date-row"><div class="field"><label id="ae-date-label" for="ae-date">${reminderMode ? 'Datum *' : (selectedRecurrence === 'once' ? 'Startdatum *' : 'Jährlicher Starttag *')}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${reminderMode ? 'Die E-Mail wird jährlich am gewählten Datum gegen 06:00 Uhr deutscher Zeit an die eingetragenen Empfänger versendet. Der 29. Februar gilt nur in Schaltjahren.' : 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
+      ${reminderMode ? '' : `<div class="field"><label for="ae-recurrence">Wiederholung *</label><select id="ae-recurrence" class="input"><option value="annual" ${selectedRecurrence === 'annual' ? 'selected' : ''}>Jährliche Wiederholung</option><option value="once" ${selectedRecurrence === 'once' ? 'selected' : ''}>Einmalig</option></select><p class="hint">Standard ist die jährliche Wiederholung. Einmalige Ereignisse werden nach drei Jahren gelöscht; bei Jahresereignissen bleiben Wiederholung und Zukunft erhalten, alte Durchläufe und Protokolle werden nach drei Jahren entfernt.</p></div>`}
+      <div class="field-row annual-event-location-row ${reminderMode ? 'annual-reminder-hidden' : ''}"><fieldset class="field annual-resource-picker"><legend>Kalender / Plätze / Räume</legend><label class="sr-only" for="ae-resource-search">Räume und Plätze suchen</label><input id="ae-resource-search" class="input" type="search" placeholder="Räume und Plätze suchen"><div id="ae-resource-list" class="annual-resource-list">${eventOnlyOption}${resourceOptions || '<p class="hint">Keine aktiven Räume oder Plätze gefunden.</p>'}</div><p id="ae-resource-count" class="hint" aria-live="polite">${selectedResourceIds.size ? `${selectedResourceIds.size} Kalender ausgewählt.` : 'Nur im Ereigniskalender.'}</p><p class="hint">„Ereignis“ oder keine Raum-/Platz-Auswahl bedeutet nur Ereigniskalender. Eine oder mehrere echte Ressourcen zeigen den ganztägigen, nicht blockierenden Hinweis in den jeweiligen Kalendern.</p></fieldset><div class="field"><label for="ae-category">Kategorie *</label><select id="ae-category" class="input" required>${categoryOptions || '<option value="">Keine Kategorien verfügbar</option>'}</select><p class="hint">Die Kategorie steuert die Farbe des Eintrags und den Kategorienfilter.</p></div></div>
+      <div class="field-row annual-event-date-row"><div class="field"><label id="ae-date-label" for="ae-date">${reminderMode ? 'Mailversandzeitpunkt *' : (selectedRecurrence === 'once' ? 'Startdatum *' : 'Jährlicher Starttag *')}</label><input id="ae-date" class="input" type="date" value="${dateValue}" required><p id="ae-date-hint" class="hint">${reminderMode ? 'Die E-Mail wird jährlich am gewählten Datum gegen 06:00 Uhr deutscher Zeit an die eingetragenen Empfänger versendet. Der 29. Februar gilt nur in Schaltjahren.' : 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.'}</p></div>
       <div class="field ${reminderMode ? 'annual-reminder-hidden' : ''}"><label id="ae-end-date-label" for="ae-end-date">${selectedRecurrence === 'once' ? 'Enddatum *' : 'Jährlicher Endtag *'}</label><input id="ae-end-date" class="input" type="date" value="${endDateValue}" required><p id="ae-end-date-hint" class="hint">Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.</p></div>
-      <div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div></div>
+      ${reminderMode ? '' : `<div class="field"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div>`}</div>
+      ${reminderMode ? `<div class="field annual-reminder-subject"><label for="ae-subject">Betreffzeile *</label><input id="ae-subject" class="input" maxlength="200" required value="${esc(event?.subject || '')}"></div>` : ''}
       <div class="field"><label for="ae-mail-profile">Antwortprofil</label><select id="ae-mail-profile" class="input">${profileOptions}</select><p class="hint">Der technische Absender bleibt das Strato-Postfach. Antworten gehen an die ausgewählte Adresse.</p></div>
       <div class="field"><fieldset class="annual-recipients"><legend>E-Mail-Empfänger (bis zu 10) *</legend><div id="ae-recipients">${recipients.map((email, i) => recipientRow(email, i)).join('')}</div><button type="button" class="btn btn-small" id="ae-add-recipient">Empfänger hinzufügen</button></fieldset></div>
       ${reminderMode ? `<fieldset class="field annual-automation"><legend>Automatischer jährlicher Versand</legend><p class="hint">Die E-Mail wird am gewählten Datum jedes Jahr automatisch an alle hinterlegten Empfänger versendet. Deaktiviere die Erinnerung, wenn sie nicht mehr versendet werden soll.</p></fieldset>` : `<fieldset class="field annual-automation"><legend>Automatische Ereignis-E-Mails</legend>
@@ -354,7 +355,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
   const msg = (text) => { q('#ae-msg').textContent = text; };
   let previousRecurrence = selectedRecurrence;
   const syncRecurrenceUI = () => {
-    const recurrence = q('#ae-recurrence').value;
+    const recurrence = reminderMode ? 'annual' : q('#ae-recurrence').value;
     const dateInput = q('#ae-date');
     const endInput = q('#ae-end-date');
     const startParts = (dateInput.value || dateValue).split('-').map(Number);
@@ -377,25 +378,25 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
       previousRecurrence = recurrence;
     }
     const once = recurrence === 'once';
-    q('#ae-date-label').textContent = once ? 'Startdatum *' : 'Jährlicher Starttag *';
+    q('#ae-date-label').textContent = reminderMode ? 'Mailversandzeitpunkt *' : (once ? 'Startdatum *' : 'Jährlicher Starttag *');
     q('#ae-end-date-label').textContent = once ? 'Enddatum *' : 'Jährlicher Endtag *';
     q('#ae-date-hint').textContent = reminderMode
       ? 'Die E-Mail wird jährlich am gewählten Datum gegen 06:00 Uhr deutscher Zeit an die eingetragenen Empfänger versendet. Der 29. Februar gilt nur in Schaltjahren.'
       : 'Die aktivierte Erinnerung wird 1, 2 oder 7 Tage vor dem Starttag um etwa 06:00 Uhr deutscher Zeit versendet. Der 29. Februar gilt nur in Schaltjahren.';
     if (!reminderMode) q('#ae-end-date-hint').textContent = 'Der Eintrag erscheint einschließlich Start- und Endtag. Ein jährlicher Zeitraum darf über den Jahreswechsel gehen.';
   };
-  q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
+  if (!reminderMode) q('#ae-recurrence').addEventListener('change', syncRecurrenceUI);
   syncRecurrenceUI();
   if (!event) {
     const startInput = q('#ae-date');
     const endInput = q('#ae-end-date');
     let previousStart = startInput.value;
     startInput.addEventListener('change', () => {
-      const recurrence = q('#ae-recurrence').value;
+      const recurrence = reminderMode ? 'annual' : q('#ae-recurrence').value;
       endInput.value = endDateAfterStartChange(previousStart, startInput.value, endInput.value, recurrence);
       previousStart = startInput.value;
     });
-    q('#ae-recurrence').addEventListener('change', () => { previousStart = startInput.value; });
+    if (!reminderMode) q('#ae-recurrence').addEventListener('change', () => { previousStart = startInput.value; });
   }
   const updateAssets = () => {
     q('#ae-assets').innerHTML = assets.map((asset, i) => `<li><span>${esc(asset.inline ? 'Eingebettetes Bild' : 'Anhang')}: ${esc(asset.filename)} (${(asset.size / 1024).toFixed(0)} KB)</span><button class="link-btn" type="button" data-remove-asset="${i}">Entfernen</button></li>`).join('') || '<li>Keine Dateien hinzugefügt.</li>';
@@ -591,15 +592,15 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
     const title = q('#ae-title').value.trim();
     const subject = q('#ae-subject').value.trim();
     const date = q('#ae-date').value;
-    const endDate = q('#ae-end-date').value;
+    const endDate = reminderMode ? date : q('#ae-end-date').value;
     const [year, month, day] = date.split('-').map(Number);
     const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
     const emails = [...q('#ae-recipients').querySelectorAll('input')].map((input) => input.value.trim()).filter(Boolean);
-    const resourceIds = [...q('#ae-resource-list').querySelectorAll('[data-event-resource]:checked')].map((input) => input.dataset.eventResource);
-    const categoryId = q('#ae-category').value;
+    const resourceIds = reminderMode ? [] : [...q('#ae-resource-list').querySelectorAll('[data-event-resource]:checked')].map((input) => input.dataset.eventResource);
+    const categoryId = reminderMode ? null : q('#ae-category').value;
     const body = safeHtml(q('#ae-body').innerHTML);
-    const recurrence = q('#ae-recurrence').value;
-    if (!title || !subject || !date || !endDate || !body.replace(/<[^>]*>/g, '').trim()) return msg('Bitte Name, Start- und Enddatum, Betreff und Nachricht ausfüllen.');
+    const recurrence = reminderMode ? 'annual' : q('#ae-recurrence').value;
+    if (!title || !subject || !date || !endDate || !body.replace(/<[^>]*>/g, '').trim()) return msg(reminderMode ? 'Bitte Erinnerungsname, Mailversandzeitpunkt, Betreff und Nachricht ausfüllen.' : 'Bitte Name, Start- und Enddatum, Betreff und Nachricht ausfüllen.');
     if (recurrence === 'once' && endDate < date) return msg('Das Enddatum darf nicht vor dem Startdatum liegen.');
     if (recurrence === 'annual') {
       const endCheck = new Date(2000, endMonth - 1, endDay);
@@ -607,7 +608,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
     }
     if (!emails.length || emails.length > 10 || emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return msg('Bitte 1 bis 10 gültige E-Mail-Adressen eingeben.');
     if (new Set(emails.map((email) => email.toLowerCase())).size !== emails.length) return msg('Eine E-Mail-Adresse ist mehrfach eingetragen.');
-    if (!categoryId) return msg('Bitte eine Kategorie auswählen.');
+    if (!reminderMode && !categoryId) return msg('Bitte eine Kategorie auswählen.');
     const documentIds = [...q('#ae-library-documents').querySelectorAll('[data-library-document]:checked')].map((input) => input.dataset.libraryDocument);
     const selectedDocs = documentIds.map((documentId) => eventDocuments.find((document) => document.id === documentId)).filter(Boolean);
     const totalBytes = fileTotal(assets) + selectedDocs.reduce((sum, document) => sum + Number(document.file_size || 0), 0);
@@ -623,7 +624,7 @@ function openEventForm(app, store, setNotice, event, initialDate = null, reminde
         event_month: month, event_day: day,
         event_end_month: reminderMode ? month : endMonth, event_end_day: reminderMode ? day : endDay,
         recipients: emails, subject, body_html: body,
-        resource_ids: resourceIds, category_id: categoryId,
+        resource_ids: resourceIds, category_id: reminderMode ? null : categoryId,
         assets, document_ids: documentIds, sender_profile_id: profile.id,
         sender_display_name: profile.display_name, reply_to_email: profile.reply_to,
         active: q('#ae-active').checked,
