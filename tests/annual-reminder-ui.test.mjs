@@ -10,8 +10,14 @@ test('Ereignisse bieten eine eigene jährliche Erinnerung mit Kalenderanzeige un
   assert.match(source, /openEventForm\(app, store, setNotice, null, null, true\)/);
   assert.match(source, /email_on_date: reminderMode/);
   assert.match(source, /Jährliche Wiederholung/);
-  assert.match(source, /resource_ids: resourceIds, category_id: categoryId/);
+  assert.match(source, /resource_ids: resourceIds, category_id: reminderMode \? null : categoryId/);
   assert.match(source, /event\.email_on_date \? `Erinnerung:/);
+  assert.match(source, /Mailversandzeitpunkt \*/);
+  assert.ok(source.includes('annual-event-location-row ${reminderMode'));
+  assert.match(source, /annual-reminder-subject/);
+  assert.match(source, /category_id: reminderMode \? null : categoryId/);
+  assert.match(source, /if \(!reminderMode && !categoryId\)/);
+  assert.match(source, /reminderMode \? 'annual' : q\('#ae-recurrence'\)\.value/);
   assert.match(migration, /add column if not exists email_on_date boolean not null default false/);
   assert.match(worker, /event_email_on_date_due_on/);
 });

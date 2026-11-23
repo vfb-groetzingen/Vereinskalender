@@ -152,7 +152,7 @@ test('Ereignisse werden Ressourcen und Kategorien zugeordnet und datensparsam im
   assert.match(annual, /id="ae-resource-search"/);
   assert.match(annual, /data-event-resource/);
   assert.match(annual, /id="ae-category"/);
-  assert.match(annual, /resource_ids: resourceIds, category_id: categoryId/);
+  assert.match(annual, /resource_ids: resourceIds, category_id: reminderMode \? null : categoryId/);
   assert.match(data, /get_annual_event_calendar_occurrences/);
   assert.match(app, /calendar-all-day-slot/);
   assert.match(css, /calendar-all-day-slot \{[^}]*height: 82px/);
