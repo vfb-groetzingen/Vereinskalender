@@ -21,6 +21,7 @@ MAX_BYTES = 5 * 1024 * 1024
 TZ = ZoneInfo("Europe/Berlin")
 FROM_EMAIL = "vfb-app@vfb-groetzingen.de"
 FROM_NAME = "VfB Grötzingen (Kalender)"
+ADMIN_ALERT_EMAIL = "admin@vfb-groetzingen.de"
 DEFAULT_SIGNATURE_HTML = "<p>Mit freundlichen Grüßen<br>VfB Grötzingen</p><p>Internet: <a href=\"http://www.vfb-groetzingen.de/\">http://www.vfb-groetzingen.de/</a></p>"
 ALLOWED_TAGS = {"p", "div", "br", "b", "strong", "i", "em", "u", "ul", "ol", "li", "h2", "h3", "blockquote", "a", "img"}
 
@@ -287,6 +288,65 @@ def send_checked(smtp, message, recipient):
     return refused
 
 
+def build_admin_failure_message(failures):
+    message = EmailMessage(policy=email.policy.SMTP)
+    message["From"] = formataddr((FROM_NAME, FROM_EMAIL))
+    message["To"] = ADMIN_ALERT_EMAIL
+    message["Subject"] = "Fehler beim automatischen Mailversand im Vereinskalender"
+    lines = [
+        "Beim automatischen Versand von Ereignis- oder Erinnerungsmails ist ein Fehler aufgetreten.",
+        f"Zeitpunkt: {dt.datetime.now(TZ).strftime('%d.%m.%Y %H:%M:%S %Z')}",
+        "",
+    ]
+    for number, failure in enumerate(failures, 1):
+        event = failure.get("event") or {}
+        event_date = failure.get("event_date")
+        if isinstance(event_date, (dt.date, dt.datetime)):
+            event_date = event_date.strftime("%d.%m.%Y")
+        event_name = event.get("title") or "Ereignis ohne Namen"
+        kind = "Jaehrliche Erinnerung" if failure.get("send_on_date") else "Ereignis-Erinnerung"
+        lines.extend([
+            f"{number}. {kind}: {event_name}",
+            f"Datum: {event_date or 'nicht verfuegbar'}",
+            f"Empfaenger: {failure.get('recipient') or 'nicht verfuegbar'}",
+            f"Fehler: {failure.get('error') or 'Unbekannter Fehler'}",
+            "",
+        ])
+    message.set_content("\n".join(lines))
+    return message
+
+
+def notify_admin_failure(failures, smtp=None):
+    if not failures:
+        return True
+    message = build_admin_failure_message(failures)
+    last_error = None
+    for attempt in range(2):
+        connection = smtp if attempt == 0 and smtp is not None else None
+        owned_connection = False
+        if connection is None:
+            try:
+                connection = smtp_connect()
+                owned_connection = True
+            except Exception as exc:
+                last_error = exc
+                continue
+        try:
+            send_checked(connection, message, ADMIN_ALERT_EMAIL)
+            print(f"Fehlerhinweis an {ADMIN_ALERT_EMAIL} versendet.")
+            return True
+        except Exception as exc:
+            last_error = exc
+        finally:
+            if owned_connection:
+                try:
+                    connection.quit()
+                except Exception:
+                    pass
+    print(f"Admin-Fehlerhinweis konnte nicht versendet werden: {last_error}", file=sys.stderr)
+    return False
+
+
 def update_test_request(request_id, status, error=None, event=None):
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     row = {
@@ -419,15 +479,19 @@ def send_event_recipients(event, event_date, smtp, send_on_date=False):
         event.get("email_on_date") is True if send_on_date else event.get("reminder_enabled") is True
     )
     if not enabled:
-        print(f"Erinnerung für Ereignis {event.get('id')} deaktiviert; kein Versand.")
-        return
+        print(f"Erinnerung fuer Ereignis {event.get('id')} deaktiviert; kein Versand.")
+        return []
     previous = previous_delivery_statuses(event["id"], event_date.year)
     handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
     recipients = event.get("recipients") or []
+    if not recipients:
+        return [{"event": event, "event_date": event_date, "recipient": None,
+                 "send_on_date": send_on_date, "error": "Keine Empfaenger hinterlegt."}]
     documents = None
     documents_loaded = False
     documents_error = None
     signature_html = event_signature_html() if event.get("append_signature") is True else None
+    failures = []
 
     for recipient in recipients:
         if recipient.lower() in handled:
@@ -446,14 +510,26 @@ def send_event_recipients(event, event_date, smtp, send_on_date=False):
                 raise RuntimeError(documents_error)
             message = build_message(event, recipient, documents, signature_html)
             send_checked(smtp, message, recipient)
-            upsert_delivery(event, event_date, recipient, "sent", dt.datetime.now(dt.timezone.utc).isoformat())
-            print(f"Versendet: Ereignis {event['id']} an {recipient}")
         except Exception as exc:
             try:
                 upsert_delivery(event, event_date, recipient, "failed", error=str(exc))
             except Exception as log_error:
                 print(f"Versandfehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
-            print(f"FEHLER für Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
+            failures.append({"event": event, "event_date": event_date, "recipient": recipient,
+                             "send_on_date": send_on_date, "error": str(exc)})
+            print(f"FEHLER fuer Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
+            continue
+
+        sent_at = dt.datetime.now(dt.timezone.utc).isoformat()
+        try:
+            upsert_delivery(event, event_date, recipient, "sent", sent_at)
+            print(f"Versendet: Ereignis {event['id']} an {recipient}")
+        except Exception as exc:
+            error = f"SMTP hat die Mail angenommen, aber der Erfolgsstatus konnte nicht gespeichert werden: {exc}"
+            failures.append({"event": event, "event_date": event_date, "recipient": recipient,
+                             "send_on_date": send_on_date, "error": error})
+            print(f"FEHLER beim Protokollieren des Versands fuer Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
+    return failures
 
 
 def main():
@@ -478,31 +554,49 @@ def main():
             event_date = now.date() + dt.timedelta(days=reminder_days(event))
             due_events.append((event, event_date, False))
     if not due_events:
-        print(f"Keine aktivierten Ereignis-Erinnerungen am Fälligkeitstag {now.strftime('%d.%m.%Y')}.")
+        print(f"Keine aktivierten Ereignis-Erinnerungen am Faelligkeitstag {now.strftime('%d.%m.%Y')}.")
         return
 
     try:
         smtp = smtp_connect()
     except Exception as exc:
         error = f"SMTP-Verbindung fehlgeschlagen: {exc}"
-        for event, event_date, _send_on_date in due_events:
+        failures = []
+        for event, event_date, send_on_date in due_events:
             try:
                 previous = previous_delivery_statuses(event["id"], event_date.year)
                 handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
-                for recipient in event.get("recipients") or []:
+                recipients = event.get("recipients") or []
+                if not recipients:
+                    failures.append({"event": event, "event_date": event_date, "recipient": None,
+                                     "send_on_date": send_on_date, "error": error})
+                for recipient in recipients:
                     if recipient.lower() not in handled:
-                        upsert_delivery(event, event_date, recipient, "failed", error=error)
+                        try:
+                            upsert_delivery(event, event_date, recipient, "failed", error=error)
+                        except Exception as log_error:
+                            print(f"Fehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
+                        failures.append({"event": event, "event_date": event_date, "recipient": recipient,
+                                         "send_on_date": send_on_date, "error": error})
             except Exception as log_error:
                 print(f"Fehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
+                failures.append({"event": event, "event_date": event_date, "recipient": None,
+                                 "send_on_date": send_on_date, "error": f"{error}; Protokollfehler: {log_error}"})
         print(error, file=sys.stderr)
+        notify_admin_failure(failures)
         return
 
+    failures = []
     try:
         for event, event_date, send_on_date in due_events:
             try:
-                send_event_recipients(event, event_date, smtp, send_on_date=send_on_date)
+                failures.extend(send_event_recipients(event, event_date, smtp, send_on_date=send_on_date))
             except Exception as exc:
-                print(f"FEHLER für Ereignis {event.get('id')}: {exc}", file=sys.stderr)
+                print(f"FEHLER fuer Ereignis {event.get('id')}: {exc}", file=sys.stderr)
+                failures.append({"event": event, "event_date": event_date, "recipient": None,
+                                 "send_on_date": send_on_date, "error": str(exc)})
+        if failures:
+            notify_admin_failure(failures, smtp=smtp)
     finally:
         try:
             smtp.quit()
@@ -515,4 +609,8 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         print(f"Versandlauf fehlgeschlagen: {error}", file=sys.stderr)
+        try:
+            notify_admin_failure([{"error": f"Unerwarteter Workflow-Fehler: {error}"}])
+        except Exception as notify_error:
+            print(f"Admin-Fehlerhinweis fehlgeschlagen: {notify_error}", file=sys.stderr)
         sys.exit(1)
