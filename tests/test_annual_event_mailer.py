@@ -68,7 +68,8 @@ class AnnualEventMailerTests(unittest.TestCase):
         original_statuses = mailer.previous_delivery_statuses
         mailer.previous_delivery_statuses = lambda *_args: []
         try:
-            self.assertIsNone(mailer.send_event_recipients(event, dt.date(2026, 11, 21), object(), send_on_date=True))
+            failures = mailer.send_event_recipients(event, dt.date(2026, 11, 21), object(), send_on_date=True)
+            self.assertEqual(failures[0]["error"], "Keine Empfaenger hinterlegt.")
         finally:
             mailer.previous_delivery_statuses = original_statuses
 
@@ -150,6 +151,54 @@ class AnnualEventMailerTests(unittest.TestCase):
         attachments = list(sent_messages[0].iter_attachments())
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0].get_filename(), "Programm.pdf")
+
+    def test_failed_delivery_returns_context_for_admin_alert(self):
+        event = {
+            "id": "event-failed-1", "title": "Jahrestag", "active": True,
+            "reminder_enabled": True, "subject": "Erinnerung", "body_html": "<p>Text</p>",
+            "recipients": ["bad@example.org"], "assets": [], "document_ids": [],
+            "append_signature": False,
+        }
+        statuses = []
+        original_previous = mailer.previous_delivery_statuses
+        original_documents = mailer.load_event_documents
+        original_upsert = mailer.upsert_delivery
+        class RejectedSMTP:
+            def send_message(self, _message):
+                raise RuntimeError("SMTP 550 mailbox rejected")
+        try:
+            mailer.previous_delivery_statuses = lambda *_args: []
+            mailer.load_event_documents = lambda _event: []
+            mailer.upsert_delivery = lambda _event, _date, _recipient, status, *args, **kwargs: statuses.append(status)
+            failures = mailer.send_event_recipients(event, dt.date(2026, 6, 10), RejectedSMTP())
+        finally:
+            mailer.previous_delivery_statuses = original_previous
+            mailer.load_event_documents = original_documents
+            mailer.upsert_delivery = original_upsert
+        self.assertEqual(statuses, ["sending", "failed"])
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["recipient"], "bad@example.org")
+        self.assertIn("550", failures[0]["error"])
+
+    def test_admin_failure_notice_includes_event_and_error(self):
+        sent = []
+        class FakeSMTP:
+            def send_message(self, message):
+                sent.append(message)
+                return {}
+        failures = [{
+            "event": {"title": "Jahrestag"},
+            "event_date": dt.date(2026, 6, 10),
+            "recipient": "bad@example.org",
+            "send_on_date": True,
+            "error": "SMTP 550 mailbox rejected",
+        }]
+        self.assertTrue(mailer.notify_admin_failure(failures, smtp=FakeSMTP()))
+        self.assertEqual(sent[0]["To"], "admin@vfb-groetzingen.de")
+        body = sent[0].get_body(preferencelist=("plain",)).get_content()
+        self.assertIn("Jahrestag", body)
+        self.assertIn("10.06.2026", body)
+        self.assertIn("SMTP 550 mailbox rejected", body)
 
     def test_smtp_recipient_rejection_is_reported(self):
         class RejectedSMTP:

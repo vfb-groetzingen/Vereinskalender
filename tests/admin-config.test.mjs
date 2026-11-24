@@ -225,3 +225,16 @@ test('Passwort-Reset nutzt den konfigurierten Redirect und protokolliert Fehler 
   assert.doesNotMatch(setup, /\/vereinskalender\//);
   assert.match(app, /console\.error\('Passwort-Wiederherstellung fehlgeschlagen:'/);
 });
+
+test('Versandstatus jaehrlicher Ereignis-Mails erscheinen im Termin-Aenderungsprotokoll', () => {
+  const source = readFileSync(new URL('../assets/js/app.js', import.meta.url), 'utf-8');
+  const migration = readFileSync(new URL('../supabase/migration-annual-email-audit-log.sql', import.meta.url), 'utf-8');
+  assert.match(source, /mail_sending: 'Versand gestartet'/);
+  assert.match(source, /mail_sent: 'Versand erfolgreich'/);
+  assert.match(source, /mail_failed: 'Versand fehlgeschlagen'/);
+  assert.match(source, /snapshot\.recipient/);
+  assert.match(migration, /after insert or update on public\.annual_email_deliveries/);
+  assert.match(migration, /insert into public\.admin_audit_log/);
+  assert.match(migration, /new\.error/);
+});
+
