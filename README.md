@@ -59,6 +59,7 @@ supabase/migration-event-calendar-resources.sql  Optionale Ressourcenzuordnung, 
 supabase/migration-continuous-booking-series.sql  Fortlaufende Buchungsserien und tägliche Ergänzung
 supabase/migration-multiday-calendar-entries.sql  Ereigniszeiträume, mehrtägige Termine und Serien-Tagesoffset
 supabase/migration-annual-email-on-date.sql  Jährliche Erinnerungs-Mails am eingetragenen Datum
+supabase/migration-annual-email-audit-log.sql  Versandstatus im Termin-Änderungsprotokoll und Berechtigung für Systemeinträge
 supabase/functions/calendar-feed/index.ts  Schreibgeschützter iCalendar-Feed
 supabase/functions/admin-users/index.ts  Einladungen und Wiederfreischaltung vorhandener Konten
 supabase/seed.sql       Startdaten für die Datenbank
@@ -79,7 +80,7 @@ docs/                   Einrichtung, Pflegeanleitung, Testprotokoll
 
 1. Einrichtung in dieser Reihenfolge: `docs/EINRICHTUNG.md`
 2. Bei einer bestehenden Supabase-Installation `supabase/migration-allow-booking-overlaps.sql` einmal im SQL Editor ausführen, damit die bisherige Überschneidungssperre entfernt wird.
-3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Audit-Korrektur kommt direkt nach `supabase/migration-admin-configuration-communications.sql`; anschließend folgen die Buchungs-Mailsteuerung, Ereignis-Mailmigrationen, Serienmigration, Mehrtagesmigration und zuletzt die Migration für jährliche Erinnerungen am eingetragenen Datum. Bestandsinstallationen müssen alle aufgeführten Migrationen ausführen.
+3. Für bestehende und neue Supabase-Projekte die erforderlichen Migrationen in der Reihenfolge aus `docs/EINRICHTUNG.md` ausführen. Die Audit-Korrektur kommt direkt nach `supabase/migration-admin-configuration-communications.sql`; anschließend folgen die Buchungs-Mailsteuerung, Ereignis-Mailmigrationen, Serienmigration, Mehrtagesmigration und zuletzt die Migrationen für jährliche Erinnerungen am eingetragenen Datum sowie deren Versandprotokoll. Bestandsinstallationen müssen alle aufgeführten Migrationen ausführen.
 4. Pflege durch Vereinsmitglieder: `docs/PFLEGE.md`
 5. Prüfung vor dem Live-Betrieb: `docs/TESTPROTOKOLL.md`
 
