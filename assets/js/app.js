@@ -1875,14 +1875,22 @@ async function renderAdmin() {
   const auditEntities = [...new Set(audit.map((entry) => entry.entity_type).filter(Boolean))].sort();
   const auditActions = [...new Set(audit.map((entry) => entry.action).filter(Boolean))].sort();
   const auditUsers = [...new Set(audit.map((entry) => entry.actor_email).filter(Boolean))].sort();
+  const auditEntityLabel = (value) => value === 'annual_event_email' ? 'Ereignis-Mail' : value;
+  const auditActionLabel = (value) => ({
+    created: 'Erstellt', updated: 'Ge\u00e4ndert', deleted: 'Gel\u00f6scht',
+    mail_sending: 'Versand gestartet', mail_sent: 'Versand erfolgreich', mail_failed: 'Versand fehlgeschlagen'
+  })[value] || value;
   const auditRows = audit.map((entry) => {
     const snapshot = entry.after_data || entry.before_data || {};
     const ids = snapshot.resource_ids || (snapshot.resource_id ? [snapshot.resource_id] : []);
     const resource = ids.map((id) => S.allResources.find((r) => r.id === id)?.name || id).join(', ') || snapshot.resource_name || '—';
-    const label = entry.entity_type === 'booking' ? (snapshot.title || 'Termin') : entry.entity_type === 'site_configuration' ? 'Konfiguration' : entry.entity_type === 'public_site_content' ? 'Besucher-/Rechtstext' : entry.entity_type === 'event_documents' ? (snapshot.title || snapshot.file_name || 'Dokument') : entry.entity_type || 'Eintrag';
-    const actionLabel = ({ created: 'Erstellt', updated: 'Geändert', deleted: 'Gelöscht' })[entry.action] || entry.action;
+    const isEmailDelivery = entry.entity_type === 'annual_event_email';
+    const label = isEmailDelivery ? (snapshot.event_title || 'Ereignis-Mail') : entry.entity_type === 'booking' ? (snapshot.title || 'Termin') : entry.entity_type === 'site_configuration' ? 'Konfiguration' : entry.entity_type === 'public_site_content' ? 'Besucher-/Rechtstext' : entry.entity_type === 'event_documents' ? (snapshot.title || snapshot.file_name || 'Dokument') : entry.entity_type || 'Eintrag';
+    const actionLabel = auditActionLabel(entry.action);
+    const statusLabel = ({ sending: 'Wird versendet', sent: 'Versendet', failed: 'Fehlgeschlagen' })[snapshot.status] || snapshot.status || '';
+    const subLabel = isEmailDelivery ? `${snapshot.recipient ? `Empfaenger: ${snapshot.recipient}` : 'Kein Empfaenger'}${statusLabel ? ` · Status: ${statusLabel}` : ''}` : resource;
     const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
-    return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(entry.entity_type)}</td><td>${esc(label)}<br><span class="muted">${esc(resource)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
+    return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(auditEntityLabel(entry.entity_type))}</td><td>${esc(label)}<br><span class="muted">${esc(subLabel)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
   }).join('');
 
   let content = '';
@@ -1906,7 +1914,7 @@ async function renderAdmin() {
       <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'audit') {
     content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
-      <div class="audit-filters"><label>Von <input class="input" id="audit-from" type="date"></label><label>Bis <input class="input" id="audit-to" type="date"></label><label>Aktion <select class="input" id="audit-action-filter"><option value="">Alle</option>${auditActions.map((a) => `<option value="${esc(a)}">${esc(({created:'Erstellt',updated:'Geändert',deleted:'Gelöscht'})[a] || a)}</option>`).join('')}</select></label><label>Bereich <select class="input" id="audit-entity-filter"><option value="">Alle</option>${auditEntities.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Benutzer <select class="input" id="audit-user-filter"><option value="">Alle</option>${auditUsers.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Raum/Platz <select class="input" id="audit-resource-filter"><option value="">Alle</option>${S.allResources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label></div>
+      <div class="audit-filters"><label>Von <input class="input" id="audit-from" type="date"></label><label>Bis <input class="input" id="audit-to" type="date"></label><label>Aktion <select class="input" id="audit-action-filter"><option value="">Alle</option>${auditActions.map((a) => `<option value="${esc(a)}">${esc(auditActionLabel(a))}</option>`).join('')}</select></label><label>Bereich <select class="input" id="audit-entity-filter"><option value="">Alle</option>${auditEntities.map((v) => `<option value="${esc(v)}">${esc(auditEntityLabel(v))}</option>`).join('')}</select></label><label>Benutzer <select class="input" id="audit-user-filter"><option value="">Alle</option>${auditUsers.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Raum/Platz <select class="input" id="audit-resource-filter"><option value="">Alle</option>${S.allResources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label></div>
       <p id="audit-count" class="hint"></p><div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Eintrag</th><th>Änderungen</th></tr></thead><tbody id="audit-results">${auditRows || '<tr><td colspan="5">Noch keine Protokolleinträge.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'config') {
     const configLinks = configMenu.filter((item) => item.enabled).map((item) => `<a href="${configUrl(item.id)}" data-link="/admin?section=config&config=${encodeURIComponent(item.id)}" class="${configSection === item.id ? 'is-active' : ''}">${esc(item.label)}</a>`).join('');
