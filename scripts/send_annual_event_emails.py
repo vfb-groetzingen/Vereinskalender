@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send annual event emails at 06:00 Europe/Berlin via Strato SMTP."""
+"""Send annual event emails at about 06:17 Europe/Berlin via Strato SMTP."""
 import datetime as dt
 import email.policy
 import html
@@ -537,7 +537,7 @@ def main():
         process_test_requests()
         return
     now = dt.datetime.now(TZ)
-    # GitHub Actions runs at 04:00 and 05:00 UTC to cover CET/CEST. Never send early.
+    # Schedule is timezone-aware Europe/Berlin. Never send before 06:00 local time.
     if now.hour < 6:
         print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
         return
