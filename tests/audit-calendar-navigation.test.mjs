@@ -19,6 +19,8 @@ test('Kalenderwochen-Link wird nur für Buchung mit eindeutigem Zielkalender und
   assert.match(app, /destinationIds\.length === 1/);
   assert.match(app, /entry\.entity_type === 'booking' && destinationResource\?\.slug && dateKey/);
   assert.match(app, /\?date=\$\{dateKey\}&view=week/);
+  assert.match(app, /const jumpHref = jumpRoute \? `\$\{BASE\}\$\{jumpRoute\}` : null/);
+  assert.match(app, /href=\"\$\{esc\(jumpHref\)\}\" data-link=\"\$\{esc\(jumpRoute\)\}\"/);
   assert.match(app, /Kalenderwoche öffnen/);
 });
 
