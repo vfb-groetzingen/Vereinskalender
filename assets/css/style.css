@@ -582,3 +582,14 @@ textarea.input { resize: vertical; }
 .annual-reminder-date { width: max-content; min-width: min(100%, 16rem); max-width: 100%; box-sizing: border-box; }
 .annual-reminder-hidden { display: none !important; }
 @media (max-width: 640px) { .annual-hero-actions { width: 100%; } .annual-hero-actions .btn { flex: 1 1 auto; } }
+
+
+/* Minimised admin-only user activity status. */
+.presence-explanation { max-width: 76rem; }
+.member-activity-cell { min-width: 14rem; white-space: nowrap; }
+.presence-online { display: inline-flex; align-items: center; gap: .45rem; color: #176b3a; font-weight: 700; }
+.presence-dot { width: .58rem; height: .58rem; border-radius: 50%; background: #248a50; box-shadow: 0 0 0 3px #e4f4e9; }
+.presence-last-seen { color: var(--text); }
+.presence-never, .presence-unavailable { color: var(--muted); }
+.presence-unavailable { white-space: normal; }
+.presence-refresh-status { min-height: 1.25em; margin: -.25rem 0 .45rem; color: var(--muted); font-size: .85rem; }
