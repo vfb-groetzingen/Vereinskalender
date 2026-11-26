@@ -2067,11 +2067,12 @@ async function renderAdmin() {
       ? S.resources.find((resource) => resource.id === destinationIds[0])
       : null;
     const dateKey = auditDateKey(destinationDate);
-    const jumpPath = entry.entity_type === 'booking' && destinationResource?.slug && dateKey
-      ? `${roomUrl(destinationResource.slug)}?date=${dateKey}&view=week`
+    const jumpRoute = entry.entity_type === 'booking' && destinationResource?.slug && dateKey
+      ? `/raeume/${encodeURIComponent(destinationResource.slug)}?date=${dateKey}&view=week`
       : null;
-    const jumpLink = jumpPath
-      ? `<a class="audit-calendar-jump" href="${esc(jumpPath)}" data-link="${esc(jumpPath)}">Kalenderwoche öffnen</a>`
+    const jumpHref = jumpRoute ? `${BASE}${jumpRoute}` : null;
+    const jumpLink = jumpRoute
+      ? `<a class="audit-calendar-jump" href="${esc(jumpHref)}" data-link="${esc(jumpRoute)}">Kalenderwoche öffnen</a>`
       : '';
     const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
     return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(auditEntityLabel(entry.entity_type))}</td><td>${esc(calendarLabel)}</td><td><span>${esc(dateLabel)}</span>${jumpLink}</td><td>${esc(label)}${subLabel ? `<br><span class="muted">${esc(subLabel)}</span>` : ''}</td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
