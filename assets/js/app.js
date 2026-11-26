@@ -467,8 +467,33 @@ function combinedRange() {
 }
 
 
+function applyRoomQueryState() {
+  const params = new URLSearchParams(location.search);
+  const rawDate = params.get('date');
+  if (!rawDate && !params.has('view')) return;
+
+  const match = rawDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [year, month, day] = match.slice(1).map(Number);
+    const target = new Date(year, month - 1, day);
+    const isRealDate = target.getFullYear() === year && target.getMonth() === month - 1 && target.getDate() === day;
+    if (isRealDate) {
+      S.roomAnchor = target;
+      const requestedView = params.get('view');
+      S.roomView = ['day', 'week', 'month'].includes(requestedView) ? requestedView : 'week';
+    }
+  }
+
+  // Consume the one-time jump parameters so calendar controls can navigate normally afterward.
+  params.delete('date');
+  params.delete('view');
+  const query = params.toString();
+  history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash || ''}`);
+}
+
 // ---------- Raumseite ----------
 async function renderRoom(res) {
+  applyRoomQueryState();
   const range = roomRange();
   const all = await S.store.getBookings({ from: range.from, to: range.to });
   S.bookings = all;
@@ -1989,17 +2014,67 @@ async function renderAdmin() {
     created: 'Erstellt', updated: 'Ge\u00e4ndert', deleted: 'Gel\u00f6scht',
     mail_sending: 'Versand gestartet', mail_sent: 'Versand erfolgreich', mail_failed: 'Versand fehlgeschlagen'
   })[value] || value;
+  const auditResourceIds = (...snapshots) => [...new Set(snapshots.flatMap((snapshot) => {
+    if (!snapshot) return [];
+    const ids = Array.isArray(snapshot.resource_ids) ? snapshot.resource_ids : snapshot.resource_ids ? [snapshot.resource_ids] : [];
+    return [...ids, ...(snapshot.resource_id ? [snapshot.resource_id] : [])].filter(Boolean).map(String);
+  }))];
+  const auditDateValue = (snapshot) => snapshot?.starts_at || snapshot?.event_date || snapshot?.starts_on || snapshot?.date || null;
+  const parseAuditDate = (value) => {
+    if (!value) return null;
+    const raw = String(value);
+    const dayOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const date = dayOnly
+      ? new Date(Number(dayOnly[1]), Number(dayOnly[2]) - 1, Number(dayOnly[3]))
+      : new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const formatAuditDate = (value) => {
+    const date = parseAuditDate(value);
+    if (!date) return '';
+    const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+    const day = date.toLocaleDateString('de-DE', { dateStyle: 'medium' });
+    return dayOnly ? day : `${day}, ${date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+  const auditDateKey = (value) => {
+    const date = parseAuditDate(value);
+    if (!date) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
   const auditRows = audit.map((entry) => {
-    const snapshot = entry.after_data || entry.before_data || {};
-    const ids = snapshot.resource_ids || (snapshot.resource_id ? [snapshot.resource_id] : []);
-    const resource = ids.map((id) => S.allResources.find((r) => r.id === id)?.name || id).join(', ') || snapshot.resource_name || '—';
+    const before = entry.before_data || null;
+    const after = entry.after_data || null;
+    const snapshot = after || before || {};
+    const ids = auditResourceIds(before, after);
+    const resourceNames = ids.map((id) => S.allResources.find((r) => r.id === id)?.name || id);
+    const calendarLabel = resourceNames.join(', ') || snapshot.resource_name || '—';
     const isEmailDelivery = entry.entity_type === 'annual_event_email';
     const label = isEmailDelivery ? (snapshot.event_title || 'Ereignis-Mail') : entry.entity_type === 'booking' ? (snapshot.title || 'Termin') : entry.entity_type === 'site_configuration' ? 'Konfiguration' : entry.entity_type === 'public_site_content' ? 'Besucher-/Rechtstext' : entry.entity_type === 'event_documents' ? (snapshot.title || snapshot.file_name || 'Dokument') : entry.entity_type || 'Eintrag';
     const actionLabel = auditActionLabel(entry.action);
     const statusLabel = ({ sending: 'Wird versendet', sent: 'Versendet', failed: 'Fehlgeschlagen' })[snapshot.status] || snapshot.status || '';
-    const subLabel = isEmailDelivery ? `${snapshot.recipient ? `Empfaenger: ${snapshot.recipient}` : 'Kein Empfaenger'}${statusLabel ? ` · Status: ${statusLabel}` : ''}` : resource;
+    const subLabel = isEmailDelivery ? `${snapshot.recipient ? `Empfaenger: ${snapshot.recipient}` : 'Kein Empfaenger'}${statusLabel ? ` · Status: ${statusLabel}` : ''}` : '';
+    const beforeDate = auditDateValue(before);
+    const afterDate = auditDateValue(after);
+    const beforeDateLabel = formatAuditDate(beforeDate);
+    const afterDateLabel = formatAuditDate(afterDate);
+    const dateLabel = beforeDateLabel && afterDateLabel && String(beforeDate) !== String(afterDate)
+      ? `${beforeDateLabel} → ${afterDateLabel}`
+      : afterDateLabel || beforeDateLabel || '—';
+    const destination = entry.action === 'deleted' ? (before || after) : (after || before);
+    const destinationIds = auditResourceIds(destination);
+    const destinationDate = auditDateValue(destination);
+    const destinationResource = destinationIds.length === 1
+      ? S.resources.find((resource) => resource.id === destinationIds[0])
+      : null;
+    const dateKey = auditDateKey(destinationDate);
+    const jumpPath = entry.entity_type === 'booking' && destinationResource?.slug && dateKey
+      ? `${roomUrl(destinationResource.slug)}?date=${dateKey}&view=week`
+      : null;
+    const jumpLink = jumpPath
+      ? `<a class="audit-calendar-jump" href="${esc(jumpPath)}" data-link="${esc(jumpPath)}">Kalenderwoche öffnen</a>`
+      : '';
     const detail = JSON.stringify({ vorher: entry.before_data, nachher: entry.after_data }, null, 2);
-    return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(auditEntityLabel(entry.entity_type))}</td><td>${esc(label)}<br><span class="muted">${esc(subLabel)}</span></td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
+    return `<tr data-audit-row data-action="${esc(entry.action)}" data-entity="${esc(entry.entity_type)}" data-user="${esc(entry.actor_email || '')}" data-date="${esc(entry.occurred_at)}" data-resources="${esc(ids.join(','))}"><td>${esc(new Date(entry.occurred_at).toLocaleString('de-DE'))}</td><td>${esc(entry.actor_email || 'System')}</td><td>${esc(actionLabel)} · ${esc(auditEntityLabel(entry.entity_type))}</td><td>${esc(calendarLabel)}</td><td><span>${esc(dateLabel)}</span>${jumpLink}</td><td>${esc(label)}${subLabel ? `<br><span class="muted">${esc(subLabel)}</span>` : ''}</td><td><details><summary>Details</summary><pre class="audit-json">${esc(detail)}</pre></details></td></tr>`;
   }).join('');
 
   let content = '';
@@ -2025,7 +2100,7 @@ async function renderAdmin() {
   } else if (section === 'audit') {
     content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
       <div class="audit-filters"><label>Von <input class="input" id="audit-from" type="date"></label><label>Bis <input class="input" id="audit-to" type="date"></label><label>Aktion <select class="input" id="audit-action-filter"><option value="">Alle</option>${auditActions.map((a) => `<option value="${esc(a)}">${esc(auditActionLabel(a))}</option>`).join('')}</select></label><label>Bereich <select class="input" id="audit-entity-filter"><option value="">Alle</option>${auditEntities.map((v) => `<option value="${esc(v)}">${esc(auditEntityLabel(v))}</option>`).join('')}</select></label><label>Benutzer <select class="input" id="audit-user-filter"><option value="">Alle</option>${auditUsers.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Raum/Platz <select class="input" id="audit-resource-filter"><option value="">Alle</option>${S.allResources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label></div>
-      <p id="audit-count" class="hint"></p><div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Eintrag</th><th>Änderungen</th></tr></thead><tbody id="audit-results">${auditRows || '<tr><td colspan="5">Noch keine Protokolleinträge.</td></tr>'}</tbody></table></div></section>`;
+      <p id="audit-count" class="hint"></p><div class="table-wrap"><table class="table"><thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Aktion</th><th>Kalender</th><th>Termin</th><th>Eintrag</th><th>Änderungen</th></tr></thead><tbody id="audit-results">${auditRows || '<tr><td colspan="7">Noch keine Protokolleinträge.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'config') {
     const configLinks = configMenu.filter((item) => item.enabled).map((item) => `<a href="${configUrl(item.id)}" data-link="/admin?section=config&config=${encodeURIComponent(item.id)}" class="${configSection === item.id ? 'is-active' : ''}">${esc(item.label)}</a>`).join('');
     let docs = [], events = [];
