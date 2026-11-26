@@ -1129,11 +1129,12 @@ function openDetail(id, editFirst = false) {
   const resourceNames = resourceIds.map((id) => resById(id)?.name).filter(Boolean).join(', ');
   const cat = catById(b.category_id);
   const start = new Date(b.starts_at), end = new Date(b.ends_at);
+  const dateLabel = L.ymd(start) === L.ymd(end) ? dayLong(start) : `${dayLong(start)} \u2013 ${dayLong(end)}`;
   const d = makeDialog(b.title, `
     <dl class="details">
       <dt>Ressourcen</dt><dd>${esc(resourceNames)}</dd>
       <dt>Kategorie</dt><dd><span class="chip" style="background:${catColor(b.category_id)}"></span>${esc(cat?.name || '')}</dd>
-      <dt>Datum</dt><dd>${esc(dayLong(start))}</dd>
+      <dt>Datum</dt><dd>${esc(dateLabel)}</dd>
       <dt>Zeit</dt><dd>${hhmm(start)} – ${hhmm(end)} Uhr</dd>
       ${isEditor() && b.notes ? `<dt>Notiz</dt><dd>${esc(b.notes)}</dd>` : ''}
       ${b.series_id ? `<dt>Serie</dt><dd>${seriesMark(b)} Teil einer Terminserie</dd>` : ''}
