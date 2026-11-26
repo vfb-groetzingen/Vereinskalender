@@ -44,6 +44,12 @@ const S = {
   publicContent: null
 };
 
+const PRESENCE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
+let presenceHeartbeatTimer = null;
+let adminPresencePollTimer = null;
+let adminPresenceRequestInFlight = false;
+let adminPresencePollGeneration = 0;
+
 // ---------- Routing ----------
 function relPath() {
   let p = location.pathname;
@@ -200,7 +206,7 @@ function renderHeader() {
     </div>`;
   const li = $('#btn-login'); if (li) li.addEventListener('click', openLogin);
   const pw = $('#btn-password'); if (pw) pw.addEventListener('click', () => openPasswordDialog({ title: 'Passwort ändern' }));
-  const lo = $('#btn-logout'); if (lo) lo.addEventListener('click', async () => { await s.signOut(); setNotice('ok', 'Sie sind abgemeldet.'); render(); });
+  const lo = $('#btn-logout'); if (lo) lo.addEventListener('click', async () => { stopPresenceHeartbeat(); await s.signOut(); setNotice('ok', 'Sie sind abgemeldet.'); render(); });
 }
 
 // ---------- Startseite ----------
@@ -1822,8 +1828,108 @@ function openAdmin() {
   renderAdmin();
 }
 
+function memberActivityMarkup(lastSeenAt, available = true) {
+  if (!available) return '<span class="presence-unavailable">Status nicht verfügbar – Migration fehlt</span>';
+  if (!lastSeenAt) return '<span class="presence-never">Noch nicht erfasst</span>';
+  const lastSeen = new Date(lastSeenAt);
+  if (Number.isNaN(lastSeen.getTime())) return '<span class="presence-never">Zeitstempel nicht verfügbar</span>';
+  const age = Date.now() - lastSeen.getTime();
+  if (age >= 0 && age <= PRESENCE_ONLINE_WINDOW_MS) {
+    return '<span class="presence-online"><span class="presence-dot" aria-hidden="true"></span>Gerade aktiv</span>';
+  }
+  const iso = lastSeen.toISOString();
+  const label = lastSeen.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+  return `<span class="presence-last-seen">Zuletzt online: <time datetime="${esc(iso)}">${esc(label)}</time></span>`;
+}
+
+function stopPresenceHeartbeat() {
+  if (presenceHeartbeatTimer) clearInterval(presenceHeartbeatTimer);
+  presenceHeartbeatTimer = null;
+}
+
+async function sendPresenceHeartbeat() {
+  if (document.visibilityState !== 'visible' || S.store?.mode !== 'supabase' || !S.store.session || !S.store.userId || !S.store.isEditor()) return;
+  try { await S.store.touchPresence(); }
+  catch (error) { console.warn('Aktivitätszeitstempel konnte nicht aktualisiert werden.', error); }
+}
+
+function syncPresenceHeartbeat() {
+  const eligible = S.store?.mode === 'supabase' && Boolean(S.store.session && S.store.userId && S.store.isEditor());
+  if (!eligible || document.visibilityState !== 'visible') {
+    stopPresenceHeartbeat();
+    return;
+  }
+  if (!presenceHeartbeatTimer) {
+    void sendPresenceHeartbeat();
+    presenceHeartbeatTimer = setInterval(() => { void sendPresenceHeartbeat(); }, 60_000);
+  }
+}
+
+function stopAdminPresencePolling() {
+  if (adminPresencePollTimer) clearInterval(adminPresencePollTimer);
+  adminPresencePollTimer = null;
+  adminPresencePollGeneration++;
+}
+
+function adminUsersViewIsVisible() {
+  const route = parseRoute();
+  return document.visibilityState === 'visible'
+    && route.name === 'admin'
+    && route.section === 'users'
+    && S.store?.mode === 'supabase'
+    && S.store.isAdmin()
+    && Boolean($('#member-presence-note'));
+}
+
+function updatePresenceCells(presence, available) {
+  const byUser = new Map((presence || []).map((row) => [row.user_id, row.last_seen_at]));
+  document.querySelectorAll('[data-member-presence]').forEach((cell) => {
+    const userId = cell.dataset.memberPresence;
+    const lastSeen = byUser.get(userId) || null;
+    cell.dataset.lastSeen = lastSeen || '';
+    cell.innerHTML = memberActivityMarkup(lastSeen, available);
+  });
+}
+
+async function refreshAdminPresence() {
+  if (!adminUsersViewIsVisible() || adminPresenceRequestInFlight) return;
+  adminPresenceRequestInFlight = true;
+  const generation = adminPresencePollGeneration;
+  try {
+    const result = await S.store.getMemberPresence();
+    if (generation !== adminPresencePollGeneration || !adminUsersViewIsVisible()) return;
+    const available = result?.presence_available !== false;
+    updatePresenceCells(result?.presence || [], available);
+    const note = $('#member-presence-refresh-status');
+    if (note) note.textContent = available ? `Zuletzt aktualisiert: ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}.` : 'Status nicht verfügbar – bitte die Präsenzmigration ausführen.';
+  } catch {
+    if (generation !== adminPresencePollGeneration || !adminUsersViewIsVisible()) return;
+    // Re-evaluate the cached timestamps so the 2-minute active label does not remain stale.
+    document.querySelectorAll('[data-member-presence]').forEach((cell) => {
+      cell.innerHTML = memberActivityMarkup(cell.dataset.lastSeen || null, true);
+    });
+    const note = $('#member-presence-refresh-status');
+    if (note) note.textContent = 'Aktivitätsstatus konnte gerade nicht aktualisiert werden.';
+  } finally {
+    adminPresenceRequestInFlight = false;
+  }
+}
+
+function startAdminPresencePolling() {
+  if (!adminUsersViewIsVisible() || adminPresencePollTimer) return;
+  void refreshAdminPresence();
+  adminPresencePollTimer = setInterval(() => { void refreshAdminPresence(); }, 30_000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  syncPresenceHeartbeat();
+  if (document.visibilityState === 'visible') startAdminPresencePolling();
+  else stopAdminPresencePolling();
+});
+
 async function renderAdmin() {
   if (S.store.mode !== 'supabase' || !S.store.isAdmin()) {
+    stopAdminPresencePolling();
     app.innerHTML = '<section class="hero"><h1>Kein Zugriff</h1><p>Der Admin-Bereich ist nur für Administratoren verfügbar.</p></section>';
     return;
   }
@@ -1837,7 +1943,9 @@ async function renderAdmin() {
   ]);
   const failures = [];
   const resources = results[0].status === 'fulfilled' ? results[0].value || [] : (failures.push('Räume/Plätze: ' + friendlyError(results[0].reason)), []);
-  const users = results[1].status === 'fulfilled' ? results[1].value?.users || [] : (failures.push('Benutzerverwaltung: ' + friendlyError(results[1].reason)), []);
+  const memberResult = results[1].status === 'fulfilled' ? results[1].value : null;
+  const users = memberResult?.users || (results[1].status === 'rejected' ? (failures.push('Benutzerverwaltung: ' + friendlyError(results[1].reason)), []) : []);
+  const presenceAvailable = memberResult?.presence_available !== false;
   const audit = results[2].status === 'fulfilled' ? results[2].value || [] : (failures.push('Änderungsprotokoll: ' + friendlyError(results[2].reason)), []);
   const config = results[3].status === 'fulfilled' ? results[3].value : null;
   const publicContent = results[4].status === 'fulfilled' ? results[4].value : null;
@@ -1869,6 +1977,7 @@ async function renderAdmin() {
   </tr>`).join('');
   const userRows = users.map((u) => `<tr>
     <td>${esc(u.email || '—')}</td><td>${u.email_confirmed_at ? 'Bestätigt' : 'Einladung ausstehend'}</td>
+    <td class="member-activity-cell" data-member-presence="${esc(u.id)}" data-last-seen="${esc(u.last_seen_at || '')}">${memberActivityMarkup(u.last_seen_at, presenceAvailable)}</td>
     <td><select class="input" data-member-role="${esc(u.id)}"><option value="bearbeiter" ${u.role === 'bearbeiter' ? 'selected' : ''}>Bearbeiter</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option></select></td>
     <td class="admin-actions"><button type="button" class="btn btn-small" data-member-save="${esc(u.id)}">Rolle speichern</button><button type="button" class="btn btn-small btn-danger" data-member-remove="${esc(u.id)}">Zugang entziehen</button></td>
   </tr>`).join('');
@@ -1911,7 +2020,8 @@ async function renderAdmin() {
       <div class="field"><label for="invite-email">E-Mail-Adresse</label><input id="invite-email" type="email" class="input" required autocomplete="email"></div>
       <div class="field"><label for="invite-role">Rolle</label><select id="invite-role" class="input"><option value="bearbeiter">Bearbeiter</option><option value="admin">Administrator</option></select></div>
       <button type="submit" class="btn btn-primary">Einladen / reaktivieren</button><p class="msg" id="invite-msg" role="alert"></p></form>
-      <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="4">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
+      <p class="hint presence-explanation" id="member-presence-note">Aktivitätsstatus: „Gerade aktiv“ bedeutet, dass in den letzten zwei Minuten ein Zeitstempel eingegangen ist. Er wird etwa jede Minute aktualisiert, solange die Kalenderseite angemeldet und sichtbar ist. Es werden ausschließlich Zeitstempel gespeichert – keine Klicks, Tastatureingaben oder Seiteninhalte.</p><p class="presence-refresh-status" id="member-presence-refresh-status" aria-live="polite"></p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>E-Mail</th><th>Status</th><th>Aktivität</th><th>Rolle</th><th>Aktionen</th></tr></thead><tbody>${userRows || '<tr><td colspan="5">Noch keine Mitglieder geladen.</td></tr>'}</tbody></table></div></section>`;
   } else if (section === 'audit') {
     content = `<section class="section admin-section"><h2>${esc(adminLabel('audit'))}</h2><p class="hint">Letzte 1000 Änderungen, unveränderlich protokolliert.</p>
       <div class="audit-filters"><label>Von <input class="input" id="audit-from" type="date"></label><label>Bis <input class="input" id="audit-to" type="date"></label><label>Aktion <select class="input" id="audit-action-filter"><option value="">Alle</option>${auditActions.map((a) => `<option value="${esc(a)}">${esc(auditActionLabel(a))}</option>`).join('')}</select></label><label>Bereich <select class="input" id="audit-entity-filter"><option value="">Alle</option>${auditEntities.map((v) => `<option value="${esc(v)}">${esc(auditEntityLabel(v))}</option>`).join('')}</select></label><label>Benutzer <select class="input" id="audit-user-filter"><option value="">Alle</option>${auditUsers.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label><label>Raum/Platz <select class="input" id="audit-resource-filter"><option value="">Alle</option>${S.allResources.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label></div>
@@ -1938,6 +2048,8 @@ async function renderAdmin() {
 
   app.innerHTML = `<header class="page-head"><div><h1>Administration</h1><p class="muted">Verwaltung des Vereinskalenders.</p></div></header><nav class="admin-subnav" aria-label="Administrations-Unterseiten">${adminNav}</nav>${failuresHtml}${content}`;
   if (section === 'resources' || section === 'users') bindAdmin(resources);
+  if (section === 'users') startAdminPresencePolling();
+  else stopAdminPresencePolling();
   if (section === 'audit') bindAuditFilters();
 }
 
@@ -2059,6 +2171,8 @@ function renderNotFound() {
 async function render() {
   renderHeader();
   const route = parseRoute();
+  syncPresenceHeartbeat();
+  if (route.name !== 'admin' || route.section !== 'users') stopAdminPresencePolling();
   document.body.classList.toggle('combined-plan-active', route.name === 'combinedPlan');
   document.body.classList.toggle('booking-plan-active', route.name === 'plan');
   try {
@@ -2082,6 +2196,7 @@ async function boot() {
     S.seed = await loadSeed();
     S.store = await createStore(S.seed);
     await S.store.init();
+    syncPresenceHeartbeat();
     if (S.store.mode === 'supabase') {
       try { S.publicContent = await S.store.getPublicSiteContent(); } catch { S.publicContent = null; }
       S.resources = await S.store.getResources();

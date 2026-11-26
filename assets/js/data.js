@@ -372,6 +372,11 @@ export class SupabaseStore {
   }
 
   async listMembers() { return this.adminRequest({ action: 'list' }); }
+  async getMemberPresence() { return this.adminRequest({ action: 'presence' }); }
+  async touchPresence() {
+    if (!this.session?.access_token || !this.userId || !this.isEditor()) return null;
+    return this._req('/rest/v1/rpc/touch_user_presence', { method: 'POST', body: {} });
+  }
   async inviteMember(email, role) { return this.adminRequest({ action: 'invite', email, role }); }
   async setMemberRole(userId, role) { return this.adminRequest({ action: 'set_role', userId, role }); }
   async removeMember(userId) { return this.adminRequest({ action: 'remove', userId }); }
@@ -380,6 +385,7 @@ export class SupabaseStore {
     this.session = null;
     this.role = null;
     this.userEmail = '';
+    this.userId = null;
     localStorage.removeItem(this.sessionKey);
   }
 
