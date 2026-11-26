@@ -593,3 +593,8 @@ textarea.input { resize: vertical; }
 .presence-never, .presence-unavailable { color: var(--muted); }
 .presence-unavailable { white-space: normal; }
 .presence-refresh-status { min-height: 1.25em; margin: -.25rem 0 .45rem; color: var(--muted); font-size: .85rem; }
+
+
+/* Kalenderwochen-Sprung aus dem Änderungsprotokoll. */
+.audit-calendar-jump { display: inline-block; margin-top: .2rem; font-size: .88rem; font-weight: 600; white-space: nowrap; }
+.audit-calendar-jump:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
