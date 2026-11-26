@@ -89,6 +89,8 @@ test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungs
   assert.match(config, /BASE_PATH: '\/Vereinskalender\//);
   assert.match(app, /if \(p === '\/belegungsplan\/gesamt'\) return \{ name: 'combinedPlan' \}/);
   assert.match(app, /querySelectorAll\('\.combined-event'\).*openDetail\(button\.dataset\.id\)/s);
+  assert.match(app, /const dateLabel = L\.ymd\(start\) === L\.ymd\(end\) \? dayLong\(start\) :/);
+  assert.match(app, /<dt>Datum<\/dt><dd>\$\{esc\(dateLabel\)\}<\/dd>/);
   assert.match(app, /\.trim\(\)\.toLowerCase\(\) === 'veranstaltung'/);
   assert.match(app, /contactEmail = eventCategory \? null/);
   assert.match(app, /reminderDays = eventCategory \? 0/);
