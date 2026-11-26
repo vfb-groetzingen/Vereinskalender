@@ -143,6 +143,7 @@ Auf Computer (Chrome oder Firefox), Tablet und Smartphone prüfen.
 - [ ] Import: Excel-Datei (.xlsx) wird gelesen
 - [ ] Export: einzelner Kalender sowie alle aktiven Kalender als CSV und XLSX herunterladen
 - [ ] Administrator: Benutzer/Einladungen, Ressourcen und Änderungsprotokoll über die Admin-Unterseiten bedienen
+- [ ] Änderungsprotokoll: Kalender und Terminzeit für Buchungen kontrollieren; einen eindeutigen Buchungseintrag öffnen und prüfen, dass der zugehörige Kalender in der richtigen Wochenansicht startet. Einträge mit mehreren Kalendern dürfen keinen mehrdeutigen Sprung-Link erhalten.
 - [ ] Konfiguration: Mailprofile und Antwortadressen speichern; im Ereignis prüfen, dass Reply-To an die ausgewählte Adresse geht und From `vfb-app@vfb-groetzingen.de` bleibt
 - [ ] Konfiguration: Vorlagenvorschau, Klartextsignatur, Besucher-/Rechtstexte und Navigation speichern
 - [ ] Dokumentablage: Anzeigenamen nachträglich ändern (Dateiname bleibt unverändert), Bild komprimieren, PDF laden, 5-MB-Grenze prüfen; zugeordnetes Original kann nicht endgültig gelöscht werden; Ereignislöschung erhält Original
