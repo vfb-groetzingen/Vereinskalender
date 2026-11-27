@@ -2,10 +2,9 @@ name: Jährliche Ereignis-E-Mails
 
 on:
   schedule:
-    # Erster Versuch kurz nach Mitternacht; danach alle fuenf Minuten als Retry.
-    # Actions kann geplante Laeufe trotzdem verzoegern oder auslassen.
-    -  - cron: "*/5 * * * *"
-      timezone: "Europe/Berlin"
+    # Wie der funktionierende Testmail-Workflow: alle fünf Minuten.
+    # Das Skript berechnet den Fälligkeitstag mit Europe/Berlin.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
