@@ -62,6 +62,77 @@ class AnnualEventMailerTests(unittest.TestCase):
         event["active"] = False
         self.assertFalse(mailer.event_email_on_date_due_on(event, dt.date(2026, 11, 21)))
 
+    def test_main_checks_due_events_before_six_am(self):
+        class BeforeSixDateTime(dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 11, 21, 0, 2, tzinfo=tz)
+
+        from unittest import mock
+        with mock.patch.object(mailer.dt, "datetime", BeforeSixDateTime), \
+                mock.patch.object(mailer, "api", return_value=[]) as api_call:
+            mailer.main()
+        api_call.assert_called_once()
+
+    def test_stale_sending_delivery_is_retried(self):
+        event = {
+            "id": "stale-event-1", "title": "Jahrestag", "active": True,
+            "reminder_enabled": True, "subject": "Erinnerung", "body_html": "<p>Text</p>",
+            "recipients": ["person@example.org"], "assets": [], "document_ids": [],
+            "append_signature": False,
+        }
+        old_time = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=20)).isoformat()
+        original_previous = mailer.previous_delivery_statuses
+        original_documents = mailer.load_event_documents
+        original_upsert = mailer.upsert_delivery
+        statuses = []
+        sent = []
+
+        class FakeSMTP:
+            def send_message(self, message):
+                sent.append(message)
+                return {}
+
+        try:
+            mailer.previous_delivery_statuses = lambda *_args: [
+                {"recipient": "person@example.org", "status": "sending", "updated_at": old_time}
+            ]
+            mailer.load_event_documents = lambda _event: []
+            mailer.upsert_delivery = lambda _event, _date, _recipient, status, *args, **kwargs: statuses.append(status)
+            failures = mailer.send_event_recipients(event, dt.date(2026, 11, 21), FakeSMTP())
+        finally:
+            mailer.previous_delivery_statuses = original_previous
+            mailer.load_event_documents = original_documents
+            mailer.upsert_delivery = original_upsert
+
+        self.assertEqual(failures, [])
+        self.assertEqual(statuses, ["failed", "sending", "sent"])
+        self.assertEqual(len(sent), 1)
+
+    def test_admin_failure_alert_is_throttled_for_one_hour(self):
+        now = dt.datetime(2026, 11, 21, 12, 0, tzinfo=dt.timezone.utc)
+        recently_notified = [{
+            "recipient": "person@example.org", "status": "failed",
+            "last_notified_at": (now - dt.timedelta(minutes=30)).isoformat(),
+        }]
+        old_notice = [{
+            "recipient": "person@example.org", "status": "failed",
+            "last_notified_at": (now - dt.timedelta(hours=2)).isoformat(),
+        }]
+        self.assertFalse(mailer.admin_alert_due(recently_notified, "person@example.org", now=now))
+        self.assertTrue(mailer.admin_alert_due(old_notice, "person@example.org", now=now))
+
+    def test_recent_sending_delivery_is_not_retried(self):
+        event = {"id": "active-event", "title": "Test", "active": True,
+                 "reminder_enabled": True, "recipients": ["person@example.org"]}
+        recent_time = dt.datetime.now(dt.timezone.utc).isoformat()
+        handled = mailer.handled_delivery_recipients(
+            event,
+            dt.date(2026, 11, 21),
+            [{"recipient": "person@example.org", "status": "sending", "updated_at": recent_time}],
+        )
+        self.assertEqual(handled, {"person@example.org"})
+
     def test_send_event_recipients_accepts_on_date_mode_without_pre_event_switch(self):
         event = {"id": "reminder-1", "title": "Test", "active": True, "email_on_date": True,
                  "reminder_enabled": False, "recipients": []}
@@ -135,7 +206,7 @@ class AnnualEventMailerTests(unittest.TestCase):
                 return {}
 
         try:
-            mailer.previous_delivery_statuses = lambda _event_id, _year: []
+            mailer.previous_delivery_statuses = lambda *_args: []
             mailer.load_event_documents = lambda _event: documents
             mailer.download_library_asset = lambda _path, _document_id: b"pdf-data"
             mailer.upsert_delivery = lambda _event, _date, _recipient, status, *args, **kwargs: delivery_statuses.append(status)
@@ -232,21 +303,48 @@ class AnnualEventMailerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Ungültiger Dateipfad"):
             cleanup.asset_paths({"id": "event-1", "assets": [{"path": "other-event/file.png"}]})
 
-    def test_annual_delivery_log_keeps_event_and_occurrence_date(self):
+    def test_previous_delivery_lookup_filters_delivery_kind(self):
+        captured = []
+        original_api = mailer.api
+        try:
+            mailer.api = lambda method, path, body=None, prefer=None: captured.append(path) or []
+            mailer.previous_delivery_statuses("event-kind-1", 2026, "on_date")
+        finally:
+            mailer.api = original_api
+        self.assertIn("delivery_kind=eq.on_date", captured[0])
+
+    def test_delivery_log_distinguishes_reminder_from_on_date(self):
         captured = []
         original_api = mailer.api
         try:
             mailer.api = lambda method, path, body=None, prefer=None: captured.append(body)
+            event = {"id": "event-kind-1", "title": "Jahrestag", "recurrence": "annual"}
+            mailer.upsert_delivery(event, dt.date(2026, 11, 21), "person@example.org", "sent",
+                                   delivery_kind="reminder")
+            mailer.upsert_delivery(event, dt.date(2026, 11, 21), "person@example.org", "sent",
+                                   delivery_kind="on_date")
+        finally:
+            mailer.api = original_api
+        self.assertEqual([body[0]["delivery_kind"] for body in captured], ["reminder", "on_date"])
+
+    def test_annual_delivery_log_keeps_event_and_occurrence_date(self):
+        captured = []
+        original_api = mailer.api
+        try:
+            mailer.api = lambda method, path, body=None, prefer=None: captured.append((path, body))
             mailer.upsert_delivery(
                 {"id": "event-1", "title": "Sommerfest", "recurrence": "once"},
                 dt.date(2026, 6, 10), "person@example.org", "failed", error="SMTP 550",
             )
         finally:
             mailer.api = original_api
-        row = captured[0][0]
+        path, body = captured[0]
+        row = body[0]
+        self.assertIn("on_conflict=event_id,occurrence_year,recipient,delivery_kind", path)
         self.assertEqual(row["event_title"], "Sommerfest")
         self.assertEqual(row["recurrence"], "once")
         self.assertEqual(row["event_date"], "2026-06-10")
+        self.assertEqual(row["delivery_kind"], "reminder")
 
 
 if __name__ == "__main__":

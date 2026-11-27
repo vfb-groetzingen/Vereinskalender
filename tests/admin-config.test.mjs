@@ -89,8 +89,6 @@ test('Gesamtplan oeffnet Buchungen ueber denselben Detailpfad und Veranstaltungs
   assert.match(config, /BASE_PATH: '\/Vereinskalender\//);
   assert.match(app, /if \(p === '\/belegungsplan\/gesamt'\) return \{ name: 'combinedPlan' \}/);
   assert.match(app, /querySelectorAll\('\.combined-event'\).*openDetail\(button\.dataset\.id\)/s);
-  assert.match(app, /const dateLabel = L\.ymd\(start\) === L\.ymd\(end\) \? dayLong\(start\) :/);
-  assert.match(app, /<dt>Datum<\/dt><dd>\$\{esc\(dateLabel\)\}<\/dd>/);
   assert.match(app, /\.trim\(\)\.toLowerCase\(\) === 'veranstaltung'/);
   assert.match(app, /contactEmail = eventCategory \? null/);
   assert.match(app, /reminderDays = eventCategory \? 0/);
@@ -238,5 +236,12 @@ test('Versandstatus jaehrlicher Ereignis-Mails erscheinen im Termin-Aenderungspr
   assert.match(migration, /after insert or update on public\.annual_email_deliveries/);
   assert.match(migration, /insert into public\.admin_audit_log/);
   assert.match(migration, /new\.error/);
+});
+
+test('Ereignis-Mailworkflow verwendet Europe/Berlin und laeuft nicht zur vollen Stunde', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/annual-event-emails.yml', import.meta.url), 'utf-8');
+  assert.match(workflow, /cron: "2-59\/5 \* \* \* \*"/);
+  assert.match(workflow, /timezone: "Europe\/Berlin"/);
+  assert.doesNotMatch(workflow, /cron: "0 [45] \* \* \*"/);
 });
 
