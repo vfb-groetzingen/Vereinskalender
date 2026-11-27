@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send annual event emails at about 06:17 Europe/Berlin via Strato SMTP."""
+"""Send annual event emails on their due date, with frequent retry checks."""
 import datetime as dt
 import email.policy
 import html
@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 MAX_BYTES = 5 * 1024 * 1024
+STALE_SENDING_AFTER = dt.timedelta(minutes=15)
+ADMIN_ALERT_COOLDOWN = dt.timedelta(hours=1)
 TZ = ZoneInfo("Europe/Berlin")
 FROM_EMAIL = "vfb-app@vfb-groetzingen.de"
 FROM_NAME = "VfB Grötzingen (Kalender)"
@@ -255,7 +257,7 @@ def build_message(event, recipient, documents=None, signature_html=None):
     return message
 
 
-def upsert_delivery(event, event_date, recipient, status, sent_at=None, error=None):
+def upsert_delivery(event, event_date, recipient, status, sent_at=None, error=None, delivery_kind="reminder"):
     row = {
         "event_id": event["id"],
         "event_title": event.get("title"),
@@ -263,12 +265,13 @@ def upsert_delivery(event, event_date, recipient, status, sent_at=None, error=No
         "event_date": event_date.isoformat(),
         "occurrence_year": event_date.year,
         "recipient": recipient,
+        "delivery_kind": delivery_kind,
         "status": status,
         "sent_at": sent_at,
         "error": (error or "")[:1000] or None,
         "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
-    api("POST", "annual_email_deliveries?on_conflict=event_id,occurrence_year,recipient", [row],
+    api("POST", "annual_email_deliveries?on_conflict=event_id,occurrence_year,recipient,delivery_kind", [row],
         "resolution=merge-duplicates,return=minimal")
 
 
@@ -317,6 +320,7 @@ def build_admin_failure_message(failures):
 
 
 def notify_admin_failure(failures, smtp=None):
+    failures = [failure for failure in failures if failure.get("notify_admin", True)]
     if not failures:
         return True
     message = build_admin_failure_message(failures)
@@ -334,6 +338,8 @@ def notify_admin_failure(failures, smtp=None):
         try:
             send_checked(connection, message, ADMIN_ALERT_EMAIL)
             print(f"Fehlerhinweis an {ADMIN_ALERT_EMAIL} versendet.")
+            for failure in failures:
+                mark_delivery_admin_notified(failure)
             return True
         except Exception as exc:
             last_error = exc
@@ -432,12 +438,94 @@ def event_signature_html():
     return sanitize_html(configured or DEFAULT_SIGNATURE_HTML)
 
 
-def previous_delivery_statuses(event_id, year):
+def previous_delivery_statuses(event_id, year, delivery_kind="reminder"):
     return api(
         "GET",
-        "annual_email_deliveries?select=recipient,status"
-        f"&event_id=eq.{event_id}&occurrence_year=eq.{year}",
+        "annual_email_deliveries?select=recipient,status,updated_at,delivery_kind,last_notified_at,error"
+        f"&event_id=eq.{event_id}&occurrence_year=eq.{year}&delivery_kind=eq.{delivery_kind}",
     ) or []
+
+
+def delivery_is_stale(row, now=None):
+    """Return whether a sending lease has expired and can be recovered."""
+    raw_updated_at = row.get("updated_at")
+    try:
+        updated_at = dt.datetime.fromisoformat(str(raw_updated_at).replace("Z", "+00:00"))
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=dt.timezone.utc)
+    except (TypeError, ValueError):
+        # Legacy/incomplete sending rows have no reliable lease timestamp.
+        return True
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+    else:
+        now = now.astimezone(dt.timezone.utc)
+    return now - updated_at.astimezone(dt.timezone.utc) >= STALE_SENDING_AFTER
+
+
+def admin_alert_due(previous, recipient, now=None):
+    """Throttle repeated notices while allowing periodic reminders about outages."""
+    recipient_key = str(recipient).casefold()
+    row = next((item for item in previous
+                if str(item.get("recipient", "")).casefold() == recipient_key
+                and item.get("status") == "failed"), None)
+    if row is None or not row.get("last_notified_at"):
+        return True
+    try:
+        notified_at = dt.datetime.fromisoformat(str(row["last_notified_at"]).replace("Z", "+00:00"))
+        if notified_at.tzinfo is None:
+            notified_at = notified_at.replace(tzinfo=dt.timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+    else:
+        now = now.astimezone(dt.timezone.utc)
+    return now - notified_at.astimezone(dt.timezone.utc) >= ADMIN_ALERT_COOLDOWN
+
+
+def mark_delivery_admin_notified(failure):
+    event = failure.get("event") or {}
+    recipient = failure.get("recipient")
+    event_date = failure.get("event_date")
+    if not event.get("id") or not recipient or not isinstance(event_date, (dt.date, dt.datetime)):
+        return
+    delivery_kind = failure.get("delivery_kind") or (
+        "on_date" if failure.get("send_on_date") else "reminder"
+    )
+    path = (
+        "annual_email_deliveries?"
+        f"event_id=eq.{event['id']}&occurrence_year=eq.{event_date.year}"
+        f"&recipient=eq.{quote(str(recipient), safe='')}&delivery_kind=eq.{delivery_kind}"
+    )
+    try:
+        api("PATCH", path, {"last_notified_at": dt.datetime.now(dt.timezone.utc).isoformat()},
+            "return=minimal")
+    except Exception as exc:
+        print(f"Admin-Hinweiszeitpunkt konnte nicht gespeichert werden: {exc}", file=sys.stderr)
+
+
+def handled_delivery_recipients(event, event_date, previous, delivery_kind="reminder", now=None):
+    """Keep sent/in-flight recipients from duplicating; release abandoned sends."""
+    handled = set()
+    for row in previous:
+        recipient = row.get("recipient")
+        if not recipient:
+            continue
+        recipient_key = str(recipient).casefold()
+        status = row.get("status")
+        if status == "sent":
+            handled.add(recipient_key)
+        elif status == "sending":
+            if not delivery_is_stale(row, now=now):
+                handled.add(recipient_key)
+                continue
+            error = "Verwaister Versandstatus (sending) nach 15 Minuten freigegeben; erneuter Versuch."
+            upsert_delivery(event, event_date, str(recipient), "failed", error=error, delivery_kind=delivery_kind)
+            print(f"Verwaister Versandversuch freigegeben: Ereignis {event.get('id')} an {recipient}")
+    return handled
 
 
 def event_occurs_on(event, date):
@@ -481,8 +569,9 @@ def send_event_recipients(event, event_date, smtp, send_on_date=False):
     if not enabled:
         print(f"Erinnerung fuer Ereignis {event.get('id')} deaktiviert; kein Versand.")
         return []
-    previous = previous_delivery_statuses(event["id"], event_date.year)
-    handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
+    delivery_kind = "on_date" if send_on_date else "reminder"
+    previous = previous_delivery_statuses(event["id"], event_date.year, delivery_kind)
+    handled = handled_delivery_recipients(event, event_date, previous, delivery_kind=delivery_kind)
     recipients = event.get("recipients") or []
     if not recipients:
         return [{"event": event, "event_date": event_date, "recipient": None,
@@ -499,7 +588,7 @@ def send_event_recipients(event, event_date, smtp, send_on_date=False):
             continue
         handled.add(recipient.lower())
         try:
-            upsert_delivery(event, event_date, recipient, "sending")
+            upsert_delivery(event, event_date, recipient, "sending", delivery_kind=delivery_kind)
             if not documents_loaded:
                 try:
                     documents = load_event_documents(event)
@@ -512,22 +601,24 @@ def send_event_recipients(event, event_date, smtp, send_on_date=False):
             send_checked(smtp, message, recipient)
         except Exception as exc:
             try:
-                upsert_delivery(event, event_date, recipient, "failed", error=str(exc))
+                upsert_delivery(event, event_date, recipient, "failed", error=str(exc), delivery_kind=delivery_kind)
             except Exception as log_error:
                 print(f"Versandfehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
             failures.append({"event": event, "event_date": event_date, "recipient": recipient,
-                             "send_on_date": send_on_date, "error": str(exc)})
+                             "send_on_date": send_on_date, "delivery_kind": delivery_kind,
+                             "notify_admin": admin_alert_due(previous, recipient), "error": str(exc)})
             print(f"FEHLER fuer Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
             continue
 
         sent_at = dt.datetime.now(dt.timezone.utc).isoformat()
         try:
-            upsert_delivery(event, event_date, recipient, "sent", sent_at)
+            upsert_delivery(event, event_date, recipient, "sent", sent_at, delivery_kind=delivery_kind)
             print(f"Versendet: Ereignis {event['id']} an {recipient}")
         except Exception as exc:
             error = f"SMTP hat die Mail angenommen, aber der Erfolgsstatus konnte nicht gespeichert werden: {exc}"
             failures.append({"event": event, "event_date": event_date, "recipient": recipient,
-                             "send_on_date": send_on_date, "error": error})
+                             "send_on_date": send_on_date, "delivery_kind": delivery_kind,
+                             "notify_admin": admin_alert_due(previous, recipient), "error": error})
             print(f"FEHLER beim Protokollieren des Versands fuer Ereignis {event['id']} / {recipient}: {exc}", file=sys.stderr)
     return failures
 
@@ -537,10 +628,7 @@ def main():
         process_test_requests()
         return
     now = dt.datetime.now(TZ)
-    # Schedule is timezone-aware Europe/Berlin. Never send before 06:00 local time.
-    if now.hour < 6:
-        print(f"Noch vor 06:00 Uhr in Europe/Berlin ({now.isoformat()}); kein Versand.")
-        return
+    print(f"Pruefe faellige Ereignis-E-Mails fuer {now.date()} (Europe/Berlin).")
     query = (
         "annual_email_events?select=id,title,recurrence,event_date,event_month,event_day,recipients,subject,body_html,assets,document_ids,sender_display_name,reply_to_email,sender_profile_id,active,email_on_date,reminder_enabled,reminder_days,append_signature"
         "&active=eq.true"
@@ -564,8 +652,9 @@ def main():
         failures = []
         for event, event_date, send_on_date in due_events:
             try:
-                previous = previous_delivery_statuses(event["id"], event_date.year)
-                handled = {row["recipient"].lower() for row in previous if row.get("status") in {"sent", "sending"}}
+                delivery_kind = "on_date" if send_on_date else "reminder"
+                previous = previous_delivery_statuses(event["id"], event_date.year, delivery_kind)
+                handled = handled_delivery_recipients(event, event_date, previous, delivery_kind=delivery_kind)
                 recipients = event.get("recipients") or []
                 if not recipients:
                     failures.append({"event": event, "event_date": event_date, "recipient": None,
@@ -573,11 +662,12 @@ def main():
                 for recipient in recipients:
                     if recipient.lower() not in handled:
                         try:
-                            upsert_delivery(event, event_date, recipient, "failed", error=error)
+                            upsert_delivery(event, event_date, recipient, "failed", error=error, delivery_kind=delivery_kind)
                         except Exception as log_error:
                             print(f"Fehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
                         failures.append({"event": event, "event_date": event_date, "recipient": recipient,
-                                         "send_on_date": send_on_date, "error": error})
+                                         "send_on_date": send_on_date, "delivery_kind": delivery_kind,
+                                         "notify_admin": admin_alert_due(previous, recipient), "error": error})
             except Exception as log_error:
                 print(f"Fehler konnte nicht protokolliert werden: {log_error}", file=sys.stderr)
                 failures.append({"event": event, "event_date": event_date, "recipient": None,
