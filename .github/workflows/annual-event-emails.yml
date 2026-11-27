@@ -2,8 +2,9 @@ name: Jährliche Ereignis-E-Mails
 
 on:
   schedule:
-    # Feste lokale Zeit; Minute 17 vermeidet die stark belastete volle Stunde.
-    - cron: "17 6 * * *"
+    # Erster Versuch kurz nach Mitternacht; danach alle fuenf Minuten als Retry.
+    # Actions kann geplante Laeufe trotzdem verzoegern oder auslassen.
+    - cron: "2-59/5 * * * *"
       timezone: "Europe/Berlin"
   workflow_dispatch:
 
